@@ -1,0 +1,13 @@
+# Odin build outputs
+server
+src.bin
+src/src
+src/importers/eagle-import
+src/eagle-import.bin
+*.bin
+
+# local database artifacts
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
