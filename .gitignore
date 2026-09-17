@@ -11,3 +11,6 @@ src/eagle-import.bin
 *.db-wal
 *.db-shm
 *.db-journal
+
+# odin test runner output (named after the test package)
+/tests
