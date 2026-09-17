@@ -1,0 +1,3 @@
+# The SigV4 fixtures are byte-exact inputs: some request files have no
+# trailing newline, and the expected signature depends on that.
+* -text
