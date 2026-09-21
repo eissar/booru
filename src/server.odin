@@ -3,8 +3,8 @@ package main
 import "core:log"
 import "core:net"
 import "core:os"
-import "core:strings"
-import "core:unicode/utf8"
+
+import "http"
 
 main :: proc() {
 	// consider: `when ODIN_DEBUG { log.debug("debugging") }` on hot paths
@@ -28,32 +28,24 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	log.debug("debugging")
-	log.infof("server running on port %v", cfg.port)
-	// once
-	client: net.TCP_Socket
-	src: net.Endpoint
-	client, src, err = net.accept_tcp(sock)
-	if err != nil {
-		log.fatal(err)
-		os.exit(1)
-	}
+	// loop new client conns
+	for conn, src, err := net.accept_tcp(sock); err == nil; conn, src, err = net.accept_tcp(sock) {
+		// just read into a 16 kb slice
+		raw: [16 * 1024]byte
+		// bytes_read: int
+		req, header_offset := http.read_header(conn, raw[:])
 
-	data: [2048]byte
-	for br, err := net.recv_tcp(client, data[:]); br > 0; {
-		log.info(br)
-		if err != nil {
-			log.fatal(err)
-			os.exit(1)
+		text := transmute(string)raw[:header_offset]
+
+		resp: string
+		if req.path == "/" {
+			resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+		} else {
+			resp = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
 		}
-		// if you run into r/n/r/n/ (13,10,13,10) then
-		// head is complete
-		break
+
+		net.send_tcp(conn, transmute([]u8)resp)
+
+		net.close(conn)
 	}
-	net.close(client)
-
-
-	log.infof("%v", data)
-	text := strings.string_from_ptr(&data[0], len(data))
-	log.infof("%v", text)
 }
