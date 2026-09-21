@@ -3,6 +3,8 @@ package main
 import "core:log"
 import "core:net"
 import "core:os"
+import "core:strings"
+import "core:unicode/utf8"
 
 main :: proc() {
 	// consider: `when ODIN_DEBUG { log.debug("debugging") }` on hot paths
@@ -28,4 +30,30 @@ main :: proc() {
 
 	log.debug("debugging")
 	log.infof("server running on port %v", cfg.port)
+	// once
+	client: net.TCP_Socket
+	src: net.Endpoint
+	client, src, err = net.accept_tcp(sock)
+	if err != nil {
+		log.fatal(err)
+		os.exit(1)
+	}
+
+	data: [2048]byte
+	for br, err := net.recv_tcp(client, data[:]); br > 0; {
+		log.info(br)
+		if err != nil {
+			log.fatal(err)
+			os.exit(1)
+		}
+		// if you run into r/n/r/n/ (13,10,13,10) then
+		// head is complete
+		break
+	}
+	net.close(client)
+
+
+	log.infof("%v", data)
+	text := strings.string_from_ptr(&data[0], len(data))
+	log.infof("%v", text)
 }
