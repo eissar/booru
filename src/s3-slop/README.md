@@ -1,4 +1,4 @@
-# slop-s3
+# s3-slop
 
 AWS Signature Version 4 request signing, in Odin, with no dependencies beyond
 `core`.
@@ -30,7 +30,7 @@ tests/testdata/         vendored aws-sig-v4-test-suite
 ## Usage
 
 ```odin
-import s3 "slop-s3"   // relative to a file in src/
+import s3 "s3-slop"   // relative to a file in src/
 
 amz_date :: "20150830T123600Z"
 

@@ -7,7 +7,7 @@ vars:
   BIN_DIR: '{{.BIN_DIR | default "bin"}}'
   SERVER_BIN: '{{.BIN_DIR}}/server'
   EAGLE_IMPORT_BIN: '{{.BIN_DIR}}/eagle-import'
-  SLOP_S3_TEST_BIN: '/tmp/slop-s3-tests'
+  SLOP_S3_TEST_BIN: '/tmp/s3-slop-tests'
   RENDER_HARNESS_BIN: '/tmp/odin-render-harness'
 
 tasks:
@@ -37,12 +37,12 @@ tasks:
   build:eagle-import:
     desc: Build the Eagle library importer
     sources:
-      - src/slop-importers/**/*.odin
+      - src/importers-slop/**/*.odin
     generates:
       - '{{.EAGLE_IMPORT_BIN}}'
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin build src/slop-importers -out:{{.EAGLE_IMPORT_BIN}}
+      - odin build src/importers-slop -out:{{.EAGLE_IMPORT_BIN}}
 
   build:all:
     desc: Build every binary
@@ -67,13 +67,13 @@ tasks:
     desc: Type-check every package
     cmds:
       - odin check src
-      - odin check src/slop-importers
-      - odin check src/slop-s3 -no-entry-point
+      - odin check src/importers-slop
+      - odin check src/s3-slop -no-entry-point
 
   test:s3:
     desc: Run the AWS SigV4 suite (31 cases) with leak checking
     cmds:
-      - odin test src/slop-s3/tests -out:{{.SLOP_S3_TEST_BIN}}
+      - odin test src/s3-slop/tests -out:{{.SLOP_S3_TEST_BIN}}
 
   test:render:
     desc: Run the Deno structural HTML fixture tests
