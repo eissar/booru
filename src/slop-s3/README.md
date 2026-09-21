@@ -11,15 +11,12 @@ skew) can be faked at a separate seam.
 
 ## Status
 
-All 31 cases of the AWS SigV4 test suite pass, with no allocation leaks:
+All 31 cases of the AWS SigV4 test suite pass, with no allocation leaks. From
+the repository root:
 
 ```
-odin test slop-s3/tests -out:/tmp/slop-s3-tests
+task test:s3
 ```
-
-(`-out` is only there because `odin test` otherwise drops a `tests` binary in
-the working directory. Running `odin test slop-s3/tests` straight works too; the
-artifact is gitignored.)
 
 ## Files
 
@@ -33,7 +30,7 @@ tests/testdata/         vendored aws-sig-v4-test-suite
 ## Usage
 
 ```odin
-import s3 "../slop-s3"   // or add a collection: import s3 "slop:slop-s3"
+import s3 "slop-s3"   // relative to a file in src/
 
 amz_date :: "20150830T123600Z"
 

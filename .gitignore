@@ -2,9 +2,13 @@
 server
 src.bin
 src/src
-src/importers/eagle-import
+src/slop-importers/eagle-import
 src/eagle-import.bin
 *.bin
+
+# task build output
+/bin/
+/.task/
 
 # local database artifacts
 *.db
