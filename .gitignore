@@ -2,7 +2,7 @@
 server
 src.bin
 src/src
-src/slop-importers/eagle-import
+src/importers-slop/eagle-import
 src/eagle-import.bin
 *.bin
 
