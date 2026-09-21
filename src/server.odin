@@ -3,6 +3,7 @@ package main
 import "core:log"
 import "core:net"
 import "core:os"
+import "core:strings"
 
 import "http"
 
@@ -19,7 +20,9 @@ main :: proc() {
 
 	// if cfg.rebuildindex
 
-	sock, err := net.listen_tcp(net.Endpoint({net.IP4_Address{127, 0, 0, 1}, cfg.port}))
+	// net.parse_address
+	// sock, err := net.listen_tcp(net.Endpoint({net.IP4_Address{127, 0, 0, 1}, cfg.port}))
+	sock, err := net.listen_tcp(net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port}))
 	if err != nil {
 		// #partial switch e in err {
 		//     case net.Bind_Error ?
@@ -37,15 +40,20 @@ main :: proc() {
 
 		text := transmute(string)raw[:header_offset]
 
-		resp: string
 		if req.path == "/" {
-			resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
-		} else {
-			resp = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
+			handle_root(req, conn)
+			continue
 		}
 
-		net.send_tcp(conn, transmute([]u8)resp)
+		if strings.starts_with(req.path, "/static/") {
+			handle_static(req, conn)
+			continue
+		}
 
+		// fallback
+		resp := "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
+		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)
+		continue
 	}
 }

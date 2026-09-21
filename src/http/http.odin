@@ -11,6 +11,7 @@ import "core:strings"
 // bikeshed: store byte offsets/ lazy read somehow?
 Header :: struct {
 	method: string,
+	uri:    string,
 	path:   string,
 }
 
@@ -42,7 +43,9 @@ read_header :: proc(sock: net.TCP_Socket, buf: []byte) -> (header: Header, offse
 		}
 
 		header.method = strings.trim_space(first_line[0])
-		header.path = strings.trim_space(first_line[1])
+		header.uri = strings.trim_space(first_line[1])
+		header.path = strings.split(first_line[1], "?")[0]
+
 	}
 
 	// we save a little bit by using the offset ?
