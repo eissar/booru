@@ -44,6 +44,10 @@ main :: proc() {
 			handle_root(req, conn)
 			continue
 		}
+		if req.path == "/gallery" {
+			handle_gallery(req, conn)
+			continue
+		}
 
 		if strings.starts_with(req.path, "/static/") {
 			handle_static(req, conn)
