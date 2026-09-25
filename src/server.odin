@@ -1,5 +1,7 @@
 package main
 
+import "core:bytes"
+import "core:encoding/json"
 import "core:log"
 import "core:net"
 import "core:os"
@@ -35,10 +37,34 @@ main :: proc() {
 	for conn, src, err := net.accept_tcp(sock); err == nil; conn, src, err = net.accept_tcp(sock) {
 		// just read into a 16 kb slice
 		raw: [16 * 1024]byte
-		// bytes_read: int
-		req, header_offset := http.read_header(conn, raw[:])
 
-		text := transmute(string)raw[:header_offset]
+		bytes_read, err := net.recv_tcp(conn, raw[:])
+		if err != nil {
+			// #partial switch e in err {
+			//     case net.Bind_Error ?
+			// }
+			log.fatal(err)
+			os.exit(1)
+		}
+
+		// intermediate buffer
+		ib: bytes.Buffer
+		bytes.buffer_init(&ib, raw[:bytes_read])
+
+		// bytes_read: int
+		req := http.read_header(conn, &ib)
+
+		if req.content_len > 0 {
+			if req.headers["Content-Type"] != "application/json" {
+				resp := "HTTP/1.1 415 Unsupported Media Type\r\nContent-Length: 0\r\n\r\n"
+				net.send_tcp(conn, transmute([]u8)resp)
+				net.close(conn)
+				continue
+			}
+
+			http.read_body(req, conn, &ib)
+		}
+
 
 		if req.path == "/" {
 			handle_root(req, conn)
