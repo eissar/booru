@@ -1,5 +1,7 @@
-local root = vim.fs.dirname(debug.getinfo(1, "S").source:sub(2))
-root = vim.fn.fnamemodify(root, ":p")
+local root = vim.fs.root(0, ".git")
+if not root then
+  return
+end
 
 local function configure()
   vim.opt_local.makeprg = "cd " .. vim.fn.shellescape(root) .. " && odin build src -error-pos-style:unix"
