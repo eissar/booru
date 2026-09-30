@@ -1,0 +1,39 @@
+package thumbnail
+
+import "core:bytes"
+import "core:encoding/json"
+import "core:fmt"
+import "core:os"
+
+// we arbitrary cap to 256 (u8 +1 but just use u32)
+// u8 * [count] :
+
+Manifest :: struct {
+	Count:   u32, // ?limit
+	Offsets: map[u32]u32, // id:offset
+}
+
+Frame :: struct {
+	Manifest:       Manifest,
+	ThumbnailBytes: []^bytes.Buffer,
+}
+
+
+main :: proc() {
+	d, ok := os.read_entire_file_from_filename(
+		"/home/eissar/code/lfs-booru-odin/src/thumbnail/t-metadata.json",
+	)
+	if !ok {fmt.println("couldn't read"); os.exit(1)}
+
+	j, err := json.parse(d)
+	if err != nil {fmt.println("couldn't parse"); os.exit(1)}
+
+
+	fmt.println(j)
+}
+
+//
+// [map[id=1, contentType="image/png", addedAt="2026-01-01T00:00:00.000Z", tags=["landscape", "synthetic"], name="Blue hills", width=96, mtime="2026-01-01T00:00:00.000Z", path="blue-hills.png", thumb="t1.
+// webp", height=64], map[name="Amber tower", thumb="t2.webp", mtime="2026-01-01T00:00:00.000Z", height=96, contentType="image/png", id=2, addedAt="2026-01-02T00:00:00.000Z", path="amber-tower.png", width
+// =64, tags=["portrait", "synthetic"]], map[mtime="2026-01-01T00:00:00.000Z", addedAt="2026-01-03T00:00:00.000Z", id=3, height=80, path="green-square.png", contentType="image/png", tags=["square", "synth
+// etic"], width=80, name="Green square", thumb="t3.webp"]]
