@@ -1,21 +1,38 @@
 package http
 
 import "core:bytes"
+import "core:fmt"
 import "core:log"
 import "core:net"
-import "core:os"
 import "core:strconv"
 import "core:strings"
+Accept_Type :: enum {
+	Html,
+	Json,
+	Webp,
+	Avif,
+	Jpeg,
+	Png,
+	Plain,
+	Any,
+}
+
+Accept :: bit_set[Accept_Type]
+
 // https://www.man7.org/linux/man-pages/man2/recv.2.html
+Known_Headers :: struct {
+	content_length: int,
+	accept:         Accept,
+}
 
 // bikeshed: store byte offsets/ lazy read somehow?
 Header :: struct {
-	method:      string,
-	uri:         string,
-	path:        string,
-	query:       string, // raw query string, "" when absent
-	content_len: int,
-	headers:     map[string]string,
+	method:        string,
+	uri:           string,
+	path:          string,
+	query:         string, // raw query string, "" when absent
+	known_headers: Known_Headers,
+	headers:       map[string]string,
 }
 
 read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header, ok: bool) {
@@ -69,10 +86,12 @@ read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header
 		value := strings.trim_space(line[colon + 1:])
 		header.headers[label] = value
 
-		if label == "Content-Length" {
+		if strings.equal_fold(label, "Content-Length") {
 			n, _ := strconv.parse_int(value)
-			// don't bother check ok
-			header.content_len = n
+			header.known_headers.content_length = n
+		}
+		if strings.equal_fold(label, "Accept") {
+			header.known_headers.accept = parse_accept(value)
 		}
 	}
 
@@ -80,10 +99,41 @@ read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header
 	return header, ok
 }
 
-read_body :: proc(req: Header, sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (err: string) {
-	// TODO: make non case sensitive
-	chunk := bytes.buffer_next(buf, req.content_len)
+parse_accept :: proc(val: string) -> (accept: Accept) {
+	it := val
+	for item in strings.split_iterator(&it, ",") {
+		token := strings.trim_space(item)
+		if idx := strings.index_byte(token, ';'); idx >= 0 {
+			token = strings.trim_space(token[:idx])
+		}
+		switch {
+		case strings.equal_fold(token, "text/html"):
+			accept += {.Html}
+		case strings.equal_fold(token, "application/json"):
+			accept += {.Json}
+		case strings.equal_fold(token, "image/webp"):
+			accept += {.Webp}
+		case strings.equal_fold(token, "image/avif"):
+			accept += {.Avif}
+		case strings.equal_fold(token, "image/jpeg"):
+			accept += {.Jpeg}
+		case strings.equal_fold(token, "image/png"):
+			accept += {.Png}
+		case strings.equal_fold(token, "text/plain"):
+			accept += {.Plain}
+		case token == "*/*":
+			accept += {.Any}
+		}
+	}
+	return accept
+}
 
-	_ = chunk
+read_body :: proc(req: Header, sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (err: string) {
+	b := make([]u8, req.known_headers.content_length)
+	left := len(buf.buf) - buf.off
+	n := copy(b[:], bytes.buffer_next(buf, left))
+	fmt.println("len(b)", len(b))
+	fmt.printf("n %T \n", n)
+
 	return ""
 }
