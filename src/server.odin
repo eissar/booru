@@ -27,7 +27,12 @@ main :: proc() {
 	library_path = cfg.library
 	load_start := time.now()
 	library_images = load_library(cfg.library)
-	log.infof("%d images loaded in %.2f ms: %s", len(library_images), time.duration_milliseconds(time.since(load_start)), cfg.library)
+	log.infof(
+		"%d images loaded in %.2f ms: %s",
+		len(library_images),
+		time.duration_milliseconds(time.since(load_start)),
+		cfg.library,
+	)
 
 	// net.parse_address
 	sock, err := net.listen_tcp(net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port}))
@@ -62,7 +67,6 @@ main :: proc() {
 			continue
 		}
 
-		// GET-only server: reject anything else up front
 		if req.method != "GET" {
 			resp := "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nAllow: GET\r\n\r\n"
 			net.send_tcp(conn, transmute([]u8)resp)
@@ -70,7 +74,7 @@ main :: proc() {
 			continue
 		}
 
-		if req.content_len > 0 {
+		if req.known_headers.content_length > 0 {
 			http.read_body(req, conn, &ib)
 		}
 
