@@ -20,7 +20,6 @@ Gallery_Query :: struct {
 	offset: int,
 	sort:   string,
 	tags:   []string,
-	valid:  bool, // false => invalid offset supplied
 }
 
 parse_int_param :: proc(values: []string) -> (out: int, ok: bool) {
@@ -34,29 +33,27 @@ parse_int_param :: proc(values: []string) -> (out: int, ok: bool) {
 // Semantics follow ../lfs-booru/server.ts: invalid or small limit clamps to
 // MIN_LIMIT; unknown sort falls back to idDesc; an invalid or negative offset
 // marks the query invalid (caller returns 400).
-parse_gallery_query :: proc(query: string) -> Gallery_Query {
-	q := Gallery_Query {
+parse_gallery_query :: proc(query: string) -> (q: Gallery_Query, ok: bool) {
+	q = Gallery_Query {
 		limit = MIN_LIMIT,
 		sort  = "idDesc",
-		valid = true,
 	}
 	params := parse_query_params(query)
 	defer delete(params)
 
-	if values, ok := params["limit"]; ok {
-		if n, ok := parse_int_param(values[:]); ok && n >= MIN_LIMIT {
+	if values, ok_param := params["limit"]; ok_param {
+		if n, parse_ok := parse_int_param(values[:]); parse_ok && n >= MIN_LIMIT {
 			q.limit = n
 		}
 	}
-	if values, ok := params["offset"]; ok {
-		n, ok := parse_int_param(values[:])
-		if !ok || n < 0 {
-			q.valid = false
-			return q
+	if values, ok_param := params["offset"]; ok_param {
+		n, parse_ok := parse_int_param(values[:])
+		if !parse_ok || n < 0 {
+			return q, false
 		}
 		q.offset = n
 	}
-	if values, ok := params["sort"]; ok && len(values) > 0 {
+	if values, ok_param := params["sort"]; ok_param && len(values) > 0 {
 		for s in VALID_SORTS {
 			if values[0] == s {
 				q.sort = s
@@ -67,7 +64,7 @@ parse_gallery_query :: proc(query: string) -> Gallery_Query {
 	tags_dyn: [dynamic]string
 	seen := make(map[string]bool)
 	defer delete(seen)
-	if values, ok := params["tags"]; ok {
+	if values, ok_param := params["tags"]; ok_param {
 		for value in values {
 			for raw_tag in strings.split(value, ",") {
 				tag := strings.trim_space(raw_tag)
@@ -79,7 +76,7 @@ parse_gallery_query :: proc(query: string) -> Gallery_Query {
 		}
 	}
 	q.tags = tags_dyn[:]
-	return q
+	return q, true
 }
 
 // parse_query_params splits a raw query string into a multimap. Keys and
@@ -193,8 +190,8 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 
 // handle_gallery serves "/" (alias) and "/gallery" -- the full page.
 handle_gallery :: proc(req: http.Header, conn: net.TCP_Socket) {
-	q := parse_gallery_query(req.query)
-	if !q.valid {
+	q, ok := parse_gallery_query(req.query)
+	if !ok {
 		{
 			body := ""
 			resp := fmt.tprintf(
@@ -242,8 +239,8 @@ handle_gallery :: proc(req: http.Header, conn: net.TCP_Socket) {
 
 // handle_fragment_gallery_content serves /fragment/gallery-content.
 handle_fragment_gallery_content :: proc(req: http.Header, conn: net.TCP_Socket) {
-	q := parse_gallery_query(req.query)
-	if !q.valid {
+	q, ok := parse_gallery_query(req.query)
+	if !ok {
 		{
 			body := render.render_toast("invalid offset", .Error)
 			resp := fmt.tprintf(
@@ -291,8 +288,8 @@ handle_fragment_gallery_content :: proc(req: http.Header, conn: net.TCP_Socket) 
 
 // handle_fragment_items serves /fragment/items -- the load-more card grid.
 handle_fragment_items :: proc(req: http.Header, conn: net.TCP_Socket) {
-	q := parse_gallery_query(req.query)
-	if !q.valid {
+	q, ok := parse_gallery_query(req.query)
+	if !ok {
 		{
 			body := render.render_toast("invalid offset", .Error)
 			resp := fmt.tprintf(
