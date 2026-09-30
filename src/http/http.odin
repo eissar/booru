@@ -21,7 +21,7 @@ Header :: struct {
 read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header, ok: bool) {
 	header.headers = make(map[string]string)
 
-	{ // first line
+	{ 	// first line
 
 		fl, ib_err := bytes.buffer_read_string(buf, '\n')
 		if ib_err != nil {
@@ -47,7 +47,7 @@ read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header
 		}
 	}
 
-	for { // other headers
+	for { 	// other headers
 		line, ib_err := bytes.buffer_read_string(buf, '\n')
 		if ib_err != nil {
 			// EOF without the terminating blank line: tolerate it if we

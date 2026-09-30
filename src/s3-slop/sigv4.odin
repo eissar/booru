@@ -81,21 +81,21 @@ Credentials :: struct {
 // Options describes everything about a signing operation that is not the
 // request itself.
 Options :: struct {
-	region:  string,
-	service: string,
+	region:         string,
+	service:        string,
 	// amz_date is the request timestamp in the form YYYYMMDDTHHMMSSZ. The
 	// caller supplies it (rather than reading the clock here) so that signing
 	// stays deterministic and testable. AWS rejects requests whose timestamp is
 	// more than 15 minutes off its own clock.
-	amz_date:    string,
-	credentials: Credentials,
+	amz_date:       string,
+	credentials:    Credentials,
 	// normalize_path resolves "." and ".." and collapses repeated slashes.
 	// This is required for most AWS services and must be false for S3.
 	normalize_path: bool,
 	// payload_hash overrides the computed SHA-256 of Request.body. Use
 	// UNSIGNED_PAYLOAD, or the hash of the original body when the request body
 	// is transformed after signing. Empty means "hash the body".
-	payload_hash: string,
+	payload_hash:   string,
 }
 
 // ---------------------------------------------------------------------------
@@ -159,11 +159,7 @@ canonical_request :: proc(
 // string_to_sign builds the second-stage string. It is the algorithm, the
 // timestamp, the credential scope, and the hash of the canonical request, each
 // on its own line.
-string_to_sign :: proc(
-	creq: string,
-	opts: Options,
-	allocator := context.allocator,
-) -> string {
+string_to_sign :: proc(creq: string, opts: Options, allocator := context.allocator) -> string {
 	scope := credential_scope(opts, allocator)
 	defer delete(scope)
 
@@ -300,11 +296,7 @@ sign :: proc(
 // previous segment; a trailing slash is preserved. When normalize is false the
 // slash structure is copied through untouched, which is what S3 requires: S3
 // distinguishes "my-object//example//photo.user" from the collapsed form.
-canonical_path :: proc(
-	path: string,
-	normalize: bool,
-	allocator := context.allocator,
-) -> string {
+canonical_path :: proc(path: string, normalize: bool, allocator := context.allocator) -> string {
 	target := path
 	if target == "" {
 		target = "/"
@@ -408,10 +400,7 @@ canonical_query :: proc(query: string, allocator := context.allocator) -> string
 		key, _, value := strings.partition(parameter, "=")
 		append(
 			&pairs,
-			Pair {
-				key = uri_encode(key, allocator),
-				value = uri_encode(value, allocator),
-			},
+			Pair{key = uri_encode(key, allocator), value = uri_encode(value, allocator)},
 		)
 	}
 
@@ -483,13 +472,7 @@ canonical_headers :: proc(
 			}
 		}
 		if index == -1 {
-			append(
-				&groups,
-				Group {
-					name = name,
-					values = make([dynamic]string, 0, 1, allocator),
-				},
-			)
+			append(&groups, Group{name = name, values = make([dynamic]string, 0, 1, allocator)})
 			index = len(groups) - 1
 		} else {
 			delete(name)

@@ -13,6 +13,7 @@
 // encoding/sorting/normalisation instead of the HMAC chain.
 package tests
 
+import s3 ".."
 import "core:fmt"
 import "core:os"
 import "core:path/filepath"
@@ -20,7 +21,6 @@ import "core:slice"
 import "core:strconv"
 import "core:strings"
 import "core:testing"
-import s3 ".."
 
 // #directory is a compile-time constant for this file's directory, so the tests
 // do not depend on the process working directory.
@@ -99,10 +99,10 @@ run_case :: proc(t: ^testing.T, base: string) {
 	}
 
 	opts := s3.Options {
-		region         = TEST_REGION,
-		service        = TEST_SERVICE,
-		amz_date       = header_value(parsed.headers[:], "x-amz-date"),
-		credentials    = s3.Credentials{access_key = TEST_ACCESS_KEY, secret_key = TEST_SECRET_KEY},
+		region = TEST_REGION,
+		service = TEST_SERVICE,
+		amz_date = header_value(parsed.headers[:], "x-amz-date"),
+		credentials = s3.Credentials{access_key = TEST_ACCESS_KEY, secret_key = TEST_SECRET_KEY},
 		normalize_path = true,
 	}
 

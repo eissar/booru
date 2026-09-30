@@ -6,9 +6,9 @@ import "core:fmt"
 import "core:os"
 
 Thumb :: struct {
-	bytes:       []u8, // Complete standalone WebP file; backing memory owned by caller.
-	width:       u32, // Actual thumbnail dimensions, not minus-one encoded values.
-	height:      u32,
+	bytes:  []u8, // Complete standalone WebP file; backing memory owned by caller.
+	width:  u32, // Actual thumbnail dimensions, not minus-one encoded values.
+	height: u32,
 }
 
 // attempt to implement
@@ -76,14 +76,17 @@ main :: proc() {
 			os.exit(1)
 		}
 		if bytes.equal(VP8_CC, ch.fourcc) {
-			append_elem(&thumbs, ThumbBitstream{
-				thumb = Thumb{
-					bytes = d,
-					width = u32(obj["thumbWidth"].(json.Float)),
-					height = u32(obj["thumbHeight"].(json.Float)),
+			append_elem(
+				&thumbs,
+				ThumbBitstream {
+					thumb = Thumb {
+						bytes = d,
+						width = u32(obj["thumbWidth"].(json.Float)),
+						height = u32(obj["thumbHeight"].(json.Float)),
+					},
+					bitstream = transmute(Bitstream)ch,
 				},
-				bitstream = transmute(Bitstream)ch,
-			})
+			)
 			continue
 		}
 	}

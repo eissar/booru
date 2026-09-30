@@ -121,7 +121,8 @@ insert :: proc(s: ^Store, oid, name: string, tags: []string) -> (id: u32, err: s
 	if len(tags) > 0 {
 		tag: ^Stmt
 		defer sqlite3_finalize(tag)
-		if rc := prepare(s, "INSERT OR IGNORE INTO tags (image_id, tag) VALUES (?, ?)", &tag); rc != "" {
+		if rc := prepare(s, "INSERT OR IGNORE INTO tags (image_id, tag) VALUES (?, ?)", &tag);
+		   rc != "" {
 			exec(s, "ROLLBACK")
 			return 0, rc
 		}
@@ -173,7 +174,8 @@ get :: proc(s: ^Store, id: u32) -> (img: Image, ok: bool, err: string) {
 by_tag :: proc(s: ^Store, tag: string) -> (ids: []u32, err: string) {
 	stmt: ^Stmt
 	defer sqlite3_finalize(stmt)
-	if rc := prepare(s, "SELECT image_id FROM tags WHERE tag = ? ORDER BY image_id", &stmt); rc != "" {
+	if rc := prepare(s, "SELECT image_id FROM tags WHERE tag = ? ORDER BY image_id", &stmt);
+	   rc != "" {
 		return nil, rc
 	}
 	bind_text(stmt, 1, tag)

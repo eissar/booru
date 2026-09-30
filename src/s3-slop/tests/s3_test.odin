@@ -12,10 +12,10 @@
 // tests keep that switch honest.
 package tests
 
+import s3 ".."
 import "core:fmt"
 import "core:strings"
 import "core:testing"
-import s3 ".."
 
 @(test)
 test_canonical_path_modes :: proc(t: ^testing.T) {
@@ -48,12 +48,7 @@ test_canonical_path_modes :: proc(t: ^testing.T) {
 			got_normalized,
 			c.normalized,
 		)
-		expect_str(
-			t,
-			fmt.tprintf("canonical_path(%q, normalize=false)", c.input),
-			got_s3,
-			c.s3,
-		)
+		expect_str(t, fmt.tprintf("canonical_path(%q, normalize=false)", c.input), got_s3, c.s3)
 	}
 }
 
@@ -173,10 +168,10 @@ test_sign_s3_mode :: proc(t: ^testing.T) {
 		headers = headers,
 	}
 	opts := s3.Options {
-		region         = "us-east-1",
-		service        = "s3",
-		amz_date       = "20130524T000000Z",
-		credentials    = s3.Credentials{access_key = TEST_ACCESS_KEY, secret_key = TEST_SECRET_KEY},
+		region = "us-east-1",
+		service = "s3",
+		amz_date = "20130524T000000Z",
+		credentials = s3.Credentials{access_key = TEST_ACCESS_KEY, secret_key = TEST_SECRET_KEY},
 		normalize_path = false,
 	}
 
@@ -226,10 +221,10 @@ test_sign_rejects_incomplete_options :: proc(t: ^testing.T) {
 	}
 
 	full := s3.Options {
-		region         = "us-east-1",
-		service        = "s3",
-		amz_date       = "20150830T123600Z",
-		credentials    = s3.Credentials{access_key = "k", secret_key = "s"},
+		region = "us-east-1",
+		service = "s3",
+		amz_date = "20150830T123600Z",
+		credentials = s3.Credentials{access_key = "k", secret_key = "s"},
 		normalize_path = false,
 	}
 
@@ -267,12 +262,12 @@ test_payload_hash_override :: proc(t: ^testing.T) {
 		body    = body,
 	}
 	opts := s3.Options {
-		region         = "us-east-1",
-		service        = "s3",
-		amz_date       = "20150830T123600Z",
-		credentials    = s3.Credentials{access_key = TEST_ACCESS_KEY, secret_key = TEST_SECRET_KEY},
+		region = "us-east-1",
+		service = "s3",
+		amz_date = "20150830T123600Z",
+		credentials = s3.Credentials{access_key = TEST_ACCESS_KEY, secret_key = TEST_SECRET_KEY},
 		normalize_path = false,
-		payload_hash   = s3.UNSIGNED_PAYLOAD,
+		payload_hash = s3.UNSIGNED_PAYLOAD,
 	}
 
 	creq, signed, err := s3.canonical_request(req, opts)

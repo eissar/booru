@@ -24,9 +24,9 @@ Gallery_Query :: struct {
 }
 
 parse_int_param :: proc(values: []string) -> (out: int, ok: bool) {
-	if len(values) == 0 { return 0, false }
+	if len(values) == 0 {return 0, false}
 	v, perr := strconv.parse_int(values[0])
-	if !perr { return 0, false }
+	if !perr {return 0, false}
 	return v, true
 }
 
@@ -35,7 +35,11 @@ parse_int_param :: proc(values: []string) -> (out: int, ok: bool) {
 // MIN_LIMIT; unknown sort falls back to idDesc; an invalid or negative offset
 // marks the query invalid (caller returns 400).
 parse_gallery_query :: proc(query: string) -> Gallery_Query {
-	q := Gallery_Query{limit = MIN_LIMIT, sort = "idDesc", valid = true}
+	q := Gallery_Query {
+		limit = MIN_LIMIT,
+		sort  = "idDesc",
+		valid = true,
+	}
 	params := parse_query_params(query)
 	defer delete(params)
 
@@ -67,8 +71,8 @@ parse_gallery_query :: proc(query: string) -> Gallery_Query {
 		for value in values {
 			for raw_tag in strings.split(value, ",") {
 				tag := strings.trim_space(raw_tag)
-				if tag == "" { continue }
-				if seen[tag] { continue }
+				if tag == "" {continue}
+				if seen[tag] {continue}
 				seen[tag] = true
 				append(&tags_dyn, tag)
 			}
@@ -82,9 +86,9 @@ parse_gallery_query :: proc(query: string) -> Gallery_Query {
 // values are used as-is (no percent-decoding) -- see limitations.
 parse_query_params :: proc(query: string) -> map[string][dynamic]string {
 	params := make(map[string][dynamic]string)
-	if query == "" { return params }
+	if query == "" {return params}
 	for pair in strings.split(query, "&") {
-		if pair == "" { continue }
+		if pair == "" {continue}
 		key, value := pair, ""
 		if eq := strings.index_byte(pair, '='); eq >= 0 {
 			key, value = pair[:eq], pair[eq + 1:]
@@ -101,7 +105,7 @@ parse_query_params :: proc(query: string) -> map[string][dynamic]string {
 
 // filter_images returns the images carrying every requested tag.
 filter_images :: proc(all: []template.Image, tags: []string) -> []template.Image {
-	if len(tags) == 0 { return all }
+	if len(tags) == 0 {return all}
 	out := make([dynamic]template.Image, 0, len(all))
 	for img in all {
 		matched := 0
@@ -122,10 +126,14 @@ filter_images :: proc(all: []template.Image, tags: []string) -> []template.Image
 
 less_img :: proc(a, b: template.Image, sort: string) -> bool {
 	switch sort {
-	case "idAsc":       return a.id < b.id
-	case "idDesc":      return a.id > b.id
-	case "addedAtAsc":  return a.added_at < b.added_at
-	case "addedAtDesc": return a.added_at > b.added_at
+	case "idAsc":
+		return a.id < b.id
+	case "idDesc":
+		return a.id > b.id
+	case "addedAtAsc":
+		return a.added_at < b.added_at
+	case "addedAtDesc":
+		return a.added_at > b.added_at
 	}
 	return a.id > b.id
 }
@@ -143,13 +151,19 @@ sort_gallery :: proc(images: []template.Image, sort: string) {
 
 // page_slice slices images[offset:offset+limit] and reports whether more
 // items follow the page.
-page_slice :: proc(images: []template.Image, offset, limit: int) -> (page: []template.Image, has_more: bool) {
-	if offset >= len(images) || offset < 0 { return images[:0], false }
+page_slice :: proc(
+	images: []template.Image,
+	offset, limit: int,
+) -> (
+	page: []template.Image,
+	has_more: bool,
+) {
+	if offset >= len(images) || offset < 0 {return images[:0], false}
 	end := offset + limit
 	if end < len(images) {
 		return images[offset:end], true
 	}
-	if end > len(images) { end = len(images) }
+	if end > len(images) {end = len(images)}
 	return images[offset:end], false
 }
 
@@ -164,7 +178,12 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 		}
 	}
 	gallery_url = fmt.tprintf("/gallery?limit=%d&sort=%s%s", q.limit, q.sort, tags_query)
-	fragment_url = fmt.tprintf("/fragment/gallery-content?limit=%d&sort=%s%s", q.limit, q.sort, tags_query)
+	fragment_url = fmt.tprintf(
+		"/fragment/gallery-content?limit=%d&sort=%s%s",
+		q.limit,
+		q.sort,
+		tags_query,
+	)
 	return
 }
 
@@ -180,7 +199,11 @@ handle_gallery :: proc(req: http.Header, conn: net.TCP_Socket) {
 			body := ""
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"400 Bad Request", "text/plain; charset=utf-8", len(body), "", body,
+				"400 Bad Request",
+				"text/plain; charset=utf-8",
+				len(body),
+				"",
+				body,
 			)
 			net.send_tcp(conn, transmute([]u8)resp)
 			net.close(conn)
@@ -193,20 +216,24 @@ handle_gallery :: proc(req: http.Header, conn: net.TCP_Socket) {
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
 	gallery_url, fragment_url := filter_urls(q)
-	filter := template.Gallery_Filter{
-		limit         = q.limit,
-		sort          = q.sort,
-		tags          = q.tags,
-		offset        = q.offset + len(page),
-		gallery_url   = gallery_url,
-		fragment_url  = fragment_url,
+	filter := template.Gallery_Filter {
+		limit        = q.limit,
+		sort         = q.sort,
+		tags         = q.tags,
+		offset       = q.offset + len(page),
+		gallery_url  = gallery_url,
+		fragment_url = fragment_url,
 	}
 	body := render.render_gallery_page("Gallery", render.Renderer_Version, filter, page, has_more)
 	{
 		body := body
 		resp := fmt.tprintf(
 			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"200 OK", "text/html; charset=utf-8", len(body), "", body,
+			"200 OK",
+			"text/html; charset=utf-8",
+			len(body),
+			"",
+			body,
 		)
 		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)
@@ -221,7 +248,11 @@ handle_fragment_gallery_content :: proc(req: http.Header, conn: net.TCP_Socket) 
 			body := render.render_toast("invalid offset", .Error)
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"400 Bad Request", "text/html; charset=utf-8", len(body), "", body,
+				"400 Bad Request",
+				"text/html; charset=utf-8",
+				len(body),
+				"",
+				body,
 			)
 			net.send_tcp(conn, transmute([]u8)resp)
 			net.close(conn)
@@ -234,20 +265,24 @@ handle_fragment_gallery_content :: proc(req: http.Header, conn: net.TCP_Socket) 
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
 	gallery_url, fragment_url := filter_urls(q)
-	filter := template.Gallery_Filter{
-		limit         = q.limit,
-		sort          = q.sort,
-		tags          = q.tags,
-		offset        = q.offset + len(page),
-		gallery_url   = gallery_url,
-		fragment_url  = fragment_url,
+	filter := template.Gallery_Filter {
+		limit        = q.limit,
+		sort         = q.sort,
+		tags         = q.tags,
+		offset       = q.offset + len(page),
+		gallery_url  = gallery_url,
+		fragment_url = fragment_url,
 	}
 	body := render.render_gallery_content(filter, page, has_more)
 	{
 		body := body
 		resp := fmt.tprintf(
 			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"200 OK", "text/html; charset=utf-8", len(body), "", body,
+			"200 OK",
+			"text/html; charset=utf-8",
+			len(body),
+			"",
+			body,
 		)
 		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)
@@ -262,7 +297,11 @@ handle_fragment_items :: proc(req: http.Header, conn: net.TCP_Socket) {
 			body := render.render_toast("invalid offset", .Error)
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"400 Bad Request", "text/html; charset=utf-8", len(body), "", body,
+				"400 Bad Request",
+				"text/html; charset=utf-8",
+				len(body),
+				"",
+				body,
 			)
 			net.send_tcp(conn, transmute([]u8)resp)
 			net.close(conn)
@@ -274,13 +313,24 @@ handle_fragment_items :: proc(req: http.Header, conn: net.TCP_Socket) {
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
-	body := render.render_card_grid({cards = page, offset = q.offset + len(page), has_more = has_more})
-	push_url := fmt.tprintf("/gallery?limit=%d&offset=%d&sort=%s", q.limit, q.offset + len(page), q.sort)
+	body := render.render_card_grid(
+		{cards = page, offset = q.offset + len(page), has_more = has_more},
+	)
+	push_url := fmt.tprintf(
+		"/gallery?limit=%d&offset=%d&sort=%s",
+		q.limit,
+		q.offset + len(page),
+		q.sort,
+	)
 	{
 		body := body
 		resp := fmt.tprintf(
 			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"200 OK", "text/html; charset=utf-8", len(body), fmt.tprintf("HX-Push-Url: %s\r\n", push_url), body,
+			"200 OK",
+			"text/html; charset=utf-8",
+			len(body),
+			fmt.tprintf("HX-Push-Url: %s\r\n", push_url),
+			body,
 		)
 		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)
@@ -296,7 +346,11 @@ handle_fragment_inspect :: proc(req: http.Header, conn: net.TCP_Socket) {
 			body := render.render_toast("Missing image id", .Error)
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"400 Bad Request", "text/html; charset=utf-8", len(body), "", body,
+				"400 Bad Request",
+				"text/html; charset=utf-8",
+				len(body),
+				"",
+				body,
 			)
 			net.send_tcp(conn, transmute([]u8)resp)
 			net.close(conn)
@@ -309,7 +363,11 @@ handle_fragment_inspect :: proc(req: http.Header, conn: net.TCP_Socket) {
 				body := render.render_inspector(img)
 				resp := fmt.tprintf(
 					"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-					"200 OK", "text/html; charset=utf-8", len(body), "", body,
+					"200 OK",
+					"text/html; charset=utf-8",
+					len(body),
+					"",
+					body,
 				)
 				net.send_tcp(conn, transmute([]u8)resp)
 				net.close(conn)
@@ -321,7 +379,11 @@ handle_fragment_inspect :: proc(req: http.Header, conn: net.TCP_Socket) {
 		body := render.render_toast("Could not find image", .Error)
 		resp := fmt.tprintf(
 			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"404 Not Found", "text/html; charset=utf-8", len(body), "", body,
+			"404 Not Found",
+			"text/html; charset=utf-8",
+			len(body),
+			"",
+			body,
 		)
 		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)
@@ -335,17 +397,17 @@ handle_fragment_inspect :: proc(req: http.Header, conn: net.TCP_Socket) {
 // oid_path_safe rejects anything that is not a plain object id (hex), which
 // also rules out path traversal.
 oid_path_safe :: proc(oid: string) -> bool {
-	if len(oid) == 0 || len(oid) > 128 { return false }
+	if len(oid) == 0 || len(oid) > 128 {return false}
 	for c in oid {
-		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') { continue }
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {continue}
 		return false
 	}
 	return true
 }
 
 static_mime :: proc(name: string) -> string {
-	if strings.has_suffix(name, ".css") { return "text/css; charset=utf-8" }
-	if strings.has_suffix(name, ".js") { return "text/javascript; charset=utf-8" }
+	if strings.has_suffix(name, ".css") {return "text/css; charset=utf-8"}
+	if strings.has_suffix(name, ".js") {return "text/javascript; charset=utf-8"}
 	return "application/octet-stream"
 }
 
@@ -354,7 +416,9 @@ handle_static :: proc(req: http.Header, conn: net.TCP_Socket) {
 	rp := strings.split(req.path, "/")
 	leaf := rp[len(rp) - 1]
 
-	if strings.contains_any(leaf, "\\/\"'<>|&$`;:*? ") || len(leaf) < 3 || strings.contains(leaf, "..") {
+	if strings.contains_any(leaf, "\\/\"'<>|&$`;:*? ") ||
+	   len(leaf) < 3 ||
+	   strings.contains(leaf, "..") {
 		resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
 		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)
@@ -369,7 +433,11 @@ handle_static :: proc(req: http.Header, conn: net.TCP_Socket) {
 		net.close(conn)
 		return
 	}
-	header := fmt.tprintf("HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", static_mime(leaf), len(data))
+	header := fmt.tprintf(
+		"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+		static_mime(leaf),
+		len(data),
+	)
 	net.send_tcp(conn, transmute([]u8)header)
 	net.send_tcp(conn, data)
 	net.close(conn)
@@ -384,7 +452,11 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 			body := ""
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"404 Not Found", "text/plain; charset=utf-8", len(body), "", body,
+				"404 Not Found",
+				"text/plain; charset=utf-8",
+				len(body),
+				"",
+				body,
 			)
 			net.send_tcp(conn, transmute([]u8)resp)
 			net.close(conn)
@@ -398,7 +470,11 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 			body := string(data)
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"200 OK", "image/webp", len(body), "", body,
+				"200 OK",
+				"image/webp",
+				len(body),
+				"",
+				body,
 			)
 			net.send_tcp(conn, transmute([]u8)resp)
 			net.close(conn)
@@ -411,12 +487,16 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 			orig_fp := fmt.tprintf("%s/images/%s", library_path, oid)
 			if data, ok := os.read_entire_file(orig_fp); ok {
 				mime := img.content_type
-				if mime == "" { mime = "application/octet-stream" }
+				if mime == "" {mime = "application/octet-stream"}
 				{
 					body := string(data)
 					resp := fmt.tprintf(
 						"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-						"200 OK", mime, len(body), "", body,
+						"200 OK",
+						mime,
+						len(body),
+						"",
+						body,
 					)
 					net.send_tcp(conn, transmute([]u8)resp)
 					net.close(conn)
@@ -427,7 +507,11 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 				body := ""
 				resp := fmt.tprintf(
 					"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-					"404 Not Found", "text/plain; charset=utf-8", len(body), "", body,
+					"404 Not Found",
+					"text/plain; charset=utf-8",
+					len(body),
+					"",
+					body,
 				)
 				net.send_tcp(conn, transmute([]u8)resp)
 				net.close(conn)
@@ -439,7 +523,11 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 		body := ""
 		resp := fmt.tprintf(
 			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"404 Not Found", "text/plain; charset=utf-8", len(body), "", body,
+			"404 Not Found",
+			"text/plain; charset=utf-8",
+			len(body),
+			"",
+			body,
 		)
 		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)

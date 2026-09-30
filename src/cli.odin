@@ -6,7 +6,7 @@ import "core:os"
 
 Opts :: struct {
 	/* default 8080 */
-	port: int `usage:"Port to bind."`,
+	port:    int `usage:"Port to bind."`,
 
 	/* default test/fixtures/library */
 	library: string `usage:"Path to the library root (contains events/ and images/)."`,
@@ -43,7 +43,7 @@ check_valid_port :: proc(
 
 getFlags :: proc() -> Opts {
 	opts: Opts = {
-		port = 8080,
+		port    = 8080,
 		library = "test/fixtures/library",
 	}
 	flags.register_flag_checker(check_valid_port)
