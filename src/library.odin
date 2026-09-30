@@ -36,20 +36,20 @@ load_library :: proc(root: string) -> []template.Image {
 		return images[:]
 	}
 	defer os.close(dir)
-	entries, err := os.read_dir(dir, -1)
+	entries, err := os.read_dir(dir, -1, context.temp_allocator)
 	if err != nil {
 		fmt.eprintln("library: cannot read events dir", events_dir, err)
 		return images[:]
 	}
 	defer {
-		for entry in entries {os.file_info_delete(entry)}
+		for entry in entries {os.file_info_delete(entry, context.temp_allocator)}
 		delete(entries)
 	}
 	for entry in entries {
 		if !strings.has_suffix(entry.name, ".ndjson") {continue}
 		fp := fmt.tprintf("%s/%s", events_dir, entry.name)
-		data, ok := os.read_entire_file(fp)
-		if !ok {
+		data, err := os.read_entire_file(fp, context.temp_allocator)
+		if err != nil {
 			fmt.eprintln("library: cannot read", fp)
 			continue
 		}
