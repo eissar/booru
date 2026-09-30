@@ -426,9 +426,18 @@ handle_static :: proc(req: http.Header, conn: net.TCP_Socket) {
 	}
 
 	local_fp := strings.join({"./static/", leaf}, "")
-	data, success := os.read_entire_file(local_fp)
-	if !success {
-		resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+	data, err := os.read_entire_file(local_fp, context.temp_allocator)
+	if err != nil {
+		if err == os.General_Error.Not_Exist {
+			resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+			net.send_tcp(conn, transmute([]u8)resp)
+			net.close(conn)
+			return
+		}
+
+		fmt.printfln("error at handle_static: %v", err)
+
+		resp = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n"
 		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)
 		return
@@ -465,50 +474,31 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 	}
 
 	thumb_fp := fmt.tprintf("%s/thumbnails/%s.webp", library_path, oid)
-	if data, ok := os.read_entire_file(thumb_fp); ok {
-		{
-			body := string(data)
-			resp := fmt.tprintf(
-				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"200 OK",
-				"image/webp",
-				len(body),
-				"",
-				body,
-			)
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-		}
-		return
-	}
+	data, err := os.read_entire_file(thumb_fp, context.temp_allocator)
+	body := string(data)
+	resp := fmt.tprintf(
+		"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
+		"200 OK",
+		"image/webp",
+		len(body),
+		"",
+		body,
+	)
+	net.send_tcp(conn, transmute([]u8)resp)
+	net.close(conn)
 
 	for img in library_images {
 		if img.oid == oid {
 			orig_fp := fmt.tprintf("%s/images/%s", library_path, oid)
-			if data, ok := os.read_entire_file(orig_fp); ok {
-				mime := img.content_type
-				if mime == "" {mime = "application/octet-stream"}
-				{
-					body := string(data)
-					resp := fmt.tprintf(
-						"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-						"200 OK",
-						mime,
-						len(body),
-						"",
-						body,
-					)
-					net.send_tcp(conn, transmute([]u8)resp)
-					net.close(conn)
-				}
-				return
-			}
+			data, err := os.read_entire_file(orig_fp, context.temp_allocator)
+			mime := img.content_type
+			if mime == "" {mime = "application/octet-stream"}
 			{
-				body := ""
+				body := string(data)
 				resp := fmt.tprintf(
 					"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-					"404 Not Found",
-					"text/plain; charset=utf-8",
+					"200 OK",
+					mime,
 					len(body),
 					"",
 					body,
