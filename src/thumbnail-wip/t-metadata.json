@@ -1,0 +1,56 @@
+[
+  {
+    "id": 1,
+    "thumb": "t1.webp",
+    "name": "Blue hills",
+    "path": "blue-hills.png",
+    "width": 96,
+    "height": 64,
+    "contentType": "image/png",
+    "addedAt": "2026-01-01T00:00:00.000Z",
+    "mtime": "2026-01-01T00:00:00.000Z",
+    "tags": [
+      "landscape",
+      "synthetic"
+    ],
+    "thumbWidth": 96,
+    "thumbHeight": 64,
+    "thumbBytes": 162
+  },
+  {
+    "id": 2,
+    "thumb": "t2.webp",
+    "name": "Amber tower",
+    "path": "amber-tower.png",
+    "width": 64,
+    "height": 96,
+    "contentType": "image/png",
+    "addedAt": "2026-01-02T00:00:00.000Z",
+    "mtime": "2026-01-01T00:00:00.000Z",
+    "tags": [
+      "portrait",
+      "synthetic"
+    ],
+    "thumbWidth": 64,
+    "thumbHeight": 96,
+    "thumbBytes": 172
+  },
+  {
+    "id": 3,
+    "thumb": "t3.webp",
+    "name": "Green square",
+    "path": "green-square.png",
+    "width": 80,
+    "height": 80,
+    "contentType": "image/png",
+    "addedAt": "2026-01-03T00:00:00.000Z",
+    "mtime": "2026-01-01T00:00:00.000Z",
+    "tags": [
+      "square",
+      "synthetic"
+    ],
+    "thumbWidth": 80,
+    "thumbHeight": 80,
+    "thumbBytes": 144
+  }
+]
