@@ -109,17 +109,12 @@ tasks:
   fmt:
     desc: Format all Odin sources in place
     cmds:
-      - odin fmt src
-
-  fmt:check:
-    desc: Fail if any Odin source is not gofmt-style formatted
-    cmds:
-      - ./scripts/fmt-check.sh
+      - '"$HOME/.local/share/nvim/mason/bin/odinfmt" -path:src -w'
 
   vet:
-    desc: 'Full pre-commit pass: format check, type check, tests'
+    desc: 'Full pre-commit pass: format, type check, tests'
     cmds:
-      - task: fmt:check
+      - task: fmt
       - task: test
 
   clean:
