@@ -7,12 +7,18 @@ import "core:strings"
 escape_attr :: proc(b: ^strings.Builder, s: string) {
 	for r in s {
 		switch r {
-		case '&': strings.write_string(b, "&amp;")
-		case '<': strings.write_string(b, "&lt;")
-		case '>': strings.write_string(b, "&gt;")
-		case '"': strings.write_string(b, "&quot;")
-		case '\'': strings.write_string(b, "&#39;")
-		case: strings.write_rune(b, r)
+		case '&':
+			strings.write_string(b, "&amp;")
+		case '<':
+			strings.write_string(b, "&lt;")
+		case '>':
+			strings.write_string(b, "&gt;")
+		case '"':
+			strings.write_string(b, "&quot;")
+		case '\'':
+			strings.write_string(b, "&#39;")
+		case:
+			strings.write_rune(b, r)
 		}
 	}
 }
@@ -21,10 +27,14 @@ escape_attr :: proc(b: ^strings.Builder, s: string) {
 escape_text :: proc(b: ^strings.Builder, s: string) {
 	for r in s {
 		switch r {
-		case '&': strings.write_string(b, "&amp;")
-		case '<': strings.write_string(b, "&lt;")
-		case '>': strings.write_string(b, "&gt;")
-		case: strings.write_rune(b, r)
+		case '&':
+			strings.write_string(b, "&amp;")
+		case '<':
+			strings.write_string(b, "&lt;")
+		case '>':
+			strings.write_string(b, "&gt;")
+		case:
+			strings.write_rune(b, r)
 		}
 	}
 }

@@ -48,11 +48,7 @@ openEaglePack :: proc(packPath: string, ctx: ^Eagle_Import_Ctx) {
 		defer delete(data)
 
 		if len(data) > METADATA_WARN_BYTES {
-			fmt.printfln(
-				"warning: %s is %.2f MiB",
-				meta_path,
-				f64(len(data)) / (1024 * 1024),
-			)
+			fmt.printfln("warning: %s is %.2f MiB", meta_path, f64(len(data)) / (1024 * 1024))
 		}
 
 		// id := strings.clone(strings.trim_suffix(info.name, ".info"))

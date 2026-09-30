@@ -39,11 +39,20 @@ render_inspector :: proc(image: Render_Image) -> string {
 Gallery_Filter :: template.Gallery_Filter
 
 // render_gallery_content renders the replaceable gallery content region.
-render_gallery_content :: proc(filter: Gallery_Filter, images: []Render_Image, has_more: bool) -> string {
+render_gallery_content :: proc(
+	filter: Gallery_Filter,
+	images: []Render_Image,
+	has_more: bool,
+) -> string {
 	return template.render_gallery_content(filter, images, has_more)
 }
 
 // render_gallery_page renders the full initial gallery document.
-render_gallery_page :: proc(title, version: string, filter: Gallery_Filter, images: []Render_Image, has_more: bool) -> string {
+render_gallery_page :: proc(
+	title, version: string,
+	filter: Gallery_Filter,
+	images: []Render_Image,
+	has_more: bool,
+) -> string {
 	return template.render_gallery_page(title, version, filter, images, has_more)
 }
