@@ -1,7 +1,6 @@
 version: '3'
 
-# Every odin invocation pins -out: the toolchain otherwise writes binaries into
-# the working directory.
+# Build tasks pin -out:; odin run removes its executable after running.
 
 vars:
   BIN_DIR: '{{.BIN_DIR | default "bin"}}'
@@ -51,9 +50,8 @@ tasks:
 
   run:
     desc: 'Build and run the server (pass flags with --, e.g. task run -- -port:9000)'
-    deps: [build]
     cmds:
-      - '{{.SERVER_BIN}} {{.CLI_ARGS}}'
+      - odin run src -- {{.CLI_ARGS}}
 
   run:harness:
     desc: Run the render harness, dumping every template case to stdout
