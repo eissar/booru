@@ -7,6 +7,7 @@ import "core:os"
 import "core:strings"
 import "core:time"
 
+import "cli"
 import "http"
 import "template"
 
@@ -40,7 +41,7 @@ main :: proc() {
 	)
 	defer log.destroy_console_logger(context.logger)
 
-	cfg := getFlags()
+	cfg := cli.getFlags()
 	library_path = cfg.library
 	load_start := time.now()
 	library_images = load_library(cfg.library)
