@@ -37,11 +37,11 @@ WEBP_Flags :: enum u8 {
 
 // s: File Size: 32 bits (uint32)
 // The size of the file in bytes, starting at offset 8. The maximum value of this field is 232 minus 10 bytes, and thus the size of the whole file is at most 4 GiB minus 2 bytes.
-newWebpExtendedFile :: proc(streams: []ThumbBitstream, buf: ^bytes.Buffer) {
+newWebpExtendedFile :: proc(streams: []Thumb, buf: ^bytes.Buffer) {
 	// Assumes thumbnails contain only padded image chunks after the 12-byte RIFF/WebP header.
 	file_size: u64 = 12 + 18 + 14
 	for s in streams {
-		file_size += 8 + 16 + u64(len(s.thumb.bytes[12:]))
+		file_size += 8 + 16 + u64(len(s.bytes[12:]))
 	}
 	assert(file_size <= 0xFFFF_FFFE)
 	bytes.buffer_grow(buf, int(file_size))
@@ -80,7 +80,7 @@ newWebpExtendedFile :: proc(streams: []ThumbBitstream, buf: ^bytes.Buffer) {
 
 	// REGION: Image data. for us this means ANMF
 	for stream in streams {
-		s := stream.thumb.bytes[12:]
+		s := stream.bytes[12:]
 
 		bytes.buffer_write(buf, ANMF_CC)
 		frame_size := u32le(16 + len(s))
@@ -90,8 +90,8 @@ newWebpExtendedFile :: proc(streams: []ThumbBitstream, buf: ^bytes.Buffer) {
 		//framey
 		bytes.buffer_write(buf, []u8{0, 0, 0}) // 3 bytes
 		//width/height (-1)
-		w := transmute([4]u8)u32le(stream.thumb.width - 1)
-		h := transmute([4]u8)u32le(stream.thumb.height - 1)
+		w := transmute([4]u8)u32le(stream.width - 1)
+		h := transmute([4]u8)u32le(stream.height - 1)
 		bytes.buffer_write(buf, w[:3])
 		bytes.buffer_write(buf, h[:3])
 		// duration in ms
@@ -104,15 +104,8 @@ newWebpExtendedFile :: proc(streams: []ThumbBitstream, buf: ^bytes.Buffer) {
 
 }
 
-Bitstream :: distinct Chunk
-
-ThumbBitstream :: struct {
-	thumb:     Thumb,
-	bitstream: Bitstream,
-}
-
 // this will get called in web requests.
-newThumbnailAtlas :: proc(streams: []ThumbBitstream) {
+newThumbnailAtlas :: proc(streams: []Thumb) {
 	b: bytes.Buffer
 	newWebpExtendedFile(streams, &b)
 }
