@@ -1,11 +1,9 @@
 package thumbnail
 
-import "core:bytes"
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
 
-import "../util"
 
 Thumb :: struct {
 	bytes:  []u8, // Complete standalone WebP file; backing memory owned by caller.
@@ -18,9 +16,20 @@ Thumb :: struct {
 // contextless specifiers (e.g., 2.7.1.1) reference sections of
 // aforementioned rfc.
 
+FourCC :: enum {
+	Unknown,
+	RIFF,
+	WEBP,
+	VP8,
+	VP8X,
+	VP8L,
+	ANIM,
+	ANMF,
+}
+
 // 8 bytes fourCC, then size (little-endian, excludes padding)
 ChunkHeader :: struct {
-	fourcc: []u8,
+	fourcc: FourCC,
 	size:   u32,
 }
 
@@ -61,7 +70,7 @@ main :: proc() {
 	j, err := json.parse(d)
 	if err != nil {fmt.println("couldn't parse"); os.exit(1)}
 
-	thumbs: [dynamic]ThumbBitstream
+	thumbs: [dynamic]Thumb
 	for item in j.(json.Array) {
 		obj := item.(json.Object)
 		path := fmt.aprintf(
@@ -74,20 +83,17 @@ main :: proc() {
 
 		ch := parse_chunk(d[12:])
 
-		if bytes.equal(VP8L_CC, ch.fourcc) {
+		if ch.fourcc == .VP8L {
 			fmt.println("Unimplemented error: vp8L")
 			os.exit(1)
 		}
-		if bytes.equal(VP8_CC, ch.fourcc) {
+		if ch.fourcc == .VP8 {
 			append_elem(
 				&thumbs,
-				ThumbBitstream {
-					thumb = Thumb {
-						bytes = d,
-						width = u32(obj["thumbWidth"].(json.Float)),
-						height = u32(obj["thumbHeight"].(json.Float)),
-					},
-					bitstream = transmute(Bitstream)ch,
+				Thumb {
+					bytes = d,
+					width = u32(obj["thumbWidth"].(json.Float)),
+					height = u32(obj["thumbHeight"].(json.Float)),
 				},
 			)
 			continue
@@ -98,22 +104,19 @@ main :: proc() {
 }
 
 /* returns a MipMap from the thumbnail atlas */
-Vectorized_Thumbnail_MipMap :: proc "contextless" (input: []Thumb, b: []ThumbBitstream) {
+Vectorized_Thumbnail_MipMap :: proc "contextless" (input: []Thumb, b: []Thumb) {
 	idx := 0
 	for thumb in input {
 		ch := parse_chunk(thumb.bytes[12:])
 
-		if util.bytes_equal(VP8L_CC, ch.fourcc) {
+		if ch.fourcc == .VP8L {
 			// TODO: use a prebuffered
 			// THUMBNAIL_MISSING / UNSUPPORTED_TYPE
 			// thumbnail
 			idx += 1; continue
 		}
-		if util.bytes_equal(VP8_CC, ch.fourcc) {
-			b[idx] = ThumbBitstream {
-				thumb     = thumb,
-				bitstream = transmute(Bitstream)ch,
-			}
+		if ch.fourcc == .VP8 {
+			b[idx] = thumb
 			idx += 1; continue
 		}
 
