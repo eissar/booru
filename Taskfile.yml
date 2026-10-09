@@ -71,7 +71,7 @@ tasks:
     vars:
       ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "test"}}'
     cmds:
-      - odin test {{.ODIN_TEST_PKGS}} {{.CLI_ARGS}}
+      - odin test {{.CLI_ARGS}}
 
   test:render:
     desc: 'Run the Deno structural HTML fixture tests (pass a name filter with --)'
