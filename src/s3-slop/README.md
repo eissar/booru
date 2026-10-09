@@ -15,7 +15,7 @@ All 31 cases of the AWS SigV4 test suite pass, with no allocation leaks. From
 the repository root:
 
 ```
-task test:s3
+task slop:test
 ```
 
 ## Files

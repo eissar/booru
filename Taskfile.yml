@@ -1,14 +1,10 @@
 version: '3'
 
-# Build tasks pin -out:; odin run removes its executable after running.
-
 vars:
   BIN_DIR: '{{.BIN_DIR | default "bin"}}'
-  SERVER_BIN: '{{.BIN_DIR}}/server'
   EAGLE_IMPORT_BIN: '{{.BIN_DIR}}/eagle-import'
   SLOP_S3_TEST_BIN: '/tmp/s3-slop-tests'
   RENDER_HARNESS_BIN: '/tmp/odin-fixture-harness'
-  PREVIEW_BIN: '{{.BIN_DIR}}/template-preview'
 
 tasks:
   default:
@@ -34,40 +30,6 @@ tasks:
       - 'echo "githooks are not installed (or are stale); run: task hooks:install" >&2'
       - 'false'
 
-  build:
-    desc: Build the server
-    deps: [hooks:check]
-    sources:
-      - src/**/*.odin
-      - Taskfile.yml
-    generates:
-      - '{{.SERVER_BIN}}'
-    cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - odin build src -out:{{.SERVER_BIN}}
-
-  build:debug:
-    desc: Build the server with debug assertions and log level Debug
-    deps: [hooks:check]
-    cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - odin build src -debug -out:{{.SERVER_BIN}}
-
-  build:eagle-import:
-    desc: Build the Eagle library importer
-    deps: [hooks:check]
-    sources:
-      - src/importers-slop/**/*.odin
-    generates:
-      - '{{.EAGLE_IMPORT_BIN}}'
-    cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - odin build src/importers-slop -out:{{.EAGLE_IMPORT_BIN}}
-
-  build:all:
-    desc: Build every binary
-    deps: [build, build:eagle-import]
-
   run:
     desc: 'Build and run the server (pass flags with --, e.g. task run -- -port:9000)'
     deps: [hooks:check]
@@ -81,57 +43,70 @@ tasks:
       - odin run test/html-fixture-tdd/fixture_harness.odin -file -out:{{.RENDER_HARNESS_BIN}} {{.CLI_ARGS}}
 
   preview:
-    desc: 'Build and serve the template preview (pass a port with --, e.g. task preview -- 9000)'
-    deps: [build:preview]
-    cmds:
-      - '{{.PREVIEW_BIN}} {{.CLI_ARGS}}'
-
-  build:preview:
-    desc: Build the template preview server into bin/
+    desc: 'Run the template preview server (pass a port with --, e.g. task preview -- 9000)'
     deps: [hooks:check]
-    sources:
-      - test/tools/**/*.odin
-      - src/**/*.odin
-      - Taskfile.yml
-    generates:
-      - '{{.PREVIEW_BIN}}'
     cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - odin build test/tools -out:{{.PREVIEW_BIN}}
+      - odin run test/tools -- {{.CLI_ARGS}}
 
   preview:cases:
     desc: 'Print the preview''s <<<CASE>>> blocks (harness parity; pass fixtures dir with --)'
-    deps: [build:preview]
+    deps: [hooks:check]
     cmds:
-      - '{{.PREVIEW_BIN}} --cases {{.CLI_ARGS}}'
+      - odin run test/tools -- --cases {{.CLI_ARGS}}
 
   check:
-    desc: 'Type-check every package (pass extra odin flags with --, e.g. task check -- -error-pos-style:unix)'
+    desc: 'Type-check the project packages (pass extra odin flags with --, e.g. task check -- -error-pos-style:unix)'
     deps: [hooks:check]
     vars:
       ODIN_FLAGS: '{{.ODIN_FLAGS | default .CLI_ARGS}}'
     cmds:
       - odin check src {{.ODIN_FLAGS}}
-      - odin check src/importers-slop {{.ODIN_FLAGS}}
-      - odin check src/s3-slop -no-entry-point {{.ODIN_FLAGS}}
 
   test:
     desc: 'Run the project''s Odin tests (pass a package or extra odin flags with --)'
     deps: [hooks:check]
     vars:
-      # Project test packages only; the slop subdirs have their own targets
-      # (test:s3) and are not part of the project's own suite.
+      # Project test packages only; the slop subdirs have their own namespace.
       ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "src"}}'
     cmds:
       - odin test {{.ODIN_TEST_PKGS}} {{.CLI_ARGS}}
 
-  test:s3:
+  # ---------------------------------------------------------------------------
+  # slop: vendored/subdirectory packages. Deliberately not part of check or
+  # test; run these explicitly via the slop namespace.
+  # ---------------------------------------------------------------------------
+
+  slop:build:
+    desc: Build the Eagle library importer (src/importers-slop)
+    deps: [hooks:check]
+    sources:
+      - src/importers-slop/**/*.odin
+    generates:
+      - '{{.EAGLE_IMPORT_BIN}}'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - odin build src/importers-slop -out:{{.EAGLE_IMPORT_BIN}}
+
+  slop:check:
+    desc: 'Type-check the slop packages (pass extra odin flags with --)'
+    deps: [hooks:check]
+    vars:
+      ODIN_FLAGS: '{{.ODIN_FLAGS | default .CLI_ARGS}}'
+    cmds:
+      - odin check src/importers-slop {{.ODIN_FLAGS}}
+      - odin check src/s3-slop -no-entry-point {{.ODIN_FLAGS}}
+
+  slop:test:
     desc: Run the AWS SigV4 suite (31 cases) with leak checking
     deps: [hooks:check]
     # Keeps the test runner's [INFO] banner out of the way; pass
     # -define:ODIN_TEST_LOG_LEVEL=info with -- when debugging a failure.
     cmds:
       - odin test src/s3-slop/tests -out:{{.SLOP_S3_TEST_BIN}} -define:ODIN_TEST_LOG_LEVEL=error {{.CLI_ARGS}}
+
+  slop:all:
+    desc: Build, check, and test the slop packages
+    deps: [slop:build, slop:check, slop:test]
 
   test:render:
     desc: 'Run the Deno structural HTML fixture tests (pass a name filter with --)'
@@ -144,7 +119,7 @@ tasks:
       - deno test --allow-run --allow-read --allow-env fixture_harness_test.ts {{.CLI_ARGS}}
 
   test:all:
-    desc: 'Run every suite: odin check, odin tests, deno fixtures, and the slop suites'
+    desc: 'Run every project suite: odin check, odin tests, deno fixtures'
     deps:
       - task: check
         vars: {ODIN_FLAGS: '{{.ODIN_FLAGS}}'}
@@ -152,8 +127,6 @@ tasks:
       - task: test
         vars: {CLI_ARGS: ''}
       - task: test:render
-        vars: {CLI_ARGS: ''}
-      - task: test:s3
         vars: {CLI_ARGS: ''}
 
   fmt:
