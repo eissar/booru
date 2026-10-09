@@ -45,6 +45,8 @@ newWebpExtendedFile :: proc(streams: []Thumb, buf: ^bytes.Buffer) {
 	}
 	assert(file_size <= 0xFFFF_FFFE)
 	bytes.buffer_grow(buf, int(file_size))
+
+	// FIX: this incl skipped frames
 	riff_size := u32le(file_size - 8)
 	// our decided format:
 	// WEBP     12
@@ -80,13 +82,120 @@ newWebpExtendedFile :: proc(streams: []Thumb, buf: ^bytes.Buffer) {
 
 	// REGION: Image data. for us this means ANMF
 	Thumbnail_MipMap(streams, buf)
-
 }
+
+
+// Riff Extended Size
+//
+// our decided format:
+// WEBP     12
+// VP8X     18  (8 + 10)
+// ANIM     14  (8 + 6)
+RIFF_X_SIZE :: 12 + 18 + 14
+
+@(private = "file")
+vec_push :: proc "contextless" (vec: [][]u8, idx: ^int, data: []u8) {
+	vec[idx^] = data
+	idx^ += 1
+}
+
+// for use with writev later
+Vectorized_Webp_Extended :: proc(streams: []Thumb, streams_len: int) -> [][]u8 {
+	vec_idx := 0
+
+	// subtract 8 for ... reason
+	// 24 = fixed header per riff
+	riff_size := u32le(RIFF_X_SIZE - 8 + 24 * len(streams) + streams_len)
+
+	// this should also get passed as a parameter
+	// we can know the size of the thing
+	// maybe new -> mem.resize
+	vec := new([1024][]u8, context.allocator)
+	defer free(vec)
+	// vec := new([][]u8, RIFF_X_SIZE)
+
+	// REGION: WEBP (12)
+	vec_push(vec[:], &vec_idx, RIFF_CC)
+	// this is wrong btw
+	vec_push(vec[:], &vec_idx, mem.slice_to_bytes([]u32le{riff_size}))
+	vec_push(vec[:], &vec_idx, WEBP_CC)
+	// ENDREGION: WEBP
+
+	// REGION: VP8X
+	vec_push(vec[:], &vec_idx, VP8X_CC)
+	vec_push(vec[:], &vec_idx, mem.slice_to_bytes([]u32le{10}))
+
+	webp_byte := transmute(u8)bit_set[WEBP_Flags;u8]{.Animated, .Alpha}
+	// webp_byte: 1
+	//  0, 0, 0 : 3 reserved
+	// 95, 0, 0 : 3 width: 96 , stored minus one
+	// 95, 0, 0 : 3 height: 96, stored minus one
+	vec_push(vec[:], &vec_idx, mem.slice_to_bytes([]u8{webp_byte, 0, 0, 0, 95, 0, 0, 95, 0, 0}))
+	// ENDREGION: VP8X
+
+	// optional iccp chunk
+
+	// REGION: ANIM chunk 8 (header) + 6
+	vec_push(vec[:], &vec_idx, ANIM_CC)
+	anim_size_bytes := transmute([4]byte)u32le(6)
+	vec_push(vec[:], &vec_idx, anim_size_bytes[:])
+	// 0, 0, 0, 0: bg color 32 bits
+	// 0, 0      : loop count 16 bits
+	vec_push(vec[:], &vec_idx, mem.slice_to_bytes([]u8{0, 0, 0, 0, 0, 0}))
+	// ENDREGION: ANIM
+
+	for thumb in streams {
+		ch := parse_chunk(thumb.bytes[12:])
+		if ch.fourcc == .VP8L {continue}
+		if ch.fourcc != .VP8 {continue}
+
+		s := thumb.bytes[12:]
+
+		vec_push(vec[:], &vec_idx, ANMF_CC)
+		frame_size := []u32le{u32le(16 + len(s))}
+		vec_push(vec[:], &vec_idx, mem.slice_to_bytes(frame_size))
+
+		// frame x(u24)/y(u24) (6 byte)
+		vec_push(vec[:], &vec_idx, []u8{0, 0, 0, 0, 0, 0})
+
+		// w := transmute([4]u8)u32le(stream.width - 1)
+		// h := transmute([4]u8)u32le(stream.height - 1)
+		// bytes.buffer_write(buf, w[:3])
+		// bytes.buffer_write(buf, h[:3])
+		vec_push(vec[:], &vec_idx, mem.slice_to_bytes([]u8{95, 0, 0, 95, 0, 0}))
+
+		// duration in ms
+		ANMF_Flags_Byte := transmute(u8)bit_set[ANMF_Flags;u8]{}
+		vec_push(
+			vec[:],
+			&vec_idx,
+			mem.slice_to_bytes(
+				[]u8 {
+					30,
+					0,
+					0, // duration in ms/3 byte
+					ANMF_Flags_Byte,
+				},
+			),
+		)
+
+		vec_push(vec[:], &vec_idx, s)
+
+
+	}
+
+	// vec[vec_idx]
+	return vec[:vec_idx]
+}
+
 
 // this will get called in web requests.
 newThumbnailAtlas :: proc(streams: []Thumb) {
-	b: bytes.Buffer
-	newWebpExtendedFile(streams, &b)
+	length_of_thumbs := 0
+	for t in streams {
+		length_of_thumbs += len(t.bytes)
+	}
+	Vectorized_Webp_Extended(streams, length_of_thumbs)
 }
 
 
