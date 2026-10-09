@@ -94,6 +94,13 @@ tasks:
       - task: test:render
         vars: {CLI_ARGS: ''}
 
+  test:thumbnail:
+    desc: 'test src/thumbnail-wip'
+    deps: [hooks:check]
+    cmds:
+      - odin test src/thumbnail-wip/ -debug
+
+
   fmt:
     desc: 'Format Odin sources in place (pass a path with --, e.g. task fmt -- src/http)'
     cmds:

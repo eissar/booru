@@ -21,7 +21,34 @@ vim.opt.makeprg = 'task --silent $*'
 -- source and caret lines that would otherwise fill the list with junk.
 -- Both position layouts are matched since we no longer force unix style.
 vim.opt.errorformat = table.concat({
-  '%f:%l:%c: %t%*[^:]: %m', -- -error-pos-style:unix
-  '%f(%l:%c) %t%*[^:]: %m', -- odin default: file(line:col) Error: msg
-  '%-G%.%#',
+    '%f:%l:%c: %t%*[^:]: %m', -- -error-pos-style:unix
+    '%f(%l:%c) %t%*[^:]: %m', -- odin default: file(line:col) Error: msg
+    '%-G%.%#',
 }, ',')
+
+-- Pick a test task and run it through :make to reuse errorformat.
+local function task_test_picker()
+    local output = vim.fn.system({ 'task', '--list', '--json' })
+    if vim.v.shell_error ~= 0 then
+        vim.notify(output, vim.log.levels.ERROR)
+        return
+    end
+
+    local names = {}
+    for _, task in ipairs(vim.json.decode(output).tasks) do
+        if task.name:match('^test:') then
+            names[#names + 1] = task.name
+        end
+    end
+
+    vim.ui.select(names, {
+        prompt = 'Run tests',
+        format_item = function(name) return name:gsub('^test:', '') end,
+    }, function(name)
+        if name then
+            vim.cmd('make ' .. vim.fn.fnameescape(name))
+        end
+    end)
+end
+
+vim.keymap.set('n', '<leader>T', task_test_picker, { desc = 'Run tests' })
