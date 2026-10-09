@@ -212,34 +212,24 @@ failf :: proc(t: ^testing.T, format: string, args: ..any) {
 @(private)
 collect_cases :: proc(t: ^testing.T) -> [dynamic]string {
 	cases := make([dynamic]string)
-	walk_err := filepath.walk(TESTDATA, collect_walk, &cases)
-	if walk_err != nil {
-		failf(t, "walking %s: %v", TESTDATA, walk_err)
+	walker := filepath.walker_create(TESTDATA)
+	defer filepath.walker_destroy(&walker)
+
+	for info in filepath.walker_walk(&walker) {
+		if path, err := filepath.walker_error(&walker); err != nil {
+			failf(t, "walking %s: %v", path, err)
+			continue
+		}
+		if info.type == .Directory {continue}
+		if !strings.has_suffix(info.name, ".req") {continue}
+
+		// fullpath is owned by the walker's file allocator, so it must be copied.
+		base := strings.clone(strings.trim_suffix(info.fullpath, ".req"))
+		append(&cases, base)
 	}
+
 	slice.sort(cases[:])
 	return cases
-}
-
-@(private)
-collect_walk :: proc(
-	info: os.File_Info,
-	in_err: os.Error,
-	user_data: rawptr,
-) -> (
-	err: os.Error,
-	skip_dir: bool,
-) {
-	if in_err != nil {
-		return in_err, false
-	}
-	if info.is_dir || !strings.has_suffix(info.name, ".req") {
-		return nil, false
-	}
-	cases := cast(^[dynamic]string)user_data
-	// fullpath is owned by the walker's temp allocator, so it must be copied.
-	base := strings.clone(strings.trim_suffix(info.fullpath, ".req"))
-	append(cases, base)
-	return nil, false
 }
 
 // case_name renders "dir/base" for display. It aliases base, which lives for the
@@ -256,8 +246,8 @@ read_file :: proc(base, ext: string) -> (text: string, ok: bool) {
 	path := strings.concatenate({base, ext}, context.allocator)
 	defer delete(path)
 
-	data, read_ok := os.read_entire_file(path, context.allocator)
-	if !read_ok {
+	data, read_err := os.read_entire_file(path, context.allocator)
+	if read_err != nil {
 		return "", false
 	}
 	return string(data), true
