@@ -7,7 +7,7 @@ vars:
   SERVER_BIN: '{{.BIN_DIR}}/server'
   EAGLE_IMPORT_BIN: '{{.BIN_DIR}}/eagle-import'
   SLOP_S3_TEST_BIN: '/tmp/s3-slop-tests'
-  RENDER_HARNESS_BIN: '/tmp/odin-render-harness'
+  RENDER_HARNESS_BIN: '/tmp/odin-fixture-harness'
   PREVIEW_BIN: '{{.BIN_DIR}}/template-preview'
 
 tasks:
@@ -56,7 +56,7 @@ tasks:
   run:harness:
     desc: Run the render harness, dumping every template case to stdout
     cmds:
-      - odin run test/render_harness.odin -file -out:{{.RENDER_HARNESS_BIN}} {{.CLI_ARGS}}
+      - odin run test/html-fixture-tdd/fixture_harness.odin -file -out:{{.RENDER_HARNESS_BIN}} {{.CLI_ARGS}}
 
   preview:
     desc: 'Build and serve the template preview (pass a port with --, e.g. task preview -- 9000)'
@@ -100,9 +100,9 @@ tasks:
 
   test:render:
     desc: Run the Deno structural HTML fixture tests
-    dir: test
+    dir: test/html-fixture-tdd
     cmds:
-      - deno test --allow-run --allow-read --allow-env render_test.ts
+      - deno test --allow-run --allow-read --allow-env fixture_harness_test.ts
 
   fmt:
     desc: Format all Odin sources in place

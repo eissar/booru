@@ -1,4 +1,6 @@
+#+feature dynamic-literals
 package main
+
 
 // template_preview: a self-contained, one-page template previewer for the
 // Odin HTML renderer.
@@ -10,8 +12,8 @@ package main
 //
 // Nothing here is a second renderer. Every case calls the same
 // src/render procs the test harness calls, so what you preview is exactly what
-// test/render_test.ts asserts on. The fixtures stay read-only baselines: this
-// tool never writes into test/fixtures.
+// test/html-fixture-tdd/fixture_harness_test.ts asserts on. The fixtures stay
+// read-only baselines: this tool never writes into test/html-fixture-tdd/fixture.
 //
 // Modes:
 //   template_preview                 -> serve the preview on 0.0.0.0:8971
@@ -73,13 +75,13 @@ Event :: struct {
 	contentType:  string,
 }
 
-FIXTURES_DIR :: "test/fixtures"
+FIXTURES_DIR :: "test/html-fixture-tdd/fixture"
 
 // load_images reads the synthetic library event shard and returns the images
 // in file order, matching the test harness exactly.
 load_images :: proc(path: string) -> []render.Render_Image {
-	data, ok := os.read_entire_file(path)
-	if !ok {
+	data, err := os.read_entire_file(path, context.allocator)
+	if err != nil {
 		fmt.eprintln("template_preview: cannot read", path)
 		fmt.eprintln("template_preview: run from the repository root")
 		os.exit(1)
@@ -1245,8 +1247,8 @@ send_text :: proc(conn: net.TCP_Socket, status: string, ctype: string, body: str
 
 // serve_file reads and sends a file from disk, or 404s.
 serve_file :: proc(conn: net.TCP_Socket, path: string) {
-	data, ok := os.read_entire_file(path)
-	if !ok {
+	data, err := os.read_entire_file(path, context.allocator)
+	if err != nil {
 		send_text(conn, "404 Not Found", "text/plain; charset=utf-8", fmt.tprintf("not found: %s\n", path))
 		return
 	}
@@ -1348,7 +1350,7 @@ usage :: proc() {
 	fmt.eprintln("usage: template_preview [--serve|--cases] [fixtures_dir] [port]")
 	fmt.eprintln("")
 	fmt.eprintln("  --serve   serve the preview over HTTP (default)")
-	fmt.eprintln("  --cases   print <<<CASE>>> blocks, matching test/render_harness.odin")
+	fmt.eprintln("  --cases   print <<<CASE>>> blocks, matching test/html-fixture-tdd/fixture_harness.odin")
 	fmt.eprintln("  --check   alias for --cases")
 	fmt.eprintln("")
 	fmt.eprintln("Nothing is written to disk in either mode.")

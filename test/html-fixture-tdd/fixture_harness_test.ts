@@ -1,7 +1,7 @@
 // Structural HTML comparison tests for the Odin templates.
 //
-// The Odin harness (test/render_harness.odin) renders each case and prints it
-// in a delimited block. This test compares the harness output to the expected
+// The Odin harness (test/html-fixture-tdd/fixture_harness.odin) renders each case
+// and prints it in a delimited block. This test compares the harness output to the expected
 // fixtures structurally with Cheerio: attribute sets, attribute values, tag
 // names, and text content — whitespace-insensitive where the DOM allows it.
 //
@@ -11,12 +11,13 @@
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import * as cheerio from 'npm:cheerio@1.0.0';
 
-const ROOT = new URL('..', import.meta.url).pathname;
-const FIXTURES = `${ROOT}test/fixtures`;
+const ROOT = new URL('../..', import.meta.url).pathname;
+const HARNESS = 'test/html-fixture-tdd/fixture_harness.odin';
+const FIXTURES = `${ROOT}test/html-fixture-tdd/fixture`;
 
 async function runHarness(): Promise<Map<string, string>> {
     const cmd = new Deno.Command('odin', {
-        args: ['run', 'test/render_harness.odin', '-file', '-out:/tmp/odin-render-harness'],
+        args: ['run', HARNESS, '-file', '-out:/tmp/odin-fixture-harness', FIXTURES],
         cwd: ROOT,
         stdout: 'piped',
         stderr: 'piped',
