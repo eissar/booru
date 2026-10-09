@@ -129,13 +129,18 @@ tasks:
   test:s3:
     desc: Run the AWS SigV4 suite (31 cases) with leak checking
     deps: [hooks:check]
+    # Keeps the test runner's [INFO] banner out of the way; pass
+    # -define:ODIN_TEST_LOG_LEVEL=info with -- when debugging a failure.
     cmds:
-      - odin test src/s3-slop/tests -out:{{.SLOP_S3_TEST_BIN}}
+      - odin test src/s3-slop/tests -out:{{.SLOP_S3_TEST_BIN}} -define:ODIN_TEST_LOG_LEVEL=error {{.CLI_ARGS}}
 
   test:render:
     desc: 'Run the Deno structural HTML fixture tests (pass a name filter with --)'
     deps: [hooks:check]
     dir: test/html-fixture-tdd
+    # deno has no --no-color flag; NO_COLOR is the supported switch.
+    env:
+      NO_COLOR: '1'
     cmds:
       - deno test --allow-run --allow-read --allow-env fixture_harness_test.ts {{.CLI_ARGS}}
 
