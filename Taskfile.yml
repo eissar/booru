@@ -48,12 +48,6 @@ tasks:
     cmds:
       - odin run test/tools -- {{.CLI_ARGS}}
 
-  preview:cases:
-    desc: 'Print the preview''s <<<CASE>>> blocks (harness parity; pass fixtures dir with --)'
-    deps: [hooks:check]
-    cmds:
-      - odin run test/tools -- --cases {{.CLI_ARGS}}
-
   check:
     desc: 'Type-check the project packages (pass extra odin flags with --, e.g. task check -- -error-pos-style:unix)'
     deps: [hooks:check]
