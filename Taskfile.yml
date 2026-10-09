@@ -63,10 +63,12 @@ tasks:
       - odin check src {{.ODIN_FLAGS}}
 
   test:
-    desc: 'Run the project''s Odin tests (pass a package or extra odin flags with --)'
+    desc: 'Run the project''s Odin tests (extra odin flags after --; ODIN_TEST_PKGS=src/cli picks a package)'
     deps: [hooks:check]
+    # Set ODIN_TEST_PKGS to narrow the package set (test:all passes it through).
+    # It cannot come from -- because -- is odin flags, as in
+    # `task test -- -error-pos-style:unix`.
     vars:
-      # Project test packages only; the slop subdirs have their own namespace.
       ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "src"}}'
     cmds:
       - odin test {{.ODIN_TEST_PKGS}} {{.CLI_ARGS}}
