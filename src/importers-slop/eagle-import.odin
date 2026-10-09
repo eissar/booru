@@ -5,9 +5,6 @@ import "core:os"
 import "core:path/filepath"
 import "core:strings"
 
-// filepath.Walk_Proc :: #type proc(info: os.File_Info, in_err: os.Error, user_data: rawptr) -> (err: os.Error, skip_dir: bool)
-
-
 Eagle_Import_Ctx :: struct {
 	root:        string,
 
@@ -19,54 +16,67 @@ Eagle_Import_Ctx :: struct {
 METADATA_WARN_BYTES :: 2 * 1024 * 1024
 
 // Pack_Metadata :: struct {
-// 	id:   string, // cloned: temp allocator dies with the callback
+// 	id:   string, // cloned: the walker's allocator dies with the iteration
 // 	json: []u8,
 // }
 openEaglePack :: proc(packPath: string, ctx: ^Eagle_Import_Ctx) {
-	walkInfoDirs :: proc(
-		info: os.File_Info,
-		in_err: os.Error,
-		eagle_ctx: rawptr,
-	) -> (
-		err: os.Error,
-		skip_dir: bool,
-	) {
-		ctx := cast(^Eagle_Import_Ctx)eagle_ctx
+	walker := filepath.walker_create(packPath)
+	defer filepath.walker_destroy(&walker)
 
-		if !info.is_dir {return nil, false}
-		if !strings.has_suffix(info.name, ".info") {return nil, false}
+	for info in filepath.walker_walk(&walker) {
+		// A failed read_directory yields a zeroed info; report and move on so
+		// one unreadable pack does not abort the batch.
+		if path, err := filepath.walker_error(&walker); err != nil {
+			ctx.read_errors += 1
+			fmt.eprintfln("error: walking %s: %v", path, err)
+			continue
+		}
+
+		if info.type == .Directory {
+			// A pack is <id>.info/; do not descend into anything else.
+			if !strings.has_suffix(info.name, ".info") {
+				filepath.walker_skip_dir(&walker)
+			}
+			continue
+		}
 
 		// known layout: <id>.info/metadata.json
-		meta_path := filepath.join({info.fullpath, "metadata.json"})
-		defer delete(meta_path)
+		if !strings.has_suffix(info.fullpath, ".info/metadata.json") {
+			continue
+		}
 
-		data, ok := os.read_entire_file(meta_path, context.allocator)
-		if !ok {
+		size := info.size
+		if size > METADATA_WARN_BYTES {
+			fmt.printfln("warning: %s is %.2f MiB", info.fullpath, f64(size) / (1024 * 1024))
+		}
+
+		data, read_err := os.read_entire_file(info.fullpath, context.allocator)
+		if read_err != nil {
 			ctx.missing += 1
-			return nil, false
+			continue
 		}
-		defer delete(data)
+		// Frees per iteration; a defer here would pin every metadata file
+		// until the whole walk finished.
+		delete(data)
 
-		if len(data) > METADATA_WARN_BYTES {
-			fmt.printfln("warning: %s is %.2f MiB", meta_path, f64(len(data)) / (1024 * 1024))
-		}
-
-		// id := strings.clone(strings.trim_suffix(info.name, ".info"))
-		// nothing else to do in <id>.info/
-		return nil, true
+		// id := strings.trim_suffix(filepath.base(filepath.dir(info.fullpath)), ".info")
+		// nothing else to do with the metadata yet
 	}
-	err := filepath.walk(packPath, walkInfoDirs, ctx)
-	if err != nil {fmt.print("err:", err)}
-
 }
 
 main :: proc() {
 	pth := "/home/eissar/Memes.library"
 
-	ctx := Eagle_Import_Ctx {
-		root = filepath.join({pth, "/images"}),
+	root, join_err := filepath.join({pth, "images"})
+	if join_err != nil {
+		fmt.eprintfln("error: building library root: %v", join_err)
+		return
 	}
-	defer delete(ctx.root)
+	defer delete(root)
+
+	ctx := Eagle_Import_Ctx {
+		root = root,
+	}
 
 	openEaglePack(ctx.root, &ctx)
 }
