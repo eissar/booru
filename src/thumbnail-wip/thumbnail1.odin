@@ -5,6 +5,8 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:os"
 
+import "../util"
+
 Thumb :: struct {
 	bytes:  []u8, // Complete standalone WebP file; backing memory owned by caller.
 	width:  u32, // Actual thumbnail dimensions, not minus-one encoded values.
@@ -50,10 +52,11 @@ ANMF_CC :: []u8{'A', 'N', 'M', 'F'}
 main :: proc() {
 	// ANMF
 
-	d, ok := os.read_entire_file_from_filename(
+	d, read_err := os.read_entire_file_from_path(
 		"/home/eissar/code/lfs-booru-odin/src/thumbnail/t-metadata.json",
+		context.temp_allocator,
 	)
-	if !ok {fmt.println("couldn't read"); os.exit(1)}
+	if read_err != nil {fmt.println("couldn't read"); os.exit(1)}
 
 	j, err := json.parse(d)
 	if err != nil {fmt.println("couldn't parse"); os.exit(1)}
@@ -66,8 +69,8 @@ main :: proc() {
 			"/home/eissar/code/lfs-booru-odin/src/thumbnail/",
 			obj["thumb"],
 		)
-		d, ok := os.read_entire_file_from_filename(path)
-		if !ok {fmt.println("could not read", path); os.exit(1)}
+		d, read_err := os.read_entire_file_from_path(path, context.temp_allocator)
+		if read_err != nil {fmt.println("could not read", path); os.exit(1)}
 
 		ch := parse_chunk(d[12:])
 
@@ -92,4 +95,28 @@ main :: proc() {
 	}
 
 	newThumbnailAtlas(thumbs[:])
+}
+
+/* returns a MipMap from the thumbnail atlas */
+Vectorized_Thumbnail_MipMap :: proc "contextless" (input: []Thumb, b: []ThumbBitstream) {
+	idx := 0
+	for thumb in input {
+		ch := parse_chunk(thumb.bytes[12:])
+
+		if util.bytes_equal(VP8L_CC, ch.fourcc) {
+			// TODO: use a prebuffered
+			// THUMBNAIL_MISSING / UNSUPPORTED_TYPE
+			// thumbnail
+			idx += 1; continue
+		}
+		if util.bytes_equal(VP8_CC, ch.fourcc) {
+			b[idx] = ThumbBitstream {
+				thumb     = thumb,
+				bitstream = transmute(Bitstream)ch,
+			}
+			idx += 1; continue
+		}
+
+	}
+
 }
