@@ -1,0 +1,26 @@
+#!/bin/sh
+# Formats staged Odin files before each commit so formatting drift cannot be
+# committed. Installed by `task hooks:install`; the source of truth is
+# githooks/, .git/hooks/ is a copy.
+set -e
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.odin$' || true)
+if [ -z "$staged" ]; then
+    exit 0
+fi
+
+odinfmt=${ODINFMT:-$HOME/.local/share/nvim/mason/bin/odinfmt}
+if [ ! -x "$odinfmt" ]; then
+    echo "pre-commit: odinfmt not found at $odinfmt" >&2
+    echo "pre-commit: set ODINFMT or install OLS" >&2
+    exit 1
+fi
+
+# odinfmt takes a single path per invocation and only rewrites with -w.
+printf '%s\n' "$staged" | while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    "$odinfmt" -path:"$f" -w
+done
+
+# Re-stage the formatted files so the commit includes the formatting fixes.
+git add -- $staged

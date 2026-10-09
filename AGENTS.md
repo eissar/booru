@@ -1,3 +1,1 @@
-# Commit workflow
-
-Run `task fmt` before every commit. Review the resulting diff before staging.
+Run `task hooks:install` once per clone; the pre-commit hook formats staged Odin files and re-stages them.
