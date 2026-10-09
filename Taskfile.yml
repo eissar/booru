@@ -134,12 +134,6 @@ tasks:
     cmds:
       - '"$HOME/.local/share/nvim/mason/bin/odinfmt" -path:{{.CLI_ARGS | default "src"}} -w'
 
-  vet:
-    desc: 'Type check and run every suite; run task fmt first'
-    cmds:
-      - task: test:all
-        vars: {ODIN_FLAGS: '{{.CLI_ARGS}}'}
-
   clean:
     desc: Remove build outputs
     cmds:
