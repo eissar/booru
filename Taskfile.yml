@@ -69,7 +69,7 @@ tasks:
     # It cannot come from -- because -- is odin flags, as in
     # `task test -- -error-pos-style:unix`.
     vars:
-      ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "src"}}'
+      ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "test"}}'
     cmds:
       - odin test {{.ODIN_TEST_PKGS}} {{.CLI_ARGS}}
 
