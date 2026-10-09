@@ -83,15 +83,23 @@ tasks:
       - '{{.PREVIEW_BIN}} --cases {{.CLI_ARGS}}'
 
   test:
-    desc: Run all tests (Odin unit tests + HTML fixture tests)
-    deps: [test:odin, test:s3, test:render]
+    desc: 'Run all tests (pass a deno fixture filter with --, e.g. task test -- card)'
+    deps:
+      # -- args are a deno filter, so keep them away from odin check.
+      - task: test:odin
+        vars: {ODIN_FLAGS: '', CLI_ARGS: ''}
+      - test:s3
+      - task: test:render
+        vars: {CLI_ARGS: '{{.CLI_ARGS}}'}
 
   test:odin:
-    desc: Type-check every package
+    desc: 'Type-check every package (pass extra odin flags with --, e.g. task test:odin -- -error-pos-style:unix)'
+    vars:
+      ODIN_FLAGS: '{{.ODIN_FLAGS | default .CLI_ARGS}}'
     cmds:
-      - odin check src
-      - odin check src/importers-slop
-      - odin check src/s3-slop -no-entry-point
+      - odin check src {{.ODIN_FLAGS}}
+      - odin check src/importers-slop {{.ODIN_FLAGS}}
+      - odin check src/s3-slop -no-entry-point {{.ODIN_FLAGS}}
 
   test:s3:
     desc: Run the AWS SigV4 suite (31 cases) with leak checking
@@ -99,21 +107,25 @@ tasks:
       - odin test src/s3-slop/tests -out:{{.SLOP_S3_TEST_BIN}}
 
   test:render:
-    desc: Run the Deno structural HTML fixture tests
+    desc: 'Run the Deno structural HTML fixture tests (pass a name filter with --)'
     dir: test/html-fixture-tdd
     cmds:
-      - deno test --allow-run --allow-read --allow-env fixture_harness_test.ts
+      - deno test --allow-run --allow-read --allow-env fixture_harness_test.ts {{.CLI_ARGS}}
 
   fmt:
-    desc: Format all Odin sources in place
+    desc: 'Format Odin sources in place (pass a path with --, e.g. task fmt -- src/http)'
     cmds:
-      - '"$HOME/.local/share/nvim/mason/bin/odinfmt" -path:src -w'
+      - '"$HOME/.local/share/nvim/mason/bin/odinfmt" -path:{{.CLI_ARGS | default "src"}} -w'
 
   vet:
-    desc: 'Full pre-commit pass: format, type check, tests'
+    desc: 'Type check and run the full test suite; run task fmt first'
     cmds:
-      - task: fmt
-      - task: test
+      - task: test:odin
+        vars: {ODIN_FLAGS: '{{.CLI_ARGS}}'}
+      - task: test:s3
+      # -- args are odin flags, so keep them away from deno test.
+      - task: test:render
+        vars: {CLI_ARGS: ''}
 
   clean:
     desc: Remove build outputs
