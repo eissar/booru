@@ -79,28 +79,7 @@ newWebpExtendedFile :: proc(streams: []Thumb, buf: ^bytes.Buffer) {
 	bytes.buffer_write(buf, []u8{0, 0}) // 2 bytes
 
 	// REGION: Image data. for us this means ANMF
-	for stream in streams {
-		s := stream.bytes[12:]
-
-		bytes.buffer_write(buf, ANMF_CC)
-		frame_size := u32le(16 + len(s))
-		bytes.buffer_write(buf, mem.ptr_to_bytes(&frame_size))
-		//framex
-		bytes.buffer_write(buf, []u8{0, 0, 0}) // 3 bytes
-		//framey
-		bytes.buffer_write(buf, []u8{0, 0, 0}) // 3 bytes
-		//width/height (-1)
-		w := transmute([4]u8)u32le(stream.width - 1)
-		h := transmute([4]u8)u32le(stream.height - 1)
-		bytes.buffer_write(buf, w[:3])
-		bytes.buffer_write(buf, h[:3])
-		// duration in ms
-		bytes.buffer_write(buf, []u8{30, 0, 0}) // 3 bytes
-
-		bytes.buffer_write_byte(buf, transmute(u8)bit_set[ANMF_Flags;u8]{}) // 1 byte
-		bytes.buffer_write(buf, s)
-	}
-
+	Thumbnail_MipMap(streams, buf)
 
 }
 

@@ -1,7 +1,9 @@
 package thumbnail
 
+import "core:bytes"
 import "core:encoding/json"
 import "core:fmt"
+import "core:mem"
 import "core:os"
 
 
@@ -103,23 +105,37 @@ main :: proc() {
 	newThumbnailAtlas(thumbs[:])
 }
 
-/* returns a MipMap from the thumbnail atlas */
-Vectorized_Thumbnail_MipMap :: proc "contextless" (input: []Thumb, b: []Thumb) {
-	idx := 0
-	for thumb in input {
-		ch := parse_chunk(thumb.bytes[12:])
-
-		if ch.fourcc == .VP8L {
-			// TODO: use a prebuffered
-			// THUMBNAIL_MISSING / UNSUPPORTED_TYPE
-			// thumbnail
-			idx += 1; continue
-		}
-		if ch.fourcc == .VP8 {
-			b[idx] = thumb
-			idx += 1; continue
+// TODO: use a prebuffered
+// THUMBNAIL_MISSING / UNSUPPORTED_TYPE
+// thumbnail
+//
+// ANMF
+// Appends ANMF frames; the caller writes the RIFF, VP8X, and ANIM headers.
+Thumbnail_MipMap :: proc(streams: []Thumb, buf: ^bytes.Buffer) {
+	for stream in streams {
+		type := parse_fourcc(buf.buf[:])
+		if type == .VP8L || type == .Unknown {
+			fmt.println("UNSUPPORTED fourcc while generating mipmap")
+			continue
 		}
 
+		s := stream.bytes[12:]
+
+		bytes.buffer_write(buf, ANMF_CC)
+		frame_size := u32le(16 + len(s))
+		bytes.buffer_write(buf, mem.ptr_to_bytes(&frame_size))
+		// frame x/y
+		bytes.buffer_write(buf, []u8{0, 0, 0}) // 3 bytes
+		bytes.buffer_write(buf, []u8{0, 0, 0}) // 3 bytes
+		// width/height (-1)
+		w := transmute([4]u8)u32le(stream.width - 1)
+		h := transmute([4]u8)u32le(stream.height - 1)
+		bytes.buffer_write(buf, w[:3])
+		bytes.buffer_write(buf, h[:3])
+		// duration in ms
+		bytes.buffer_write(buf, []u8{30, 0, 0}) // 3 bytes
+
+		bytes.buffer_write_byte(buf, transmute(u8)bit_set[ANMF_Flags;u8]{})
+		bytes.buffer_write(buf, s)
 	}
-
 }
