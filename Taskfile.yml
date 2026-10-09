@@ -105,19 +105,8 @@ tasks:
     cmds:
       - '{{.PREVIEW_BIN}} --cases {{.CLI_ARGS}}'
 
-  test:
-    desc: 'Run all tests (pass a deno fixture filter with --, e.g. task test -- card)'
-    deps:
-      - hooks:check
-      # -- args are a deno filter, so keep them away from odin check.
-      - task: test:odin
-        vars: {ODIN_FLAGS: '', CLI_ARGS: ''}
-      - test:s3
-      - task: test:render
-        vars: {CLI_ARGS: '{{.CLI_ARGS}}'}
-
-  test:odin:
-    desc: 'Type-check every package (pass extra odin flags with --, e.g. task test:odin -- -error-pos-style:unix)'
+  check:
+    desc: 'Type-check every package (pass extra odin flags with --, e.g. task check -- -error-pos-style:unix)'
     deps: [hooks:check]
     vars:
       ODIN_FLAGS: '{{.ODIN_FLAGS | default .CLI_ARGS}}'
@@ -125,6 +114,16 @@ tasks:
       - odin check src {{.ODIN_FLAGS}}
       - odin check src/importers-slop {{.ODIN_FLAGS}}
       - odin check src/s3-slop -no-entry-point {{.ODIN_FLAGS}}
+
+  test:
+    desc: 'Run the project''s Odin tests (pass a package or extra odin flags with --)'
+    deps: [hooks:check]
+    vars:
+      # Project test packages only; the slop subdirs have their own targets
+      # (test:s3) and are not part of the project's own suite.
+      ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "src"}}'
+    cmds:
+      - odin test {{.ODIN_TEST_PKGS}} {{.CLI_ARGS}}
 
   test:s3:
     desc: Run the AWS SigV4 suite (31 cases) with leak checking
@@ -144,20 +143,29 @@ tasks:
     cmds:
       - deno test --allow-run --allow-read --allow-env fixture_harness_test.ts {{.CLI_ARGS}}
 
+  test:all:
+    desc: 'Run every suite: odin check, odin tests, deno fixtures, and the slop suites'
+    deps:
+      - task: check
+        vars: {ODIN_FLAGS: '{{.ODIN_FLAGS}}'}
+      # -- args are odin flags, so keep them away from the non-odin suites.
+      - task: test
+        vars: {CLI_ARGS: ''}
+      - task: test:render
+        vars: {CLI_ARGS: ''}
+      - task: test:s3
+        vars: {CLI_ARGS: ''}
+
   fmt:
     desc: 'Format Odin sources in place (pass a path with --, e.g. task fmt -- src/http)'
     cmds:
       - '"$HOME/.local/share/nvim/mason/bin/odinfmt" -path:{{.CLI_ARGS | default "src"}} -w'
 
   vet:
-    desc: 'Type check and run the full test suite; run task fmt first'
+    desc: 'Type check and run every suite; run task fmt first'
     cmds:
-      - task: test:odin
+      - task: test:all
         vars: {ODIN_FLAGS: '{{.CLI_ARGS}}'}
-      - task: test:s3
-      # -- args are odin flags, so keep them away from deno test.
-      - task: test:render
-        vars: {CLI_ARGS: ''}
 
   clean:
     desc: Remove build outputs
