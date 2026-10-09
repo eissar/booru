@@ -9,7 +9,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
-import "../src/render"
+import "../../src/render"
 
 Event :: struct {
 	op:            string,
@@ -27,8 +27,8 @@ Event :: struct {
 }
 
 load_images :: proc(path: string) -> []render.Render_Image {
-	data, ok := os.read_entire_file(path)
-	if !ok {
+	data, err := os.read_entire_file(path, context.allocator)
+	if err != nil {
 		fmt.eprintln("cannot read", path)
 		os.exit(1)
 	}
@@ -65,7 +65,7 @@ emit :: proc(name, html: string) {
 }
 
 main :: proc() {
-	dir := os.args[1] if len(os.args) > 1 else "test/fixtures"
+	dir := os.args[1] if len(os.args) > 1 else "test/html-fixture-tdd/fixture"
 	images := load_images(fmt.tprintf("%s/library/events/2026-01.ndjson", dir))
 
 	emit("toast", render.render_toast("Library imported", .Success))

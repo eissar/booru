@@ -7,11 +7,11 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
 
 ## The core discipline
 
-**The fixture is the spec. HTML changes always start in `test/fixtures/*.expected.html`, never in `.odin` code.** Odin's JSX-like ergonomics are poor, so writing markup directly in builder calls is error-prone; editing real HTML first is readable, reviewable, and diffable. This reverses the usual "regenerate fixture from code" trap, which trains agents to paste whatever the code emitted — never do that.
+**The fixture is the spec. HTML changes always start in `test/html-fixture-tdd/fixture/*.expected.html`, never in `.odin` code.** Odin's JSX-like ergonomics are poor, so writing markup directly in builder calls is error-prone; editing real HTML first is readable, reviewable, and diffable. This reverses the usual "regenerate fixture from code" trap, which trains agents to paste whatever the code emitted — never do that.
 
 ## Workflow
 
-1. **Edit the fixture by hand.** Open the relevant `test/fixtures/<case>.expected.html` and write the exact markup you want — structure, attributes, classes, htmx attributes (`hx-get`, `hx-target`, `hx-swap`), ids for `hx-target`/dialogs. Fixtures are one-per-template:
+1. **Edit the fixture by hand.** Open the relevant `test/html-fixture-tdd/fixture/<case>.expected.html` and write the exact markup you want — structure, attributes, classes, htmx attributes (`hx-get`, `hx-target`, `hx-swap`), ids for `hx-target`/dialogs. Fixtures are one-per-template:
    - `item_card` → `src/template/item_card.odin`
    - `photo_grid` → `src/template/photo_grid.odin`
    - `gallery_content` → `src/template/gallery_page.odin` (content proc)
@@ -22,10 +22,12 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
 2. **Run the test to see RED.**
 
    ```
-   deno test -A test/render_test.ts
+   task test:render
    ```
 
-   It runs the Odin harness (`test/render_harness.odin`), captures `<<<CASE name>>>` blocks, and compares structurally against fixtures via Cheerio (tags, attribute sets/values, text — whitespace- and attribute-order-insensitive). Confirm the failing case is the one you edited, failing for the reason you expect.
+   (equivalently `deno test -A test/html-fixture-tdd/fixture_harness_test.ts` from the repo root)
+
+   It runs the Odin harness (`test/html-fixture-tdd/fixture_harness.odin`), captures `<<<CASE name>>>` blocks, and compares structurally against fixtures via Cheerio (tags, attribute sets/values, text — whitespace- and attribute-order-insensitive). Confirm the failing case is the one you edited, failing for the reason you expect.
 
 3. **Update the Odin code to match.** Change only the template file(s) mapped to that fixture. Shared escaping helpers live in `src/template/html.odin` (`write_text`, `write_attr`, `write_attr_bool`, `escape`). Prefer editing the smallest sibling; don't touch other fixtures.
 
@@ -41,4 +43,4 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
 - **Bounded retries.** If a template proc needs more than two revisions to match a fixture, stop and reconsider the fixture or the data model rather than iterating blindly.
 - **Escaping is part of the spec.** Put literal escaped entities (`&amp;`, `&lt;` …) in the fixture where you expect them; use `write_text`/`write_attr` in code so they arise naturally.
 - Run `task fmt` (and the format check) before committing, per AGENTS.md.
-- Adding a brand-new template: create the fixture file first, add a `CASES` entry in `test/render_test.ts`, add the case to `test/render_harness.odin`, then RED → implement → GREEN.
+- Adding a brand-new template: create the fixture file first, add a `CASES` entry in `test/html-fixture-tdd/fixture_harness_test.ts`, add the case to `test/html-fixture-tdd/fixture_harness.odin`, then RED → implement → GREEN.
