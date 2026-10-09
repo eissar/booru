@@ -43,6 +43,13 @@ main :: proc() {
 		os.exit(1)
 	}
 
+	defer net.close(sock)
+	Serve(sock)
+}
+
+// Serve handles requests on an already-listening socket until accept fails.
+// The caller owns the socket and must initialize library_path and library_images.
+Serve :: proc(sock: net.TCP_Socket) {
 	// loop new client conns
 	for conn, src, err := net.accept_tcp(sock); err == nil; conn, src, err = net.accept_tcp(sock) {
 		_ = src
