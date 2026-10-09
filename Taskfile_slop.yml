@@ -1,0 +1,41 @@
+version: '3'
+
+# Included as the `slop` namespace from the root Taskfile, so tasks here are
+# named without a prefix: this file's `test` is `task slop:test`.
+#
+# BIN_DIR and SLOP_S3_TEST_BIN arrive through the include's vars: block; parent
+# vars are not inherited, and declaring them here would shadow the passed
+# values with unresolved self-references.
+
+tasks:
+  build:
+    desc: Build the Eagle library importer (src/importers-slop)
+    deps: [":hooks:check"]
+    sources:
+      - src/importers-slop/**/*.odin
+    generates:
+      - '{{.BIN_DIR}}/eagle-import'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - odin build src/importers-slop -out:{{.BIN_DIR}}/eagle-import
+
+  check:
+    desc: 'Type-check the slop packages (pass extra odin flags with --)'
+    deps: [":hooks:check"]
+    vars:
+      ODIN_FLAGS: '{{.ODIN_FLAGS | default .CLI_ARGS}}'
+    cmds:
+      - odin check src/importers-slop {{.ODIN_FLAGS}}
+      - odin check src/s3-slop -no-entry-point {{.ODIN_FLAGS}}
+
+  test:
+    desc: Run the AWS SigV4 suite (31 cases) with leak checking
+    deps: [":hooks:check"]
+    # Keeps the test runner's [INFO] banner out of the way; pass
+    # -define:ODIN_TEST_LOG_LEVEL=info with -- when debugging a failure.
+    cmds:
+      - odin test src/s3-slop/tests -out:{{.SLOP_S3_TEST_BIN}} -define:ODIN_TEST_LOG_LEVEL=error {{.CLI_ARGS}}
+
+  all:
+    desc: Build, check, and test the slop packages
+    deps: [build, check, test]

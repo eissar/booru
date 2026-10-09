@@ -2,9 +2,15 @@ version: '3'
 
 vars:
   BIN_DIR: '{{.BIN_DIR | default "bin"}}'
-  EAGLE_IMPORT_BIN: '{{.BIN_DIR}}/eagle-import'
   SLOP_S3_TEST_BIN: '/tmp/s3-slop-tests'
   RENDER_HARNESS_BIN: '/tmp/odin-fixture-harness'
+
+includes:
+  slop:
+    taskfile: ./Taskfile_slop.yml
+    vars:
+      BIN_DIR: '{{.BIN_DIR}}'
+      SLOP_S3_TEST_BIN: '{{.SLOP_S3_TEST_BIN}}'
 
 tasks:
   default:
@@ -64,43 +70,6 @@ tasks:
       ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "src"}}'
     cmds:
       - odin test {{.ODIN_TEST_PKGS}} {{.CLI_ARGS}}
-
-  # ---------------------------------------------------------------------------
-  # slop: vendored/subdirectory packages. Deliberately not part of check or
-  # test; run these explicitly via the slop namespace.
-  # ---------------------------------------------------------------------------
-
-  slop:build:
-    desc: Build the Eagle library importer (src/importers-slop)
-    deps: [hooks:check]
-    sources:
-      - src/importers-slop/**/*.odin
-    generates:
-      - '{{.EAGLE_IMPORT_BIN}}'
-    cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - odin build src/importers-slop -out:{{.EAGLE_IMPORT_BIN}}
-
-  slop:check:
-    desc: 'Type-check the slop packages (pass extra odin flags with --)'
-    deps: [hooks:check]
-    vars:
-      ODIN_FLAGS: '{{.ODIN_FLAGS | default .CLI_ARGS}}'
-    cmds:
-      - odin check src/importers-slop {{.ODIN_FLAGS}}
-      - odin check src/s3-slop -no-entry-point {{.ODIN_FLAGS}}
-
-  slop:test:
-    desc: Run the AWS SigV4 suite (31 cases) with leak checking
-    deps: [hooks:check]
-    # Keeps the test runner's [INFO] banner out of the way; pass
-    # -define:ODIN_TEST_LOG_LEVEL=info with -- when debugging a failure.
-    cmds:
-      - odin test src/s3-slop/tests -out:{{.SLOP_S3_TEST_BIN}} -define:ODIN_TEST_LOG_LEVEL=error {{.CLI_ARGS}}
-
-  slop:all:
-    desc: Build, check, and test the slop packages
-    deps: [slop:build, slop:check, slop:test]
 
   test:render:
     desc: 'Run the Deno structural HTML fixture tests (pass a name filter with --)'
