@@ -61,18 +61,17 @@ CASE_TITLES := map[string]string {
 
 // Event mirrors one NDJSON add-event from the fixture shard.
 Event :: struct {
-	op:           string,
-	id:           int,
-	oid:          string,
-	thumbnailOid: string,
-	path:         string,
-	tags:         []string,
-	width:        int,
-	height:       int,
-	name:         string,
-	mtime:        string,
-	addedAt:      string,
-	contentType:  string,
+	op:          string,
+	id:          int,
+	oid:         string,
+	path:        string,
+	tags:        []string,
+	width:       int,
+	height:      int,
+	name:        string,
+	mtime:       string,
+	addedAt:     string,
+	contentType: string,
 }
 
 FIXTURES_DIR :: "test/html-fixture-tdd/fixture"
@@ -92,26 +91,28 @@ load_images :: proc(path: string) -> []render.Render_Image {
 	defer delete(lines)
 
 	for line in lines {
-		if strings.trim_space(line) == "" { continue }
+		if strings.trim_space(line) == "" {continue}
 		ev: Event
 		if err := json.unmarshal(transmute([]u8)line, &ev); err != nil {
 			fmt.eprintln("template_preview: bad event:", err)
 			os.exit(1)
 		}
-		if ev.op != "add" { continue }
-		append(&images, render.Render_Image{
-			id = ev.id,
-			oid = ev.oid,
-			thumbnail_oid = ev.thumbnailOid,
-			path = ev.path,
-			tags = ev.tags,
-			width = ev.width,
-			height = ev.height,
-			name = ev.name,
-			mtime = ev.mtime,
-			added_at = ev.addedAt,
-			content_type = ev.contentType,
-		})
+		if ev.op != "add" {continue}
+		append(
+			&images,
+			render.Render_Image {
+				id = ev.id,
+				oid = ev.oid,
+				path = ev.path,
+				tags = ev.tags,
+				width = ev.width,
+				height = ev.height,
+				name = ev.name,
+				mtime = ev.mtime,
+				added_at = ev.addedAt,
+				content_type = ev.contentType,
+			},
+		)
 	}
 	return images[:]
 }
@@ -141,11 +142,9 @@ render_cases :: proc(images: []render.Render_Image) -> map[string]string {
 
 	cases["toast"] = render.render_toast("Library imported", .Success)
 	cases["item_card"] = render.render_item_card(images[0], -1)
-	cases["photo_grid"] = render.render_card_grid(render.Render_Card_Grid_Input {
-		cards = images[:2],
-		offset = 2,
-		has_more = true,
-	})
+	cases["photo_grid"] = render.render_card_grid(
+		render.Render_Card_Grid_Input{cards = images[:2], offset = 2, has_more = true},
+	)
 	cases["inspector"] = render.render_inspector(images[0])
 
 	filter := fixture_filter()
@@ -168,7 +167,7 @@ render_cases :: proc(images: []render.Render_Image) -> map[string]string {
 emit_cases :: proc(cases: map[string]string) {
 	for name in CASE_NAMES {
 		html, ok := cases[name]
-		if !ok { continue }
+		if !ok {continue}
 		fmt.printf("<<<CASE %s>>>\n%s\n<<<END>>>\n", name, html)
 	}
 }
@@ -213,14 +212,26 @@ rewrite_asset_refs :: proc(html, thumb_url, static_url: string) -> string {
 // the fragment does inside a real page.
 write_fragment_shell :: proc(b: ^strings.Builder, name, fragment, static_url: string) {
 	strings.write_string(b, "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>")
-	strings.write_string(b, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>")
+	strings.write_string(
+		b,
+		"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>",
+	)
 	strings.write_string(b, "<title>")
 	strings.write_string(b, name)
 	strings.write_string(b, "</title>")
-	strings.write_string(b, "<script src=\"https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js\"></script>")
-	strings.write_string(b, "<script src=\"https://cdn.jsdelivr.net/npm/htmx-ext-response-targets@2.0.4\"></script>")
+	strings.write_string(
+		b,
+		"<script src=\"https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js\"></script>",
+	)
+	strings.write_string(
+		b,
+		"<script src=\"https://cdn.jsdelivr.net/npm/htmx-ext-response-targets@2.0.4\"></script>",
+	)
 	strings.write_string(b, "<script src=\"https://cdn.tailwindcss.com\"></script>")
-	strings.write_string(b, "<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap\" rel=\"stylesheet\"/>")
+	strings.write_string(
+		b,
+		"<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap\" rel=\"stylesheet\"/>",
+	)
 	strings.write_string(b, "<link href=\"")
 	strings.write_string(b, static_url)
 	strings.write_string(b, "/gallery.css\" rel=\"stylesheet\"/>")
@@ -241,10 +252,22 @@ write_fragment_shell :: proc(b: ^strings.Builder, name, fragment, static_url: st
 		// injects into #inspector-content. An isolated preview needs the aside
 		// shell around it, plus .inspector-open on the main element, otherwise
 		// `.inspector` collapses to width 0.
-		strings.write_string(b, "<main id=\"gallery-main\" class=\"gallery-main inspector-open\" style=\"display:flex; align-items:stretch; height:100vh;\">")
-		strings.write_string(b, "<aside id=\"inspector\" class=\"inspector shrink-0\"><div class=\"inspector-inner flex h-full flex-col\">")
-		strings.write_string(b, "<header class=\"inspector-header shrink-0\"><div class=\"min-w-0\"><h2 class=\"truncate text-sm font-semibold\">Inspector</h2><p class=\"text-xs text-muted\">Image details</p></div></header>")
-		strings.write_string(b, "<div id=\"inspector-content\" class=\"inspector-body min-h-0 flex-1 overflow-y-auto\">")
+		strings.write_string(
+			b,
+			"<main id=\"gallery-main\" class=\"gallery-main inspector-open\" style=\"display:flex; align-items:stretch; height:100vh;\">",
+		)
+		strings.write_string(
+			b,
+			"<aside id=\"inspector\" class=\"inspector shrink-0\"><div class=\"inspector-inner flex h-full flex-col\">",
+		)
+		strings.write_string(
+			b,
+			"<header class=\"inspector-header shrink-0\"><div class=\"min-w-0\"><h2 class=\"truncate text-sm font-semibold\">Inspector</h2><p class=\"text-xs text-muted\">Image details</p></div></header>",
+		)
+		strings.write_string(
+			b,
+			"<div id=\"inspector-content\" class=\"inspector-body min-h-0 flex-1 overflow-y-auto\">",
+		)
 		strings.write_string(b, fragment)
 		strings.write_string(b, "</div></div></aside></main>")
 
@@ -259,11 +282,14 @@ write_fragment_shell :: proc(b: ^strings.Builder, name, fragment, static_url: st
 
 // build_documents produces one standalone HTML document per case. gallery_page
 // is already a full document, so it is used verbatim; fragments get a shell.
-build_documents :: proc(cases: map[string]string, thumb_url, static_url: string) -> map[string]string {
+build_documents :: proc(
+	cases: map[string]string,
+	thumb_url, static_url: string,
+) -> map[string]string {
 	docs := make(map[string]string)
 	for name in CASE_NAMES {
 		html, ok := cases[name]
-		if !ok { continue }
+		if !ok {continue}
 		rewritten := rewrite_asset_refs(html, thumb_url, static_url)
 		if name == "gallery_page" {
 			docs[name] = rewritten
@@ -281,11 +307,16 @@ json_string :: proc(b: ^strings.Builder, s: string) {
 	strings.write_byte(b, '"')
 	for r in s {
 		switch r {
-		case '"':  strings.write_string(b, "\\\"")
-		case '\\': strings.write_string(b, "\\\\")
-		case '\n': strings.write_string(b, "\\n")
-		case '\r': strings.write_string(b, "\\r")
-		case '\t': strings.write_string(b, "\\t")
+		case '"':
+			strings.write_string(b, "\\\"")
+		case '\\':
+			strings.write_string(b, "\\\\")
+		case '\n':
+			strings.write_string(b, "\\n")
+		case '\r':
+			strings.write_string(b, "\\r")
+		case '\t':
+			strings.write_string(b, "\\t")
 		case '<':
 			// Escape "<" so a rendered fragment can never terminate the host
 			// <script> block early (</script> inside the JSON payload).
@@ -306,8 +337,8 @@ write_docs_json :: proc(b: ^strings.Builder, docs: map[string]string) {
 	first := true
 	for name in CASE_NAMES {
 		doc, ok := docs[name]
-		if !ok { continue }
-		if !first { strings.write_string(b, ",") }
+		if !ok {continue}
+		if !first {strings.write_string(b, ",")}
 		first = false
 		json_string(b, name)
 		strings.write_string(b, ":")
@@ -577,7 +608,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
   var THUMB_URL = __THUMB_URL__;
 
   function thumbSrc(img) {
-    var thumb = img.thumbnailOid && img.thumbnailOid !== "" ? img.thumbnailOid : img.oid;
+    var thumb = img.oid;
     return THUMB_URL + "/" + thumb + ".webp";
   }
 
@@ -1125,7 +1156,7 @@ case_order_json :: proc() -> string {
 	b := strings.builder_make()
 	strings.write_string(&b, "[")
 	for name, i in CASE_NAMES {
-		if i > 0 { strings.write_string(&b, ",") }
+		if i > 0 {strings.write_string(&b, ",")}
 		json_string(&b, name)
 	}
 	strings.write_string(&b, "]")
@@ -1137,7 +1168,7 @@ case_titles_json :: proc() -> string {
 	b := strings.builder_make()
 	strings.write_string(&b, "{")
 	for name, i in CASE_NAMES {
-		if i > 0 { strings.write_string(&b, ",") }
+		if i > 0 {strings.write_string(&b, ",")}
 		json_string(&b, name)
 		strings.write_string(&b, ":")
 		json_string(&b, CASE_TITLES[name])
@@ -1151,18 +1182,16 @@ images_json :: proc(images: []render.Render_Image) -> string {
 	b := strings.builder_make()
 	strings.write_string(&b, "[")
 	for img, i in images {
-		if i > 0 { strings.write_string(&b, ",") }
+		if i > 0 {strings.write_string(&b, ",")}
 		strings.write_string(&b, "{")
 		fmt.sbprintf(&b, "\"id\":%d,", img.id)
 		strings.write_string(&b, "\"oid\":")
 		json_string(&b, img.oid)
-		strings.write_string(&b, ",\"thumbnailOid\":")
-		json_string(&b, img.thumbnail_oid)
 		strings.write_string(&b, ",\"path\":")
 		json_string(&b, img.path)
 		strings.write_string(&b, ",\"tags\":[")
 		for tag, j in img.tags {
-			if j > 0 { strings.write_string(&b, ",") }
+			if j > 0 {strings.write_string(&b, ",")}
 			json_string(&b, tag)
 		}
 		strings.write_string(&b, "],")
@@ -1182,7 +1211,11 @@ images_json :: proc(images: []render.Render_Image) -> string {
 }
 
 // build_preview_page assembles the full previewer document.
-build_preview_page :: proc(cases: map[string]string, images: []render.Render_Image, thumb_url, static_url: string) -> string {
+build_preview_page :: proc(
+	cases: map[string]string,
+	images: []render.Render_Image,
+	thumb_url, static_url: string,
+) -> string {
 	docs := build_documents(cases, thumb_url, static_url)
 
 	b := strings.builder_make()
@@ -1208,23 +1241,32 @@ build_preview_page :: proc(cases: map[string]string, images: []render.Render_Ima
 // Server is the state a request handler needs: the assembled page and the
 // directory served for thumbnails.
 Server :: struct {
-	page:      string,
-	fixtures:  string, // repository-relative fixtures dir
-	static:    string, // repository-relative static dir
+	page:     string,
+	fixtures: string, // repository-relative fixtures dir
+	static:   string, // repository-relative static dir
 }
 
 // content_type_for guesses a Content-Type from a file extension.
 content_type_for :: proc(path: string) -> string {
 	switch {
-	case strings.has_suffix(path, ".css"):   return "text/css; charset=utf-8"
-	case strings.has_suffix(path, ".js"):    return "text/javascript; charset=utf-8"
-	case strings.has_suffix(path, ".html"):  return "text/html; charset=utf-8"
-	case strings.has_suffix(path, ".webp"):  return "image/webp"
-	case strings.has_suffix(path, ".png"):   return "image/png"
-	case strings.has_suffix(path, ".jpg"), strings.has_suffix(path, ".jpeg"): return "image/jpeg"
-	case strings.has_suffix(path, ".gif"):   return "image/gif"
-	case strings.has_suffix(path, ".svg"):   return "image/svg+xml"
-	case strings.has_suffix(path, ".json"):  return "application/json"
+	case strings.has_suffix(path, ".css"):
+		return "text/css; charset=utf-8"
+	case strings.has_suffix(path, ".js"):
+		return "text/javascript; charset=utf-8"
+	case strings.has_suffix(path, ".html"):
+		return "text/html; charset=utf-8"
+	case strings.has_suffix(path, ".webp"):
+		return "image/webp"
+	case strings.has_suffix(path, ".png"):
+		return "image/png"
+	case strings.has_suffix(path, ".jpg"), strings.has_suffix(path, ".jpeg"):
+		return "image/jpeg"
+	case strings.has_suffix(path, ".gif"):
+		return "image/gif"
+	case strings.has_suffix(path, ".svg"):
+		return "image/svg+xml"
+	case strings.has_suffix(path, ".json"):
+		return "application/json"
 	}
 	return "application/octet-stream"
 }
@@ -1233,7 +1275,10 @@ content_type_for :: proc(path: string) -> string {
 send_bytes :: proc(conn: net.TCP_Socket, status: string, ctype: string, body: []u8, extra := "") {
 	head := fmt.tprintf(
 		"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%sConnection: close\r\n\r\n",
-		status, ctype, len(body), extra,
+		status,
+		ctype,
+		len(body),
+		extra,
 	)
 	net.send_tcp(conn, transmute([]u8)head)
 	if len(body) > 0 {
@@ -1249,7 +1294,12 @@ send_text :: proc(conn: net.TCP_Socket, status: string, ctype: string, body: str
 serve_file :: proc(conn: net.TCP_Socket, path: string) {
 	data, err := os.read_entire_file(path, context.allocator)
 	if err != nil {
-		send_text(conn, "404 Not Found", "text/plain; charset=utf-8", fmt.tprintf("not found: %s\n", path))
+		send_text(
+			conn,
+			"404 Not Found",
+			"text/plain; charset=utf-8",
+			fmt.tprintf("not found: %s\n", path),
+		)
 		return
 	}
 	send_bytes(conn, "200 OK", content_type_for(path), data)
@@ -1267,7 +1317,7 @@ handle_conn :: proc(srv: Server, conn: net.TCP_Socket) {
 
 	// First line: METHOD SP TARGET SP VERSION
 	line_end := strings.index(string(buf[:n]), "\r\n")
-	if line_end < 0 { line_end = n }
+	if line_end < 0 {line_end = n}
 	parts := strings.split(string(buf[:line_end]), " ")
 	defer delete(parts)
 	if len(parts) < 2 {
@@ -1350,7 +1400,9 @@ usage :: proc() {
 	fmt.eprintln("usage: template_preview [--serve|--cases] [fixtures_dir] [port]")
 	fmt.eprintln("")
 	fmt.eprintln("  --serve   serve the preview over HTTP (default)")
-	fmt.eprintln("  --cases   print <<<CASE>>> blocks, matching test/html-fixture-tdd/fixture_harness.odin")
+	fmt.eprintln(
+		"  --cases   print <<<CASE>>> blocks, matching test/html-fixture-tdd/fixture_harness.odin",
+	)
 	fmt.eprintln("  --check   alias for --cases")
 	fmt.eprintln("")
 	fmt.eprintln("Nothing is written to disk in either mode.")
@@ -1364,15 +1416,17 @@ main :: proc() {
 	port := DEFAULT_PORT
 
 	for arg, i in os.args {
-		if i == 0 { continue }
+		if i == 0 {continue}
 		switch arg {
-		case "--cases", "--check": mode = "--cases"
-		case "--serve": mode = "--serve"
+		case "--cases", "--check":
+			mode = "--cases"
+		case "--serve":
+			mode = "--serve"
 		case "--help", "-h":
 			usage()
 			return
 		case:
-			if len(arg) > 0 && arg[0] == '-' { continue }
+			if len(arg) > 0 && arg[0] == '-' {continue}
 			// A bare numeric argument is the port; anything else is the
 			// fixtures directory.
 			if p, ok := parse_int(arg); ok {
@@ -1397,10 +1451,10 @@ main :: proc() {
 
 // parse_int parses a non-negative decimal integer.
 parse_int :: proc(s: string) -> (int, bool) {
-	if s == "" { return 0, false }
+	if s == "" {return 0, false}
 	value := 0
 	for r in s {
-		if r < '0' || r > '9' { return 0, false }
+		if r < '0' || r > '9' {return 0, false}
 		value = value * 10 + int(r - '0')
 	}
 	return value, true

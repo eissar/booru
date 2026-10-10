@@ -46,7 +46,7 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 render_item_card :: proc(image: Image, render_order: int) -> string {
 	b := strings.builder_make()
 
-	thumb_src := image.thumbnail_oid != "" ? image.thumbnail_oid : image.oid
+	thumb_src := image.oid
 
 	wr(&b, "<article class=\"masonry-item group\"")
 	ia(&b, "data-image-id", image.id)

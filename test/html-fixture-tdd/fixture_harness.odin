@@ -12,18 +12,17 @@ import "core:strings"
 import "../../src/render"
 
 Event :: struct {
-	op:            string,
-	id:            int,
-	oid:           string,
-	thumbnailOid:  string,
-	path:          string,
-	tags:          []string,
-	width:         int,
-	height:        int,
-	name:          string,
-	mtime:         string,
-	addedAt:       string,
-	contentType:   string,
+	op:          string,
+	id:          int,
+	oid:         string,
+	path:        string,
+	tags:        []string,
+	width:       int,
+	height:      int,
+	name:        string,
+	mtime:       string,
+	addedAt:     string,
+	contentType: string,
 }
 
 load_images :: proc(path: string) -> []render.Render_Image {
@@ -36,26 +35,28 @@ load_images :: proc(path: string) -> []render.Render_Image {
 	lines := strings.split(string(data), "\n")
 	defer delete(lines)
 	for line in lines {
-		if strings.trim_space(line) == "" { continue }
+		if strings.trim_space(line) == "" {continue}
 		ev: Event
 		if err := json.unmarshal(transmute([]u8)line, &ev); err != nil {
 			fmt.eprintln("bad event:", err)
 			os.exit(1)
 		}
-		if ev.op != "add" { continue }
-		append(&images, render.Render_Image{
-			id = ev.id,
-			oid = ev.oid,
-			thumbnail_oid = ev.thumbnailOid,
-			path = ev.path,
-			tags = ev.tags,
-			width = ev.width,
-			height = ev.height,
-			name = ev.name,
-			mtime = ev.mtime,
-			added_at = ev.addedAt,
-			content_type = ev.contentType,
-		})
+		if ev.op != "add" {continue}
+		append(
+			&images,
+			render.Render_Image {
+				id = ev.id,
+				oid = ev.oid,
+				path = ev.path,
+				tags = ev.tags,
+				width = ev.width,
+				height = ev.height,
+				name = ev.name,
+				mtime = ev.mtime,
+				added_at = ev.addedAt,
+				content_type = ev.contentType,
+			},
+		)
 	}
 	return images[:]
 }
@@ -66,14 +67,14 @@ emit :: proc(name, html: string) {
 
 main :: proc() {
 	dir := os.args[1] if len(os.args) > 1 else "test/html-fixture-tdd/fixture"
-	images := load_images(fmt.tprintf("%s/library/events/2026-01.ndjson", dir))
+	images := load_images("test/fixture/library/events/2026-01.ndjson")
 
 	emit("toast", render.render_toast("Library imported", .Success))
 	emit("item_card", render.render_item_card(images[0], -1))
 	emit("photo_grid", render.render_card_grid({cards = images[:2], offset = 2, has_more = true}))
 	emit("inspector", render.render_inspector(images[0]))
 
-	filter := render.Gallery_Filter{
+	filter := render.Gallery_Filter {
 		limit        = 2,
 		sort         = "addedAtAsc",
 		offset       = 2,
@@ -81,5 +82,14 @@ main :: proc() {
 		fragment_url = "/fragment/gallery-content?limit=2&offset=0",
 	}
 	emit("gallery_content", render.render_gallery_content(filter, images[:2], true))
-	emit("gallery_page", render.render_gallery_page("Synthetic library", render.Renderer_Version, filter, images[:2], true))
+	emit(
+		"gallery_page",
+		render.render_gallery_page(
+			"Synthetic library",
+			render.Renderer_Version,
+			filter,
+			images[:2],
+			true,
+		),
+	)
 }

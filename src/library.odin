@@ -11,18 +11,17 @@ import "core:strings"
 import "template"
 
 Event :: struct {
-	op:           string,
-	id:           int,
-	oid:          string,
-	thumbnailOid: string,
-	path:         string,
-	tags:         []string,
-	width:        int,
-	height:       int,
-	name:         string,
-	mtime:        string,
-	addedAt:      string,
-	contentType:  string,
+	op:          string,
+	id:          int,
+	oid:         string,
+	path:        string,
+	tags:        []string,
+	width:       int,
+	height:      int,
+	name:        string,
+	mtime:       string,
+	addedAt:     string,
+	contentType: string,
 }
 
 load_library :: proc(root: string) -> []template.Image {
@@ -75,7 +74,6 @@ load_ndjson :: proc(images: ^[dynamic]template.Image, data: string, src: string)
 			template.Image {
 				id = ev.id,
 				oid = ev.oid,
-				thumbnail_oid = ev.thumbnailOid,
 				path = ev.path,
 				tags = ev.tags,
 				width = ev.width,

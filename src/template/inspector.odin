@@ -22,11 +22,7 @@ render_inspector :: proc(image: Image) -> string {
 	wr(&b, "<section class=\"space-y-4\"><input type=\"hidden\" name=\"id\"")
 	attr(&b, "value", id)
 	wr(&b, "/><img")
-	attr(
-		&b,
-		"src",
-		fmt.tprintf("/image/%s", image.thumbnail_oid != "" ? image.thumbnail_oid : image.oid),
-	)
+	attr(&b, "src", fmt.tprintf("/image/%s", image.oid))
 	attr(&b, "alt", image.name)
 	wr(
 		&b,
