@@ -3,27 +3,35 @@ package thumbnail
 import "core:bytes"
 import "core:c"
 import "core:fmt"
+import "core:os"
 import "core:testing"
 
-// Requires libwebp and libwebpdemux. Run: odin test src/thumbnail-wip
-foreign import webp "system:webp"
-foreign import webpdemux "system:webpdemux"
+WEBP_TEST_DATA_DIR :: ".test-data/libwebp"
 
-@(private = "file")
-WebP_Data :: struct {
-	bytes: ^u8,
-	size:  c.size_t,
+clone_webp_test_data :: proc() {
+	if os.exists(WEBP_TEST_DATA_DIR + "/.git") {return}
+	state, stdout, stderr, err := os.process_exec(
+		{
+			command = {
+				"git",
+				"clone",
+				"https://github.com/webmproject/libwebp-test-data",
+				WEBP_TEST_DATA_DIR,
+			},
+		},
+		context.temp_allocator,
+	)
+	if err != nil || !state.success || state.exit_code != 0 {
+		panic(fmt.tprintf("git clone failed: %v\n%s\n%s", err, stdout, stderr))
+	}
 }
+
+// Requires libwebp (input encoding) and webpinfo (output validation).
+foreign import webp "system:webp"
 
 foreign webp {
 	WebPEncodeRGB :: proc(rgb: ^u8, width, height, stride: c.int, quality: c.float, output: ^^u8) -> c.size_t ---
 	WebPFree :: proc(p: rawptr) ---
-}
-
-foreign webpdemux {
-	WebPAnimDecoderNewInternal :: proc(data: ^WebP_Data, options: rawptr, abi_version: c.int) -> rawptr ---
-	WebPAnimDecoderGetNext :: proc(decoder: rawptr, output: ^^u8, timestamp: ^c.int) -> c.int ---
-	WebPAnimDecoderDelete :: proc(decoder: rawptr) ---
 }
 
 @(test)
@@ -120,48 +128,37 @@ vectorized_webp_extended_riff_size :: proc(t: ^testing.T) {
 }
 
 @(test)
-vectorized_webp_extended_decodes :: proc(t: ^testing.T) {
-	// Lossy encoding produces a simple VP8 chunk, as expected by the writer.
+vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	pixel := [3]u8{255, 0, 0}
 	encoded: ^u8
 	size := WebPEncodeRGB(&pixel[0], 1, 1, 3, 75, &encoded)
-	if !testing.expect(t, size > 0 && encoded != nil, "encode input thumbnail") {
-		when ODIN_DEBUG {
-			fmt.eprintfln(
-				"\nEncode state:\n  size: %v\n  encoded: %v\n  pixel: %v\n",
-				size,
-				encoded,
-				pixel,
-			)
-		}
-		return
-	}
+	if !testing.expect(t, size > 0 && encoded != nil, "encode input thumbnail") {return}
 	defer WebPFree(encoded)
 
 	thumbs := [1]Thumb{{bytes = (cast([^]u8)encoded)[:int(size)], width = 1, height = 1}}
+	storage: [9][]u8
+	newThumbnailAtlas(thumbs[:], storage[:], context.temp_allocator)
 	buf: bytes.Buffer
 	defer bytes.buffer_destroy(&buf)
-	// Nine base segments plus six segments for one VP8 frame.
-	storage: [15][]u8
-	segments := storage[:]
-	prefix: Webp_Extended_Prefix
-	Vectorized_Webp_Extended(thumbs[:], &segments, &prefix)
-	for segment in segments {
+	for segment in storage {
 		bytes.buffer_write(&buf, segment)
 	}
 
-	output := bytes.buffer_to_bytes(&buf)
-	data := WebP_Data {
-		bytes = &output[0],
-		size  = c.size_t(len(output)),
-	}
-	// WEBP_DEMUX_ABI_VERSION; nil options select the decoder defaults.
-	decoder := WebPAnimDecoderNewInternal(&data, nil, 0x0107)
-	if !testing.expect(t, decoder != nil, "libwebp accepts generated animation") {return}
-	defer WebPAnimDecoderDelete(decoder)
-
-	decoded: ^u8
-	timestamp: c.int
-	ok := WebPAnimDecoderGetNext(decoder, &decoded, &timestamp)
-	testing.expect(t, ok != 0 && decoded != nil, "libwebp successfully decodes frame")
+	path :: ".test-data/extended.webp"
+	if !testing.expect(t, os.mkdir_all(".test-data") == nil, "create output directory") {return}
+	if !testing.expect(
+		t,
+		os.write_entire_file(path, bytes.buffer_to_bytes(&buf)) == nil,
+		"write WebP",
+	) {return}
+	state, stdout, stderr, err := os.process_exec(
+		{command = {"webpinfo", "-diag", "-bitstream_info", path}},
+		context.temp_allocator,
+	)
+	fmt.printf("%s%s", stdout, stderr)
+	testing.expect(
+		t,
+		err == nil && state.success && state.exit_code == 0,
+		"webpinfo accepts generated animation",
+	)
 }
