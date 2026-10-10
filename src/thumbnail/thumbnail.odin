@@ -2,7 +2,6 @@ package thumbnail
 
 import "base:runtime"
 import "core:bytes"
-import "core:encoding/endian"
 import "core:encoding/json"
 import "core:fmt"
 import "core:mem"
@@ -11,8 +10,8 @@ import "core:os"
 
 Thumb :: struct {
 	bytes:  []u8, // Complete standalone WebP file; backing memory owned by caller.
-	width:  u32, // Actual thumbnail dimensions, not minus-one encoded values.
-	height: u32,
+	width:  u16le, // Actual thumbnail dimensions, not minus-one encoded values.
+	height: u16le,
 }
 
 // attempt to implement
@@ -158,18 +157,13 @@ Thumbnail_MipMap :: proc(streams: []Thumb, vec: [][]u8, alloc: runtime.Allocator
 
 	dims := new([2][]u8, alloc)
 
-	{ 	// this is overly complex...
-		b := chunks[0].payload
-		width, _ := endian.get_u16(b[6:8], .Little)
-		height, _ := endian.get_u16(b[8:10], .Little)
-		w := transmute([4]u8)u32le((width & U14_MASK) - 1)
-		h := transmute([4]u8)u32le((height & U14_MASK) - 1)
-		dims[0] = make([]u8, 3, alloc)
-		dims[1] = make([]u8, 3, alloc)
-		copy(dims[0], w[:3])
-		copy(dims[1], h[:3])
+	t := streams[0]
+	sizes := [2]u32{u32(t.width), u32(t.height)}
+	for i in 0 ..< 2 {
+		encoded := transmute([4]u8)u32le(sizes[i] - 1)
+		dims[i] = make([]u8, 3, alloc)
+		copy(dims[i], encoded[:3])
 	}
-
 
 	vec := vec
 	Vectorized_Webp_Extended(chunks[:], &vec, prefix, dims)
