@@ -95,10 +95,10 @@ tasks:
         vars: {CLI_ARGS: ''}
 
   test:thumbnail:
-    desc: 'test src/thumbnail-wip'
+    desc: 'test src/thumbnail'
     deps: [hooks:check]
     cmds:
-      - odin test src/thumbnail-wip/ -debug
+      - odin test src/thumbnail/ -debug
 
 
   fmt:
