@@ -8,7 +8,7 @@ Opts :: struct {
 	/* default 8080 */
 	port:    int `usage:"Port to bind."`,
 
-	/* default test/html-fixture-tdd/fixture/library */
+	/* default test/fixture/library */
 	library: string `usage:"Path to the library root (contains events/ and images/)."`,
 
 	// pack: string
@@ -44,7 +44,7 @@ check_valid_port :: proc(
 getFlags :: proc() -> Opts {
 	opts: Opts = {
 		port    = 8080,
-		library = "test/html-fixture-tdd/fixture/library",
+		library = "test/fixture/library",
 	}
 	flags.register_flag_checker(check_valid_port)
 	flags.parse_or_exit(&opts, os.args)

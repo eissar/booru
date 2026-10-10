@@ -19,7 +19,7 @@ server_get_gallery :: proc(t: ^testing.T) {
 		server.library_path = previous_path
 		server.library_images = previous_images
 	}
-	server.library_path = "test/html-fixture-tdd/fixture/library"
+	server.library_path = "test/fixture/library"
 	server.library_images = nil
 
 	sock, err := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
