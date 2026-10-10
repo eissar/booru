@@ -52,3 +52,14 @@ local function task_test_picker()
 end
 
 vim.keymap.set('n', '<leader>T', task_test_picker, { desc = 'Run tests' })
+
+vim.api.nvim_create_user_command('Debug', function(opts)
+    require('dap').run({
+        name = 'Debug executable',
+        type = 'lldb',
+        request = 'launch',
+        program = vim.fn.fnamemodify(vim.fn.expand(opts.args), ':p'),
+        cwd = vim.fn.getcwd(),
+        stopOnEntry = false,
+    })
+end, { nargs = 1, complete = 'file', force = true })
