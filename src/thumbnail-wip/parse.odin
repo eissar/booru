@@ -24,13 +24,13 @@ parse_fourcc :: proc "contextless" (b: []u8) -> FourCC {
 	return .Unknown
 }
 
-parse_chunk :: proc "contextless" (b: []u8) -> (chunk: Chunk) {
-	chunk.fourcc = parse_fourcc(b)
+// accepts a riff chunk without the prelude
+parse_chunk :: proc "contextless" (b: []u8, v: ^Chunk) {
+	v.fourcc = parse_fourcc(b)
 	sz, ok := endian.get_u32(b[4:8], .Little)
 	// if !ok { /* buffer too short */}
-	chunk.size = sz
+	v.size = sz
 	// If Chunk Size is odd, a single padding byte -- which MUST be 0 to conform with RIFF [RIFF-spec] -- is added.
 	// we add %2 so we don't have to pad later
-	chunk.payload = b[8:sz + (sz % 2)]
-	return chunk
+	v.payload = b[8:]
 }

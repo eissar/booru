@@ -46,6 +46,8 @@ RIFF_X_SIZE :: 12 + 18 + 14
 
 @(private = "file")
 vec_push :: proc "contextless" (vec: [][]u8, idx: ^int, data: []u8) {
+	context = runtime.default_context()
+	fmt.printf("vec_push: index=%d length=%d\n", idx^, len(data))
 	vec[idx^] = data
 	idx^ += 1
 }
@@ -63,32 +65,27 @@ compute_extended_riff_size :: proc "contextless" (
 // v may be of fixed size. semantically , v=vectorized
 // for use with writev later
 Vectorized_Webp_Extended :: proc "contextless" (
-	streams: []Thumb,
+	streams: []Chunk,
 	v: ^[][]u8,
 	p: ^Webp_Extended_Prefix,
 ) {
 	vec_idx := 0
 
-	context = runtime.default_context()
-
 	vec_push(v[:], &vec_idx, p.WEBP[:])
 	vec_push(v[:], &vec_idx, p.VP8X[:])
 	vec_push(v[:], &vec_idx, p.ANIM[:])
 
-
-	for thumb in streams {
-		// we refer to bitstream as the
+	for &chunk in streams {
+		// bitstream means
 		// vp8 without the prelude
-		bs := thumb.bytes[12:]
 
-		ch := parse_chunk(bs)
-		if ch.fourcc == .VP8L {continue}
-		if ch.fourcc != .VP8 {continue}
+		if chunk.fourcc == .VP8L {continue}
+		if chunk.fourcc != .VP8 {continue}
 
 		// these are ANMF - animation frames
 		// in our project 1 frame=1 thumb
-		vec_push(v[:], &vec_idx, ANMF_CC)
-		vec_push(v[:], &vec_idx, mem.any_to_bytes(&ch.size))
+		vec_push(v[:], &vec_idx, ANMF_CC[:])
+		vec_push(v[:], &vec_idx, mem.any_to_bytes(chunk.size))
 
 		// frame x(u24)/y(u24) (6 byte)
 		vec_push(v[:], &vec_idx, []u8{0, 0, 0, 0, 0, 0})
@@ -114,7 +111,9 @@ Vectorized_Webp_Extended :: proc "contextless" (
 			),
 		)
 
-		vec_push(v[:], &vec_idx, bs)
+		vec_push(v[:], &vec_idx, VP8_CC[:])
+		vec_push(v[:], &vec_idx, mem.any_to_bytes(chunk.size))
+		vec_push(v[:], &vec_idx, chunk.payload)
 	}
 }
 
@@ -137,13 +136,13 @@ newThumbnailAtlas :: proc(streams: []Thumb, vec: [][]u8, alloc: runtime.Allocato
 	// WEBP
 	riff_size := compute_extended_riff_size(RIFF_X_SIZE, len(streams), length_of_thumbs)
 
-	copy(prefix.WEBP[0:4], RIFF_CC)
+	copy(prefix.WEBP[0:4], RIFF_CC[:])
 	copy(prefix.WEBP[4:8], mem.slice_to_bytes([]u32le{riff_size})) // The size of the file in bytes, starting at offset 8.
-	copy(prefix.WEBP[8:12], WEBP_CC)
+	copy(prefix.WEBP[8:12], WEBP_CC[:])
 
 	// VP8X
 	webp_byte := transmute(u8)bit_set[WEBP_Flags;u8]{.Animated, .Alpha}
-	copy(prefix.VP8X[0:4], VP8X_CC)
+	copy(prefix.VP8X[0:4], VP8X_CC[:])
 	copy(prefix.VP8X[4:8], mem.slice_to_bytes([]u32le{10}))
 	// webp_byte: 1
 	//  0, 0, 0 : 3 reserved
@@ -155,13 +154,24 @@ newThumbnailAtlas :: proc(streams: []Thumb, vec: [][]u8, alloc: runtime.Allocato
 
 	// REGION: ANIM chunk 8 (header) + 6
 	anim_size_bytes := transmute([4]byte)u32le(6)
-	copy(prefix.ANIM[0:4], ANIM_CC)
+	copy(prefix.ANIM[0:4], ANIM_CC[:])
 	copy(prefix.ANIM[4:8], anim_size_bytes[:])
 	// 0, 0, 0, 0: bg color 32 bits
 	// 0, 0      : loop count 16 bits
 	copy(prefix.ANIM[8:14], mem.slice_to_bytes([]u8{0, 0, 0, 0, 0, 0}))
 	// ENDREGION: ANIM
 
+	// chunks: [dynamic]Chunk
+	chunks := make([dynamic]Chunk, alloc)
+	resize(&chunks, len(streams))
+
+	chunk_idx := 0
+	for s in streams {
+		c := &chunks[chunk_idx]
+		parse_chunk(s.bytes[12:], c)
+		chunk_idx += 1
+	}
+
 	vec := vec
-	Vectorized_Webp_Extended(streams, &vec, prefix)
+	Vectorized_Webp_Extended(chunks[:], &vec, prefix)
 }

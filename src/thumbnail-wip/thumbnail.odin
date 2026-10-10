@@ -51,13 +51,13 @@ ANMF_Flags :: enum u8 {
 	_               = 6,
 	_               = 7,
 }
-RIFF_CC :: []u8{'R', 'I', 'F', 'F'}
-WEBP_CC :: []u8{'W', 'E', 'B', 'P'}
-VP8_CC :: []u8{'V', 'P', '8', ' '}
-VP8X_CC :: []u8{'V', 'P', '8', 'X'}
-VP8L_CC :: []u8{'V', 'P', '8', 'L'}
-ANIM_CC :: []u8{'A', 'N', 'I', 'M'}
-ANMF_CC :: []u8{'A', 'N', 'M', 'F'}
+RIFF_CC := [4]u8{'R', 'I', 'F', 'F'}
+WEBP_CC := [4]u8{'W', 'E', 'B', 'P'}
+VP8_CC := [4]u8{'V', 'P', '8', ' '}
+VP8X_CC := [4]u8{'V', 'P', '8', 'X'}
+VP8L_CC := [4]u8{'V', 'P', '8', 'L'}
+ANIM_CC := [4]u8{'A', 'N', 'I', 'M'}
+ANMF_CC := [4]u8{'A', 'N', 'M', 'F'}
 
 
 main :: proc() {
@@ -72,7 +72,8 @@ main :: proc() {
 	j, err := json.parse(d)
 	if err != nil {fmt.println("couldn't parse"); os.exit(1)}
 
-	thumbs: [dynamic]Thumb
+	chunks: [dynamic]Chunk
+	// thumbs: [dynamic]Thumb
 	for item in j.(json.Array) {
 		obj := item.(json.Object)
 		path := fmt.aprintf(
@@ -83,26 +84,20 @@ main :: proc() {
 		d, read_err := os.read_entire_file_from_path(path, context.temp_allocator)
 		if read_err != nil {fmt.println("could not read", path); os.exit(1)}
 
-		ch := parse_chunk(d[12:])
+		chunk: Chunk
+		parse_chunk(d[12:], &chunk)
 
-		if ch.fourcc == .VP8L {
+		if chunk.fourcc == .VP8L {
 			fmt.println("Unimplemented error: vp8L")
 			os.exit(1)
 		}
-		if ch.fourcc == .VP8 {
-			append_elem(
-				&thumbs,
-				Thumb {
-					bytes = d,
-					width = u32(obj["thumbWidth"].(json.Float)),
-					height = u32(obj["thumbHeight"].(json.Float)),
-				},
-			)
+		if chunk.fourcc == .VP8 {
+			append_elem(&chunks, chunk)
 			continue
 		}
 	}
 
-	newThumbnailAtlas(thumbs[:])
+	// newThumbnailAtlas(thumbs[:])
 }
 
 // TODO: use a prebuffered
@@ -121,7 +116,7 @@ Thumbnail_MipMap :: proc(streams: []Thumb, buf: ^bytes.Buffer) {
 
 		s := stream.bytes[12:]
 
-		bytes.buffer_write(buf, ANMF_CC)
+		bytes.buffer_write(buf, ANMF_CC[:])
 		frame_size := u32le(16 + len(s))
 		bytes.buffer_write(buf, mem.ptr_to_bytes(&frame_size))
 		// frame x/y

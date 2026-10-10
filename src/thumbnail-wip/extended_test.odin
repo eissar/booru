@@ -108,7 +108,7 @@ vectorized_webp_extended_riff_size :: proc(t: ^testing.T) {
 		0,
 	}
 	thumbs := [1]Thumb{{bytes = sample, width = 1, height = 1}}
-	storage: [9][]u8
+	storage: [11][]u8
 	vec := storage[:]
 	newThumbnailAtlas(thumbs[:], storage[:], context.temp_allocator)
 
@@ -136,7 +136,7 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	defer WebPFree(encoded)
 
 	thumbs := [1]Thumb{{bytes = (cast([^]u8)encoded)[:int(size)], width = 1, height = 1}}
-	storage: [9][]u8
+	storage: [11][]u8
 	newThumbnailAtlas(thumbs[:], storage[:], context.temp_allocator)
 	buf: bytes.Buffer
 	defer bytes.buffer_destroy(&buf)
@@ -145,7 +145,11 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	}
 
 	path :: ".test-data/extended.webp"
-	if !testing.expect(t, os.mkdir_all(".test-data") == nil, "create output directory") {return}
+	// mkdir_all reports Exist when the directory is already there, which is the
+	// normal case on a second run.
+	if err := os.mkdir_all(".test-data"); err != nil && err != os.General_Error.Exist {
+		if !testing.expect(t, false, "create output directory") {return}
+	}
 	if !testing.expect(
 		t,
 		os.write_entire_file(path, bytes.buffer_to_bytes(&buf)) == nil,
