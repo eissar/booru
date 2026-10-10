@@ -3,7 +3,7 @@ package thumbnail
 import "core:encoding/endian"
 
 // vp8 stores dims as u14
-U14_MASK: u16 = (1 << 14) - 1 // 0011 1111 1111 1111 ; 0x3fff
+U14_MASK: u32le = (1 << 14) - 1 // 0011 1111 1111 1111 ; 0x3fff
 
 parse_fourcc :: proc "contextless" (b: []u8) -> FourCC {
 	if len(b) < 4 {return .Unknown}
