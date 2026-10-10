@@ -104,6 +104,10 @@ Serve :: proc(sock: net.TCP_Socket) {
 			handle_fragment_inspect(req, conn)
 			continue
 		}
+		if strings.starts_with(req.path, "/mipmap/") {
+			handle_mipmap(req, conn)
+			continue
+		}
 		if strings.starts_with(req.path, "/image/") {
 			handle_image(req, conn)
 			continue
