@@ -18,3 +18,6 @@ src/eagle-import.bin
 
 # odin test runner output (named after the test package)
 /tests
+
+# downloaded test fixtures
+/.test-data/
