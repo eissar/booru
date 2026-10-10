@@ -38,6 +38,8 @@ ChunkHeader :: struct {
 Chunk :: struct {
 	using header: ChunkHeader,
 	payload:      []u8,
+	// HACK: fix this later
+	size_plus_24: u32le,
 }
 
 
