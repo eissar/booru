@@ -36,6 +36,27 @@ tasks:
       - 'echo "githooks are not installed (or are stale); run: task hooks:install" >&2'
       - 'false'
 
+  build:bench:
+    desc: Build the benchmark executable
+    method: checksum
+    sources:
+      - bench/*.odin
+      - bench/**/*.odin
+      - src/*.odin
+      - src/**/*.odin
+      - Taskfile.yml
+    generates:
+      - bin/bench
+    cmds:
+      - mkdir -p bin
+      - odin build ./bench -o:speed -out:bin/bench
+
+  test:bench:
+    desc: Run the benchmark with systemd memory accounting
+    deps: [build:bench]
+    cmds:
+      - ./bench.sh
+
   run:
     desc: 'Build and run the server (pass flags with --, e.g. task run -- -port:9000)'
     deps: [hooks:check]
