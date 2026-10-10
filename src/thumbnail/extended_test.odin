@@ -110,7 +110,7 @@ vectorized_webp_extended_riff_size :: proc(t: ^testing.T) {
 	thumbs := [1]Thumb{{bytes = sample, width = 1, height = 1}}
 	storage: [12][]u8
 	vec := storage[:]
-	newThumbnailAtlas(thumbs[:], storage[:], context.temp_allocator)
+	Thumbnail_MipMap(thumbs[:], storage[:], context.temp_allocator)
 
 	expected := []u8{116, 0, 0, 0}
 	actual := vec[0][4:8]
@@ -137,7 +137,7 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 
 	thumbs := [1]Thumb{{bytes = (cast([^]u8)encoded)[:int(size)], width = 1, height = 1}}
 	storage: [12][]u8
-	newThumbnailAtlas(thumbs[:], storage[:], context.temp_allocator)
+	Thumbnail_MipMap(thumbs[:], storage[:], context.temp_allocator)
 	buf: bytes.Buffer
 	defer bytes.buffer_destroy(&buf)
 	for segment in storage {
