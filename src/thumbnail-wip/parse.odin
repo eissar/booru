@@ -30,6 +30,7 @@ parse_chunk :: proc "contextless" (b: []u8, v: ^Chunk) {
 	sz, ok := endian.get_u32(b[4:8], .Little)
 	// if !ok { /* buffer too short */}
 	v.size = sz
+	v.size_plus_24 = u32le(v.size + 24)
 	// If Chunk Size is odd, a single padding byte -- which MUST be 0 to conform with RIFF [RIFF-spec] -- is added.
 	// we add %2 so we don't have to pad later
 	v.payload = b[8:]

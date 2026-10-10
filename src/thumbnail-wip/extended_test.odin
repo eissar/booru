@@ -108,7 +108,7 @@ vectorized_webp_extended_riff_size :: proc(t: ^testing.T) {
 		0,
 	}
 	thumbs := [1]Thumb{{bytes = sample, width = 1, height = 1}}
-	storage: [11][]u8
+	storage: [12][]u8
 	vec := storage[:]
 	newThumbnailAtlas(thumbs[:], storage[:], context.temp_allocator)
 
@@ -136,7 +136,7 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	defer WebPFree(encoded)
 
 	thumbs := [1]Thumb{{bytes = (cast([^]u8)encoded)[:int(size)], width = 1, height = 1}}
-	storage: [11][]u8
+	storage: [12][]u8
 	newThumbnailAtlas(thumbs[:], storage[:], context.temp_allocator)
 	buf: bytes.Buffer
 	defer bytes.buffer_destroy(&buf)
