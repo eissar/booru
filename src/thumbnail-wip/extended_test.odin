@@ -2,6 +2,7 @@ package thumbnail
 
 import "core:bytes"
 import "core:c"
+import "core:fmt"
 import "core:testing"
 
 // Requires libwebp and libwebpdemux. Run: odin test src/thumbnail-wip
@@ -124,13 +125,27 @@ vectorized_webp_extended_decodes :: proc(t: ^testing.T) {
 	pixel := [3]u8{255, 0, 0}
 	encoded: ^u8
 	size := WebPEncodeRGB(&pixel[0], 1, 1, 3, 75, &encoded)
-	if !testing.expect(t, size > 0 && encoded != nil, "encode input thumbnail") {return}
+	if !testing.expect(t, size > 0 && encoded != nil, "encode input thumbnail") {
+		when ODIN_DEBUG {
+			fmt.eprintfln(
+				"\nEncode state:\n  size: %v\n  encoded: %v\n  pixel: %v\n",
+				size,
+				encoded,
+				pixel,
+			)
+		}
+		return
+	}
 	defer WebPFree(encoded)
 
 	thumbs := [1]Thumb{{bytes = (cast([^]u8)encoded)[:int(size)], width = 1, height = 1}}
 	buf: bytes.Buffer
 	defer bytes.buffer_destroy(&buf)
-	segments := Vectorized_Webp_Extended(thumbs[:], int(size) - 12)
+	// Nine base segments plus six segments for one VP8 frame.
+	storage: [15][]u8
+	segments := storage[:]
+	prefix: Webp_Extended_Prefix
+	Vectorized_Webp_Extended(thumbs[:], &segments, &prefix)
 	for segment in segments {
 		bytes.buffer_write(&buf, segment)
 	}
