@@ -1,14 +1,97 @@
 package main
 
+import "base:runtime"
 import "core:fmt"
+import "core:mem"
 import "core:net"
 import "core:os"
 import "core:strconv"
 import "core:strings"
 
+import "cli"
+import "core:testing"
 import "http"
 import "render"
 import "template"
+import "thumbnail"
+
+send_vectored :: proc(conn: net.TCP_Socket, parts: [][]u8) -> bool {
+	for part in parts {
+		remaining := part
+		for len(remaining) > 0 {
+			sent, err := net.send_tcp(conn, remaining)
+			if err != nil || sent == 0 {return false}
+			remaining = remaining[sent:]
+		}
+	}
+	return true
+}
+
+handle_mipmap :: proc(req: http.Header, conn: net.TCP_Socket) {
+	defer net.close(conn)
+	count, ok := strconv.parse_int(req.path[len("/mipmap/"):])
+	if !ok || count <= 0 {
+		net.send_tcp(
+			conn,
+			transmute([]u8)string("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"),
+		)
+		return
+	}
+
+	backing: []u8
+
+	arena: mem.Arena
+	alloc_err: mem.Allocator_Error
+
+	backing, alloc_err = make([]u8, .5 * mem.Gigabyte, context.allocator)
+	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
+
+	defer delete(backing)
+	mem.arena_init(&arena, backing)
+	alloc := mem.arena_allocator(&arena)
+
+
+	t_slice: []thumbnail.Thumb
+	t_slice, alloc_err = make([]thumbnail.Thumb, len(library_images), alloc)
+	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
+
+	vectored_slice: [][]u8
+	vectored_slice, alloc_err = make([][]u8, 3 + 9 * len(library_images), alloc)
+	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
+
+	for l, i in library_images {
+		p := fmt.aprintf("./test/fixture/library/thumbnails/%v.webp", l.oid, allocator = alloc)
+		t_bytes, _ := os.read_entire_file(p, alloc)
+
+		t_slice[i] = thumbnail.Thumb{t_bytes, u16le(l.height), u16le(l.width)}
+	}
+
+	thumbnail.Thumbnail_MipMap(t_slice, vectored_slice, alloc)
+	length := 0
+	for part in vectored_slice {length += len(part)}
+	header := fmt.aprintf(
+		"HTTP/1.1 200 OK\r\nContent-Type: image/webp\r\nContent-Length: %d\r\n\r\n",
+		length,
+		allocator = alloc,
+	)
+	headers := [1][]u8{transmute([]u8)header}
+	if !send_vectored(conn, headers[:]) {return}
+	_ = send_vectored(conn, vectored_slice)
+}
+
+@(test)
+test_mip :: proc(_: ^testing.T) {
+	cfg := cli.getFlags()
+	library_images = load_library(cfg.library)
+
+	listener, _ := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
+	defer net.close(listener)
+	endpoint, _ := net.bound_endpoint(listener)
+	client, _ := net.dial_tcp(endpoint)
+	defer net.close(client)
+	conn, _, _ := net.accept_tcp(listener)
+	handle_mipmap(http.Header{path = "/mipmap/3"}, conn)
+}
 
 MIN_LIMIT :: 10
 VALID_SORTS := [4]string{"idAsc", "idDesc", "addedAtAsc", "addedAtDesc"}
