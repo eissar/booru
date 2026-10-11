@@ -33,30 +33,26 @@ tasks:
       - 'echo "githooks are not installed (or are stale); run: task hooks:install" >&2'
       - 'false'
 
-  build:bench:
-    desc: Build the benchmark executable
+  build:bench:all:
+    desc: Build the optimized benchmark suite
     method: checksum
     sources:
-      - bench/*.odin
-      - bench/**/*.odin
       - src/*.odin
       - src/**/*.odin
+      - bench/*.odin
+      - bench/**/*.odin
       - Taskfile.yml
     generates:
-      - bin/bench
+      - '{{.BIN_DIR}}/bench-all'
     cmds:
-      - mkdir -p bin
-      - odin build ./bench -o:speed -out:bin/bench
+      - mkdir -p {{.BIN_DIR}}
+      - odin build bench/ -build-mode:test -o:speed -out:{{.BIN_DIR}}/bench-all -define:ODIN_TEST_THREADS=1
 
-  test:bench:
-    desc: Run the benchmark with systemd memory accounting
-    deps: [build:bench]
+  bench:all:
+    desc: Run benchmarks serially (reuse the build when sources are unchanged)
+    deps: [hooks:check, build:bench:all]
     cmds:
-      - >-
-        systemd-run --user --unit=booru-memory-bench
-        --collect --pipe --wait --property=MemoryAccounting=yes
-        --working-directory="$PWD" -- "$PWD/bin/bench" > bin/bench.json
-      - ./bench.pl bin/bench.json
+      - ./{{.BIN_DIR}}/bench-all
 
   run:
     desc: 'Build and run the server (e.g. task run -- -debug -- -port:9000)'
