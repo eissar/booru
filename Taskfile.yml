@@ -59,10 +59,10 @@ tasks:
       - ./bench.pl bin/bench.json
 
   run:
-    desc: 'Build and run the server (pass flags with --, e.g. task run -- -port:9000)'
+    desc: 'Build and run the server (e.g. task run -- -debug -- -port:9000)'
     deps: [hooks:check]
     cmds:
-      - odin run src -- {{.CLI_ARGS}}
+      - odin run src {{.CLI_ARGS}}
 
   preview:
     desc: 'Run the template preview server (pass a port with --, e.g. task preview -- 9000)'

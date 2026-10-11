@@ -6,6 +6,8 @@
 --   :make test            -> task --silent test             "No tests to run."
 --   :make test -- -debug  -> task --silent test -- -debug   odin gets -debug
 --   :make check -- -o:none
+--   :make run -- -debug
+--   :make run -- -debug -- -port:9000
 --
 -- `:make test -debug` (no `--`) is still wrong: Task parses -debug as its own
 -- -d/--dir flag and reports `No Taskfile found at ""`. Always pass odin flags
