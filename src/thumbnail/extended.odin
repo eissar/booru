@@ -67,7 +67,7 @@ compute_extended_riff_size :: proc "contextless" (
 }
 
 
-// v may be of fixed size. semantically , v=vectorized
+// semantically , v=vectorized
 // for use with writev later
 Vectorized_Webp_Extended :: proc "contextless" (
 	streams: []Chunk,

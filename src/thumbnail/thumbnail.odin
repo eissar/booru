@@ -103,23 +103,10 @@ main :: proc() {
 	// newThumbnailAtlas(thumbs[:])
 }
 
-
-// TODO: use a prebuffered
-// THUMBNAIL_MISSING / UNSUPPORTED_TYPE
-// thumbnail
-Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
-	vec := make([][]u8, 3 + 9 * len(streams), alloc)
-
-	length_of_thumbs := 0
-	for t in streams {
-		// subtract RIFF header, or 12 bytes per thumb
-		length_of_thumbs += len(t.bytes) - 12
-	}
-
-	prefix := new(Webp_Extended_Prefix, alloc)
-
+// this copies a bunch of data
+// passing riff_size - code smell
+thumbnail_prefix :: proc(prefix: ^Webp_Extended_Prefix, riff_size: u32le) {
 	// WEBP
-	riff_size := compute_extended_riff_size(RIFF_X_SIZE, len(streams), length_of_thumbs)
 
 	copy(prefix.WEBP[0:4], RIFF_CC[:])
 	copy(prefix.WEBP[4:8], mem.slice_to_bytes([]u32le{riff_size})) // The size of the file in bytes, starting at offset 8.
@@ -145,6 +132,26 @@ Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
 	// 0, 0      : loop count 16 bits
 	copy(prefix.ANIM[8:14], mem.slice_to_bytes([]u8{0, 0, 0, 0, 0, 0}))
 	// ENDREGION: ANIM
+}
+
+// TODO: use a prebuffered
+// THUMBNAIL_MISSING / UNSUPPORTED_TYPE
+// thumbnail
+//
+// creates multiple []u8 using provided allocator and returns a slice to them
+Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
+	vec := make([][]u8, 3 + 9 * len(streams), alloc)
+
+	length_of_thumbs := 0
+	for t in streams {
+		// subtract RIFF header, or 12 bytes per thumb
+		length_of_thumbs += len(t.bytes) - 12
+	}
+
+	prefix := new(Webp_Extended_Prefix, alloc)
+	riff_size := compute_extended_riff_size(RIFF_X_SIZE, len(streams), length_of_thumbs)
+	thumbnail_prefix(prefix, riff_size)
+
 
 	// chunks: [dynamic]Chunk
 	chunks := make([dynamic]Chunk, alloc)
