@@ -38,3 +38,9 @@ parse_chunk :: proc "contextless" (b: []u8, v: ^Chunk) {
 	// we add %2 so we don't have to pad later
 	v.payload = b[8:]
 }
+
+new_thumbnail :: proc(lib_path: string, img: ^library.Image, alloc: mem.Allocator) -> Thumb {
+	p := fmt.aprintf("%v/thumbnails/%v.webp", lib_path, img.oid, allocator = alloc)
+	t_bytes, _ := os.read_entire_file(p, alloc)
+	return Thumb{t_bytes, u16le(img.height), u16le(img.width)}
+}
