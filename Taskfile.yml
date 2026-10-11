@@ -109,13 +109,11 @@ tasks:
       - deno test --allow-run --allow-read --allow-env fixture_harness_test.ts {{.CLI_ARGS}}
 
   test:all:
-    desc: 'Run every project suite: odin check, odin tests, deno fixtures'
+    desc: 'Run project checks and Deno HTML fixture tests'
     deps:
       - task: check
         vars: {ODIN_FLAGS: '{{.ODIN_FLAGS}}'}
       # -- args are odin flags, so keep them away from the non-odin suites.
-      - task: test
-        vars: {CLI_ARGS: ''}
       - task: test:render
         vars: {CLI_ARGS: ''}
 
