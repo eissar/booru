@@ -1,8 +1,10 @@
 package http
 
+import "base:runtime"
 import "core:bytes"
 import "core:fmt"
 import "core:log"
+import "core:mem"
 import "core:net"
 import "core:strconv"
 import "core:strings"
@@ -33,6 +35,11 @@ Header :: struct {
 	query:         string, // raw query string, "" when absent
 	known_headers: Known_Headers,
 	headers:       map[string]string,
+}
+
+Req :: struct {
+	header: Header,
+	alloc:  mem.Allocator,
 }
 
 read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header, ok: bool) {

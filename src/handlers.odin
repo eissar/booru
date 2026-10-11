@@ -27,9 +27,10 @@ send_vectored :: proc(conn: net.TCP_Socket, parts: [][]u8) -> bool {
 	return true
 }
 
-handle_mipmap :: proc(req: http.Header, conn: net.TCP_Socket) {
+handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
+
 	defer net.close(conn)
-	count, ok := strconv.parse_int(req.path[len("/mipmap/"):])
+	count, ok := strconv.parse_int(req.header.path[len("/mipmap/"):])
 	if !ok || count <= 0 {
 		net.send_tcp(
 			conn,
@@ -38,41 +39,29 @@ handle_mipmap :: proc(req: http.Header, conn: net.TCP_Socket) {
 		return
 	}
 
-	backing: []u8
-
-	arena: mem.Arena
-	alloc_err: mem.Allocator_Error
-
-	backing, alloc_err = make([]u8, .5 * mem.Gigabyte, context.allocator)
-	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
-
-	defer delete(backing)
-	mem.arena_init(&arena, backing)
-	alloc := mem.arena_allocator(&arena)
-
-
+	alloc_err: runtime.Allocator_Error
 	t_slice: []thumbnail.Thumb
-	t_slice, alloc_err = make([]thumbnail.Thumb, len(library_images), alloc)
+	t_slice, alloc_err = make([]thumbnail.Thumb, len(library_images), req.alloc)
 	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
 
 	vectored_slice: [][]u8
-	vectored_slice, alloc_err = make([][]u8, 3 + 9 * len(library_images), alloc)
+	vectored_slice, alloc_err = make([][]u8, 3 + 9 * len(library_images), req.alloc)
 	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
 
 	for l, i in library_images {
-		p := fmt.aprintf("./test/fixture/library/thumbnails/%v.webp", l.oid, allocator = alloc)
-		t_bytes, _ := os.read_entire_file(p, alloc)
+		p := fmt.aprintf("./test/fixture/library/thumbnails/%v.webp", l.oid, allocator = req.alloc)
+		t_bytes, _ := os.read_entire_file(p, req.alloc)
 
 		t_slice[i] = thumbnail.Thumb{t_bytes, u16le(l.height), u16le(l.width)}
 	}
 
-	thumbnail.Thumbnail_MipMap(t_slice, vectored_slice, alloc)
+	thumbnail.Thumbnail_MipMap(t_slice, vectored_slice, req.alloc)
 	length := 0
 	for part in vectored_slice {length += len(part)}
 	header := fmt.aprintf(
 		"HTTP/1.1 200 OK\r\nContent-Type: image/webp\r\nContent-Length: %d\r\n\r\n",
 		length,
-		allocator = alloc,
+		allocator = req.alloc,
 	)
 	headers := [1][]u8{transmute([]u8)header}
 	if !send_vectored(conn, headers[:]) {return}
@@ -90,7 +79,8 @@ test_mip :: proc(_: ^testing.T) {
 	client, _ := net.dial_tcp(endpoint)
 	defer net.close(client)
 	conn, _, _ := net.accept_tcp(listener)
-	handle_mipmap(http.Header{path = "/mipmap/3"}, conn)
+
+	handle_mipmap(http.Req{{path = "/mipmap/3"}, context.allocator}, conn)
 }
 
 MIN_LIMIT :: 10

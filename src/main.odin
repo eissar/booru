@@ -105,7 +105,7 @@ Serve :: proc(sock: net.TCP_Socket) {
 			continue
 		}
 		if strings.starts_with(req.path, "/mipmap/") {
-			handle_mipmap(req, conn)
+			handle_mipmap({req, context.allocator}, conn)
 			continue
 		}
 		if strings.starts_with(req.path, "/image/") {
