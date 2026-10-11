@@ -159,10 +159,11 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 		{command = {"webpinfo", "-diag", "-bitstream_info", path}},
 		context.temp_allocator,
 	)
-	fmt.printf("%s%s", stdout, stderr)
-	testing.expect(
+	if !testing.expect(
 		t,
 		err == nil && state.success && state.exit_code == 0,
 		"webpinfo accepts generated animation",
-	)
+	) {
+		fmt.printf("%s%s", stdout, stderr)
+	}
 }
