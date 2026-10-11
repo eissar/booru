@@ -55,7 +55,11 @@ tasks:
     desc: Run the benchmark with systemd memory accounting
     deps: [build:bench]
     cmds:
-      - ./bench.sh
+      - >-
+        systemd-run --user --unit=booru-memory-bench
+        --collect --pipe --wait --property=MemoryAccounting=yes
+        --working-directory="$PWD" -- "$PWD/bin/bench" > bin/bench.json
+      - ./bench.pl bin/bench.json
 
   run:
     desc: 'Build and run the server (pass flags with --, e.g. task run -- -port:9000)'
