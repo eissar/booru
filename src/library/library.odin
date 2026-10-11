@@ -8,8 +8,19 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
-import "../template"
 
+Image :: struct {
+	id:           int,
+	oid:          string,
+	path:         string,
+	tags:         []string,
+	width:        int,
+	height:       int,
+	name:         string,
+	mtime:        string,
+	added_at:     string,
+	content_type: string,
+}
 
 Event :: struct {
 	op:          string,
@@ -26,9 +37,9 @@ Event :: struct {
 }
 
 
-load_library :: proc(root: string) -> []template.Image {
+load_library :: proc(root: string) -> []Image {
 
-	images: [dynamic]template.Image
+	images: [dynamic]Image
 
 	events_dir := fmt.tprintf("%s/events", root)
 	dir, open_err := os.open(events_dir)
@@ -60,7 +71,7 @@ load_library :: proc(root: string) -> []template.Image {
 	return images[:]
 }
 
-load_ndjson :: proc(images: ^[dynamic]template.Image, data: string, src: string) {
+load_ndjson :: proc(images: ^[dynamic]Image, data: string, src: string) {
 	lines := strings.split(data, "\n")
 	defer delete(lines)
 	for line in lines {
@@ -73,7 +84,7 @@ load_ndjson :: proc(images: ^[dynamic]template.Image, data: string, src: string)
 		if ev.op != "add" {continue}
 		append(
 			images,
-			template.Image {
+			Image {
 				id = ev.id,
 				oid = ev.oid,
 				path = ev.path,

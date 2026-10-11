@@ -3,6 +3,8 @@ package template
 import "core:fmt"
 import "core:strings"
 
+import "../library"
+
 // inspector_icon writes an icon <img> with the shared heroicons attributes.
 inspector_icon :: proc(b: ^strings.Builder, name, alt: string) {
 	wr(b, "<img")
@@ -15,7 +17,7 @@ inspector_icon :: proc(b: ^strings.Builder, name, alt: string) {
 }
 
 // render_inspector renders the inspector details fragment for one image.
-render_inspector :: proc(image: Image) -> string {
+render_inspector :: proc(image: library.Image) -> string {
 	b := strings.builder_make()
 	id := itoa(image.id)
 

@@ -175,9 +175,9 @@ parse_query_params :: proc(query: string) -> map[string][dynamic]string {
 //region: filtering + sorting
 
 // filter_images returns the images carrying every requested tag.
-filter_images :: proc(all: []template.Image, tags: []string) -> []template.Image {
+filter_images :: proc(all: []library.Image, tags: []string) -> []library.Image {
 	if len(tags) == 0 {return all}
-	out := make([dynamic]template.Image, 0, len(all))
+	out := make([dynamic]library.Image, 0, len(all))
 	for img in all {
 		matched := 0
 		for want in tags {
@@ -195,7 +195,7 @@ filter_images :: proc(all: []template.Image, tags: []string) -> []template.Image
 	return out[:]
 }
 
-less_img :: proc(a, b: template.Image, sort: string) -> bool {
+less_img :: proc(a, b: library.Image, sort: string) -> bool {
 	switch sort {
 	case "idAsc":
 		return a.id < b.id
@@ -210,7 +210,7 @@ less_img :: proc(a, b: template.Image, sort: string) -> bool {
 }
 
 // sort_gallery sorts the slice in place by the named sort parameter.
-sort_gallery :: proc(images: []template.Image, sort: string) {
+sort_gallery :: proc(images: []library.Image, sort: string) {
 	for i := 1; i < len(images); i += 1 {
 		j := i
 		for j > 0 && less_img(images[j], images[j - 1], sort) {
@@ -223,10 +223,10 @@ sort_gallery :: proc(images: []template.Image, sort: string) {
 // page_slice slices images[offset:offset+limit] and reports whether more
 // items follow the page.
 page_slice :: proc(
-	images: []template.Image,
+	images: []library.Image,
 	offset, limit: int,
 ) -> (
-	page: []template.Image,
+	page: []library.Image,
 	has_more: bool,
 ) {
 	if offset >= len(images) || offset < 0 {return images[:0], false}

@@ -1,5 +1,6 @@
 package template
 
+import "../library"
 import "core:fmt"
 import "core:strings"
 
@@ -43,7 +44,7 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 
 // render_item_card renders a single masonry image card. render_order is the
 // positional index in the listing; the first six load with high priority.
-render_item_card :: proc(image: Image, render_order: int) -> string {
+render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	b := strings.builder_make()
 
 	thumb_src := image.oid

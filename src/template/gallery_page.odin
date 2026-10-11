@@ -1,5 +1,6 @@
 package template
 
+import "../library"
 import "core:fmt"
 import "core:strings"
 
@@ -76,7 +77,11 @@ write_filter_chip :: proc(
 }
 
 // render_gallery_content renders the replaceable gallery content region.
-render_gallery_content :: proc(filter: Gallery_Filter, images: []Image, has_more: bool) -> string {
+render_gallery_content :: proc(
+	filter: Gallery_Filter,
+	images: []library.Image,
+	has_more: bool,
+) -> string {
 	b := strings.builder_make()
 	wr(&b, "<div class=\"gallery-content\">")
 	wr(&b, render_filter_bar(filter))
@@ -91,7 +96,7 @@ render_gallery_content :: proc(filter: Gallery_Filter, images: []Image, has_more
 render_gallery_page :: proc(
 	title, version: string,
 	filter: Gallery_Filter,
-	images: []Image,
+	images: []library.Image,
 	has_more: bool,
 ) -> string {
 	b := strings.builder_make()

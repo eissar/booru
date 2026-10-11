@@ -1,12 +1,13 @@
 package render
 
+import "../library"
 import "../template"
 
 // Renderer_Version is stamped onto rendered gallery pages for cache/debugging.
 Renderer_Version :: "default"
 
 // Render_Image is the caller-facing image view model.
-Render_Image :: template.Image
+Render_Image :: library.Image
 
 // render_toast renders a toast notification.
 render_toast :: proc(message: string, variant: template.Toast_Variant) -> string {

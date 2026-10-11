@@ -10,10 +10,9 @@ import "core:time"
 import "cli"
 import "http"
 import "library"
-import "template"
 
 // Loaded once at startup from the NDJSON event log; no DB for this prototype.
-library_images: []template.Image
+library_images: []library.Image
 library_path: string
 
 main :: proc() {

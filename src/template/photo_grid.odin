@@ -2,9 +2,11 @@ package template
 
 import "core:strings"
 
+import "../library"
+
 // render_photo_grid renders the masonry grid with its load-more controls.
 // offset is the count displayed so far; has_more controls the control markup.
-render_photo_grid :: proc(images: []Image, offset: int, has_more: bool) -> string {
+render_photo_grid :: proc(images: []library.Image, offset: int, has_more: bool) -> string {
 	b := strings.builder_make()
 
 	wr(&b, "<div id=\"photo-grid\" class=\"masonry-grid\">")
