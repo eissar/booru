@@ -48,15 +48,18 @@ main :: proc() {
 		cfg.library,
 	)
 
+	ep := net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port})
 	// net.parse_address
-	sock, err := net.listen_tcp(net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port}))
+	sock, err := net.listen_tcp(ep)
 	if err != nil {
 		log.fatal(err)
 		os.exit(1)
 	}
 
+	log.infof("server listening on %v", net.endpoint_to_string(ep))
+
 	defer net.close(sock)
-	Serve(sock)
+	Serve(sock) // this should take an allocator
 }
 
 // Serve handles requests on an already-listening socket until accept fails.
