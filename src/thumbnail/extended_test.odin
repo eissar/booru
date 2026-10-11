@@ -178,7 +178,7 @@ vectorized_webp_extended_length :: proc(t: ^testing.T) {
 	root := cfg.library // alias
 
 
-	backing := make([]u8, 64 * mem.Megabyte)
+	backing := make([]u8, 512 * mem.Megabyte)
 	defer delete(backing)
 
 	arena: mem.Arena
@@ -207,10 +207,11 @@ vectorized_webp_extended_length :: proc(t: ^testing.T) {
 
 	input_streams[0] = Thumb{t_bytes, u16le(imgs[0].height), u16le(imgs[0].width)}
 
-	vec := make([][]u8, 1, alloc)
+
+	vec := make([][]u8, 3 + 9 * len(input_streams), alloc)
 	defer delete(vec, alloc)
 
-	// Thumbnail_MipMap(input_streams, vec, context.allocator)
+	Thumbnail_MipMap(input_streams, vec, context.allocator)
 
 	fmt.println(vec)
 }

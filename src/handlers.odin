@@ -73,7 +73,16 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 test_mip :: proc(_: ^testing.T) {
 	cfg := cli.getFlags()
 
-	library.load_library(cfg.library, &library_images, context.allocator)
+	backing := make([]u8, 64 * mem.Megabyte)
+	defer delete(backing)
+	arena: mem.Arena
+	mem.arena_init(&arena, backing)
+	alloc := mem.arena_allocator(&arena)
+	defer free_all(alloc)
+
+	library_images = make([dynamic]library.Image, alloc)
+	defer library_images = {}
+	library.load_library(cfg.library, &library_images, alloc)
 
 	listener, _ := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
 	defer net.close(listener)
@@ -82,7 +91,7 @@ test_mip :: proc(_: ^testing.T) {
 	defer net.close(client)
 	conn, _, _ := net.accept_tcp(listener)
 
-	handle_mipmap(http.Req{{path = "/mipmap/3"}, context.allocator}, conn)
+	handle_mipmap(http.Req{{path = "/mipmap/3"}, alloc}, conn)
 }
 
 MIN_LIMIT :: 10

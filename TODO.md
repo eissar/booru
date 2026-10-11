@@ -8,13 +8,6 @@
   - Use two passes: a debugger-assisted diagnostic pass for attribution, and an unpaused performance pass for realistic timing and peaks. Record debugger pause durations and avoid presenting instrumented timing as normal execution time.
   - Start with the existing benchmark's allocate → touch → free stages. Account for batched kernel counters and peaks missed by polling; AST matches identify candidate events, not proof of resource attribution.
 
-# Library Allocation WIP TODO
-
-- **Allocator mismatch:** `main` leaves `library_images` zero-initialized. Its dynamic-array backing allocation therefore isn’t explicitly tied to your arena; passing `alloc` to `load_library` only controls allocations inside that function.
-- **Recursive walker path:** the walker visits nested directories, but you construct paths with `events_dir + entry.name`. Nested `.ndjson` files won’t resolve correctly.
-- **Fixed 64MB arena:** larger libraries may exhaust it; allocation failures aren’t handled.
-- **New test doesn’t test mipmap length:** the mipmap call is commented out and there are no assertions. It also assumes `imgs[0]` exists.
-- `load_ndjson` now relies on arena lifetime for `lines` and JSON fields. Heap-backed callers such as `test_mip` still need cleanup.
 
 # LOD 0 Micro-Atlas TODO
 

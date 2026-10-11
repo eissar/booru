@@ -57,7 +57,7 @@ load_library :: proc(root: string, images: ^[dynamic]Image, alloc: mem.Allocator
 			continue
 		}
 
-		fp := fmt.tprintf("%s/%s", events_dir, entry.name)
+		fp := entry.fullpath
 		data, err := os.read_entire_file(fp, alloc)
 		defer delete(data, alloc)
 

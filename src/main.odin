@@ -37,6 +37,7 @@ main :: proc() {
 	mem.arena_init(&arena, backing)
 	alloc := mem.arena_allocator(&arena)
 
+	library_images = make([dynamic]library.Image, alloc)
 	library.load_library(cfg.library, &library_images, alloc)
 	defer free_all(alloc)
 
