@@ -9,6 +9,7 @@ import "core:time"
 
 import "cli"
 import "http"
+import "library"
 import "template"
 
 // Loaded once at startup from the NDJSON event log; no DB for this prototype.
@@ -28,7 +29,7 @@ main :: proc() {
 	cfg := cli.getFlags()
 	library_path = cfg.library
 	load_start := time.now()
-	library_images = load_library(cfg.library)
+	library_images = library.load_library(cfg.library)
 	log.infof(
 		"%d images loaded in %.2f ms: %s",
 		len(library_images),

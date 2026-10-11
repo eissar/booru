@@ -1,4 +1,4 @@
-package main
+package library
 
 // Library loading: replay NDJSON add-events into an in-memory image list.
 // Prototype only -- no derived index, no DB.
@@ -8,7 +8,8 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
-import "template"
+import "../template"
+
 
 Event :: struct {
 	op:          string,
@@ -23,6 +24,7 @@ Event :: struct {
 	addedAt:     string,
 	contentType: string,
 }
+
 
 load_library :: proc(root: string) -> []template.Image {
 

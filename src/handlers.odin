@@ -11,6 +11,7 @@ import "core:strings"
 import "cli"
 import "core:testing"
 import "http"
+import "library"
 import "render"
 import "template"
 import "thumbnail"
@@ -71,7 +72,7 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 @(test)
 test_mip :: proc(_: ^testing.T) {
 	cfg := cli.getFlags()
-	library_images = load_library(cfg.library)
+	library_images = library.load_library(cfg.library)
 
 	listener, _ := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
 	defer net.close(listener)
@@ -593,5 +594,3 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 		net.close(conn)
 	}
 }
-
-//endregion
