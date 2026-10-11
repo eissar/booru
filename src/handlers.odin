@@ -63,6 +63,13 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 	headers := [1][]u8{transmute([]u8)header}
 	if !send_vectored(conn, headers[:]) {return}
 	_ = send_vectored(conn, vectored_slice)
+
+	// free after send
+	err := free_all(req.alloc)
+	if err != nil {
+		panic(fmt.aprintf("err=%s", err, allocator = context.temp_allocator))
+	}
+
 }
 
 @(test)

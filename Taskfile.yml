@@ -64,12 +64,6 @@ tasks:
     cmds:
       - odin run src -- {{.CLI_ARGS}}
 
-  run:harness:
-    desc: Run the render harness, dumping every template case to stdout
-    deps: [hooks:check]
-    cmds:
-      - odin run test/html-fixture-tdd/fixture_harness.odin -file {{.CLI_ARGS}}
-
   preview:
     desc: 'Run the template preview server (pass a port with --, e.g. task preview -- 9000)'
     deps: [hooks:check]
@@ -87,33 +81,39 @@ tasks:
   test:
     desc: 'Run the project''s Odin tests (extra odin flags after --; ODIN_TEST_PKGS=src/cli picks a package)'
     deps: [hooks:check]
-    # Set ODIN_TEST_PKGS to narrow the package set (test:all passes it through).
+    # Set ODIN_TEST_PKGS to choose the package for interactive testing.
     # It cannot come from -- because -- is odin flags, as in
     # `task test -- -error-pos-style:unix`.
     vars:
       ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "test"}}'
     cmds:
-      - odin test {{.CLI_ARGS}}
+      - odin test {{.ODIN_TEST_PKGS}} {{.CLI_ARGS}}
 
   test:render:
-    desc: 'Run the Perl HTML fixture tests (requires HTML::Tidy5; pass a name filter with --)'
+    desc: 'Run HTML fixture tests (requires Perl and HTML::Tidy5; extra Odin flags after --)'
     deps: [hooks:check]
     cmds:
-      - perl test/html-fixture-tdd/fixture_harness_test.pl {{.CLI_ARGS}}
+      - odin test test -define:ODIN_TEST_NAMES=html_toast,html_item_card,html_photo_grid,html_inspector,html_gallery_content,html_gallery_page {{.CLI_ARGS}}
+
+  test:all:build:
+    desc: Build the full test suite
+    method: checksum
+    sources:
+      - src/**/*.odin
+      - test/**/*.odin
+      - Taskfile.yml
+    generates:
+      - '{{.BIN_DIR}}/test-all'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - odin build test/ -build-mode:test -all-packages -debug -out:{{.BIN_DIR}}/test-all -define:ODIN_TEST_LOG_STATE_CHANGES=true
 
   test:all:
-    desc: 'Run project checks and Perl HTML fixture tests'
-    deps: [hooks:check]
+    desc: Run the full test suite (reuse the build when sources are unchanged)
+    deps: [hooks:check, test:all:build]
     cmds:
-      - task: test:render
-      - task: test:thumbnail
-    # deps:
-    #   - task: check
-    #     vars: {ODIN_FLAGS: '{{.ODIN_FLAGS}}'}
-    #   # -- args are odin flags, so keep them away from the non-odin suites.
-    #   - task: test:render
-    #     vars: {CLI_ARGS: ''}
-    #   - task: test:thumbnail
+      - set -o pipefail; ./{{.BIN_DIR}}/test-all 2>&1 | grep -v 'changed state to Running'
+      # - ./{{.BIN_DIR}}/test-all
 
   test:thumbnail:
     desc: 'test src/thumbnail'

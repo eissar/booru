@@ -1,4 +1,4 @@
-package server_test
+package test
 
 import server "../src"
 import "base:runtime"

@@ -70,6 +70,10 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	) {
 		fmt.printf("%s%s", stdout, stderr)
 	}
+	err = free_all(context.temp_allocator)
+	if err != nil {
+		panic(fmt.aprintf("err=%s", err, allocator = context.temp_allocator))
+	}
 }
 
 @(test)
@@ -85,12 +89,12 @@ vectorized_webp_extended_length :: proc(t: ^testing.T) {
 	mem.arena_init(&arena, backing)
 
 	alloc := mem.arena_allocator(&arena)
+	defer free_all(alloc)
 
 	imgs := make([dynamic]library.Image, alloc)
 	defer delete(imgs)
 
 	library.load_library(cfg.library, &imgs, alloc)
-	defer free_all(alloc)
 
 	input_streams := make([]Thumb, 1, alloc)
 	defer delete(input_streams, alloc)
@@ -107,7 +111,7 @@ vectorized_webp_extended_length :: proc(t: ^testing.T) {
 
 	input_streams[0] = Thumb{t_bytes, u16le(imgs[0].height), u16le(imgs[0].width)}
 
-	vec_dat := Thumbnail_MipMap(input_streams, context.allocator)
+	vec_dat := Thumbnail_MipMap(input_streams, alloc)
 	vec_dat_len := 0
 	for v in vec_dat {vec_dat_len += len(v)}
 
