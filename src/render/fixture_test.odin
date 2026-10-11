@@ -1,4 +1,4 @@
-package test
+package render
 
 // Render synthetic data and compare against hand-authored HTML fixtures.
 
@@ -8,8 +8,6 @@ import "core:os"
 import "core:strings"
 
 import "core:testing"
-
-import "../src/render"
 
 Event :: struct {
 	op:          string,
@@ -25,13 +23,13 @@ Event :: struct {
 	contentType: string,
 }
 
-load_images :: proc(path: string) -> []render.Render_Image {
+load_images :: proc(path: string) -> []Render_Image {
 	data, err := os.read_entire_file(path, context.allocator)
 	if err != nil {
 		fmt.eprintln("cannot read", path)
 		os.exit(1)
 	}
-	images: [dynamic]render.Render_Image
+	images: [dynamic]Render_Image
 	lines := strings.split(string(data), "\n")
 	defer delete(lines)
 	for line in lines {
@@ -44,7 +42,7 @@ load_images :: proc(path: string) -> []render.Render_Image {
 		if ev.op != "add" {continue}
 		append(
 			&images,
-			render.Render_Image {
+			Render_Image {
 				id = ev.id,
 				oid = ev.oid,
 				path = ev.path,
@@ -89,7 +87,7 @@ expect_html_fixture :: proc(t: ^testing.T, name, html: string) {
 	)
 }
 
-fixture_gallery_filter :: proc() -> render.Gallery_Filter {
+fixture_gallery_filter :: proc() -> Gallery_Filter {
 	return {
 		limit = 2,
 		sort = "addedAtAsc",
@@ -104,7 +102,7 @@ html_toast :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
 	context.allocator = alloc
-	expect_html_fixture(t, "toast", render.render_toast("Library imported", .Success))
+	expect_html_fixture(t, "toast", render_toast("Library imported", .Success))
 }
 
 @(test)
@@ -113,7 +111,7 @@ html_item_card :: proc(t: ^testing.T) {
 	defer free_all(alloc)
 	context.allocator = alloc
 	images := load_images("test/fixture/library/events/2026-01.ndjson")
-	expect_html_fixture(t, "item_card", render.render_item_card(images[0], -1))
+	expect_html_fixture(t, "item_card", render_item_card(images[0], -1))
 }
 
 @(test)
@@ -125,7 +123,7 @@ html_photo_grid :: proc(t: ^testing.T) {
 	expect_html_fixture(
 		t,
 		"photo_grid",
-		render.render_card_grid({cards = images[:2], offset = 2, has_more = true}),
+		render_card_grid({cards = images[:2], offset = 2, has_more = true}),
 	)
 }
 
@@ -135,7 +133,7 @@ html_inspector :: proc(t: ^testing.T) {
 	defer free_all(alloc)
 	context.allocator = alloc
 	images := load_images("test/fixture/library/events/2026-01.ndjson")
-	expect_html_fixture(t, "inspector", render.render_inspector(images[0]))
+	expect_html_fixture(t, "inspector", render_inspector(images[0]))
 }
 
 @(test)
@@ -147,7 +145,7 @@ html_gallery_content :: proc(t: ^testing.T) {
 	expect_html_fixture(
 		t,
 		"gallery_content",
-		render.render_gallery_content(fixture_gallery_filter(), images[:2], true),
+		render_gallery_content(fixture_gallery_filter(), images[:2], true),
 	)
 }
 
@@ -160,9 +158,9 @@ html_gallery_page :: proc(t: ^testing.T) {
 	expect_html_fixture(
 		t,
 		"gallery_page",
-		render.render_gallery_page(
+		render_gallery_page(
 			"Synthetic library",
-			render.Renderer_Version,
+			Renderer_Version,
 			fixture_gallery_filter(),
 			images[:2],
 			true,

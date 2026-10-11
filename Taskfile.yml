@@ -93,7 +93,7 @@ tasks:
     desc: 'Run HTML fixture tests (requires Perl and HTML::Tidy5; extra Odin flags after --)'
     deps: [hooks:check]
     cmds:
-      - odin test test -define:ODIN_TEST_NAMES=html_toast,html_item_card,html_photo_grid,html_inspector,html_gallery_content,html_gallery_page {{.CLI_ARGS}}
+      - odin test src/render {{.CLI_ARGS}}
 
   test:all:build:
     desc: Build the full test suite

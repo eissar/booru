@@ -25,9 +25,9 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
    task test:render
    ```
 
-   (also included in `odin test test` from the repo root; requires Perl and `HTML::Tidy5`, available on Debian as `libhtml-tidy5-perl`)
+   (also included in `odin test test -all-packages` from the repo root; requires Perl and `HTML::Tidy5`, available on Debian as `libhtml-tidy5-perl`)
 
-   Individual Odin tests in `test/html_fixtures.odin` render each case and invoke `test/html-fixture-tdd/compare_html.pl` to compare HTML::Tidy5-normalized strings against fixtures (alphabetically sorted attributes and normalized formatting). Tidy can repair markup, so this is not identical to DOM structural comparison. Confirm the failing case is the one you edited, failing for the reason you expect.
+   Individual Odin tests in `src/render/fixture_test.odin` render each case and invoke `test/html-fixture-tdd/compare_html.pl` to compare HTML::Tidy5-normalized strings against fixtures (alphabetically sorted attributes and normalized formatting). Tidy can repair markup, so this is not identical to DOM structural comparison. Confirm the failing case is the one you edited, failing for the reason you expect.
 
 3. **Update the Odin code to match.** Change only the template file(s) mapped to that fixture. Shared escaping helpers live in `src/template/html.odin` (`write_text`, `write_attr`, `write_attr_bool`, `escape`). Prefer editing the smallest sibling; don't touch other fixtures.
 
@@ -43,4 +43,4 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
 - **Bounded retries.** If a template proc needs more than two revisions to match a fixture, stop and reconsider the fixture or the data model rather than iterating blindly.
 - **Escaping is part of the spec.** Put literal escaped entities (`&amp;`, `&lt;` …) in the fixture where you expect them; use `write_text`/`write_attr` in code so they arise naturally.
 - Run `task fmt` (and the format check) before committing, per AGENTS.md.
-- Adding a brand-new template: create the fixture file first, add an individual test in `test/html_fixtures.odin` and its name to the `test:render` selector in `Taskfile.yml`, then RED → implement → GREEN.
+- Adding a brand-new template: create the fixture file first, add an individual test in `src/render/fixture_test.odin`, then RED → implement → GREEN.
