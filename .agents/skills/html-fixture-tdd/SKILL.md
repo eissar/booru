@@ -25,9 +25,9 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
    task test:render
    ```
 
-   (equivalently `deno test -A test/html-fixture-tdd/fixture_harness_test.ts` from the repo root)
+   (equivalently `perl test/html-fixture-tdd/fixture_harness_test.pl` from the repo root; requires `HTML::Tidy5`, available on Debian as `libhtml-tidy5-perl`)
 
-   It runs the Odin harness (`test/html-fixture-tdd/fixture_harness.odin`), captures `<<<CASE name>>>` blocks, and compares structurally against fixtures via Cheerio (tags, attribute sets/values, text — whitespace- and attribute-order-insensitive). Confirm the failing case is the one you edited, failing for the reason you expect.
+   It runs the Odin harness (`test/html-fixture-tdd/fixture_harness.odin`), captures `<<<CASE name>>>` blocks, and compares HTML::Tidy5-normalized strings against fixtures (alphabetically sorted attributes and normalized formatting). Tidy can repair markup, so this is not identical to DOM structural comparison. Confirm the failing case is the one you edited, failing for the reason you expect.
 
 3. **Update the Odin code to match.** Change only the template file(s) mapped to that fixture. Shared escaping helpers live in `src/template/html.odin` (`write_text`, `write_attr`, `write_attr_bool`, `escape`). Prefer editing the smallest sibling; don't touch other fixtures.
 
@@ -43,4 +43,4 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
 - **Bounded retries.** If a template proc needs more than two revisions to match a fixture, stop and reconsider the fixture or the data model rather than iterating blindly.
 - **Escaping is part of the spec.** Put literal escaped entities (`&amp;`, `&lt;` …) in the fixture where you expect them; use `write_text`/`write_attr` in code so they arise naturally.
 - Run `task fmt` (and the format check) before committing, per AGENTS.md.
-- Adding a brand-new template: create the fixture file first, add a `CASES` entry in `test/html-fixture-tdd/fixture_harness_test.ts`, add the case to `test/html-fixture-tdd/fixture_harness.odin`, then RED → implement → GREEN.
+- Adding a brand-new template: create the fixture file first, add the case name to the loop in `test/html-fixture-tdd/fixture_harness_test.pl`, add the case to `test/html-fixture-tdd/fixture_harness.odin`, then RED → implement → GREEN.

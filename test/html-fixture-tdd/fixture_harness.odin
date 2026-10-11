@@ -1,8 +1,8 @@
 package main
 
 // Test harness: reads the synthetic library NDJSON fixture, renders each
-// template case to stdout in a stable delimited format so the Deno test can
-// compare against fixtures structurally. This never reads the expected HTML.
+// template case to stdout in a stable delimited format so the Perl test can
+// compare Tidy-normalized output against fixtures. This never reads the expected HTML.
 
 import "core:encoding/json"
 import "core:fmt"
