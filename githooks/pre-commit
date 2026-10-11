@@ -1,6 +1,7 @@
 #!/bin/sh
-# Formats staged Odin files before each commit so formatting drift cannot be
-# committed. Installed by `task hooks:install`; the source of truth is
+# Checks staged Odin contents and aborts if formatting changes are needed.
+# Never modifies working files or the index. Installed by `task hooks:install`;
+# the source of truth is
 # githooks/, .git/hooks/ is a copy.
 set -e
 
@@ -16,11 +17,17 @@ if [ ! -x "$odinfmt" ]; then
     exit 1
 fi
 
-# odinfmt takes a single path per invocation and only rewrites with -w.
-printf '%s\n' "$staged" | while IFS= read -r f; do
-    [ -f "$f" ] || continue
-    "$odinfmt" -path:"$f" -w
-done
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
-# Re-stage the formatted files so the commit includes the formatting fixes.
-git add -- $staged
+# Check the index, not the working tree: partially staged files are supported.
+printf '%s\n' "$staged" | while IFS= read -r f; do
+    git show ":$f" > "$tmpdir/original"
+    cp "$tmpdir/original" "$tmpdir/check.odin"
+    "$odinfmt" -path:"$tmpdir/check.odin" -w
+    if ! cmp -s "$tmpdir/original" "$tmpdir/check.odin"; then
+        echo "pre-commit: staged formatting changes needed in $f; commit aborted" >&2
+        echo "pre-commit: format the file and stage the intended hunks, then retry" >&2
+        exit 1
+    fi
+done
