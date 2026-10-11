@@ -3,8 +3,12 @@ package thumbnail
 import "core:bytes"
 import "core:c"
 import "core:fmt"
+import "core:mem"
 import "core:os"
 import "core:testing"
+
+import "../cli"
+import "../library"
 
 WEBP_TEST_DATA_DIR :: ".test-data/libwebp"
 
@@ -166,4 +170,47 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	) {
 		fmt.printf("%s%s", stdout, stderr)
 	}
+}
+
+@(test)
+vectorized_webp_extended_length :: proc(t: ^testing.T) {
+	cfg := cli.getFlags()
+	root := cfg.library // alias
+
+
+	backing := make([]u8, 64 * mem.Megabyte)
+	defer delete(backing)
+
+	arena: mem.Arena
+	mem.arena_init(&arena, backing)
+
+	alloc := mem.arena_allocator(&arena)
+
+	imgs := make([dynamic]library.Image, alloc)
+	defer delete(imgs)
+
+	library.load_library(cfg.library, &imgs, alloc)
+	defer free_all(alloc)
+
+	input_streams := make([]Thumb, 1, alloc)
+	defer delete(input_streams, alloc)
+
+	p := fmt.aprintf(
+		"%v/thumbnails/%v.webp",
+		root,
+		imgs[0].oid,
+		allocator = context.temp_allocator,
+	)
+
+	t_bytes, _ := os.read_entire_file(p, alloc)
+
+
+	input_streams[0] = Thumb{t_bytes, u16le(imgs[0].height), u16le(imgs[0].width)}
+
+	vec := make([][]u8, 1, alloc)
+	defer delete(vec, alloc)
+
+	// Thumbnail_MipMap(input_streams, vec, context.allocator)
+
+	fmt.println(vec)
 }

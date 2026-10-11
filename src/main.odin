@@ -2,6 +2,7 @@ package main
 
 import "core:bytes"
 import "core:log"
+import "core:mem"
 import "core:net"
 import "core:os"
 import "core:strings"
@@ -12,7 +13,7 @@ import "http"
 import "library"
 
 // Loaded once at startup from the NDJSON event log; no DB for this prototype.
-library_images: []library.Image
+library_images: [dynamic]library.Image
 library_path: string
 
 main :: proc() {
@@ -28,7 +29,17 @@ main :: proc() {
 	cfg := cli.getFlags()
 	library_path = cfg.library
 	load_start := time.now()
-	library_images = library.load_library(cfg.library)
+
+	backing := make([]u8, 64 * mem.Megabyte)
+	defer delete(backing)
+
+	arena: mem.Arena
+	mem.arena_init(&arena, backing)
+	alloc := mem.arena_allocator(&arena)
+
+	library.load_library(cfg.library, &library_images, alloc)
+	defer free_all(alloc)
+
 	log.infof(
 		"%d images loaded in %.2f ms: %s",
 		len(library_images),

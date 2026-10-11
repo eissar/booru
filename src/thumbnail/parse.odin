@@ -1,6 +1,11 @@
 package thumbnail
 
 import "core:encoding/endian"
+import "core:fmt"
+import "core:mem"
+import "core:os"
+
+import "../library"
 
 // vp8 stores dims as u14
 U14_MASK: u32le = (1 << 14) - 1 // 0011 1111 1111 1111 ; 0x3fff
@@ -37,10 +42,4 @@ parse_chunk :: proc "contextless" (b: []u8, v: ^Chunk) {
 	// If Chunk Size is odd, a single padding byte -- which MUST be 0 to conform with RIFF [RIFF-spec] -- is added.
 	// we add %2 so we don't have to pad later
 	v.payload = b[8:]
-}
-
-new_thumbnail :: proc(lib_path: string, img: ^library.Image, alloc: mem.Allocator) -> Thumb {
-	p := fmt.aprintf("%v/thumbnails/%v.webp", lib_path, img.oid, allocator = alloc)
-	t_bytes, _ := os.read_entire_file(p, alloc)
-	return Thumb{t_bytes, u16le(img.height), u16le(img.width)}
 }

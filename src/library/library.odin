@@ -1,5 +1,6 @@
 package library
 
+import "core:mem"
 // Library loading: replay NDJSON add-events into an in-memory image list.
 // Prototype only -- no derived index, no DB.
 
@@ -37,50 +38,50 @@ Event :: struct {
 }
 
 
-load_library :: proc(root: string) -> []Image {
-
-	images: [dynamic]Image
-
+// load library at path root into v
+load_library :: proc(root: string, images: ^[dynamic]Image, alloc: mem.Allocator) {
 	events_dir := fmt.tprintf("%s/events", root)
-	dir, open_err := os.open(events_dir)
-	if open_err != nil {
-		fmt.eprintln("library: cannot open events dir", events_dir, open_err)
-		return images[:]
-	}
-	defer os.close(dir)
-	entries, err := os.read_dir(dir, -1, context.temp_allocator)
-	if err != nil {
-		fmt.eprintln("library: cannot read events dir", events_dir, err)
-		return images[:]
-	}
-	defer {
-		for entry in entries {os.file_info_delete(entry, context.temp_allocator)}
-		delete(entries)
-	}
-	for entry in entries {
-		if !strings.has_suffix(entry.name, ".ndjson") {continue}
+	dir_fi, _ := os.stat(events_dir, alloc)
+	if dir_fi.type != .Directory {fmt.eprintln("library: cannot open events dir", events_dir)}
+	os.file_info_delete(dir_fi, alloc)
+
+	w := os.walker_create(events_dir)
+	defer os.walker_destroy(&w)
+
+	for entry in os.walker_walk(&w) {
+		if _, err := os.walker_error(&w); err != nil {
+			continue
+		}
+
+		if !strings.has_suffix(entry.name, ".ndjson") {
+			continue
+		}
+
 		fp := fmt.tprintf("%s/%s", events_dir, entry.name)
-		data, err := os.read_entire_file(fp, context.temp_allocator)
+		data, err := os.read_entire_file(fp, alloc)
+		defer delete(data, alloc)
+
 		if err != nil {
 			fmt.eprintln("library: cannot read", fp)
 			continue
 		}
-		load_ndjson(&images, string(data), fp)
-		delete(data)
+		load_ndjson(images, string(data), alloc)
 	}
-	return images[:]
 }
 
-load_ndjson :: proc(images: ^[dynamic]Image, data: string, src: string) {
-	lines := strings.split(data, "\n")
-	defer delete(lines)
+load_ndjson :: proc(images: ^[dynamic]Image, data: string, alloc: mem.Allocator) {
+	lines := strings.split(data, "\n", alloc)
+
 	for line in lines {
 		if strings.trim_space(line) == "" {continue}
 		ev: Event
-		if err := json.unmarshal(transmute([]u8)line, &ev); err != nil {
-			fmt.eprintln("library: bad event in", src, ":", err)
+
+		if err := json.unmarshal(transmute([]u8)line, &ev, json.DEFAULT_SPECIFICATION, alloc);
+		   err != nil {
+			fmt.eprintln("library: bad event ", err)
 			continue
 		}
+
 		if ev.op != "add" {continue}
 		append(
 			images,

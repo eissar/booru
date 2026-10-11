@@ -72,7 +72,8 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 @(test)
 test_mip :: proc(_: ^testing.T) {
 	cfg := cli.getFlags()
-	library_images = library.load_library(cfg.library)
+
+	library.load_library(cfg.library, &library_images, context.allocator)
 
 	listener, _ := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
 	defer net.close(listener)
@@ -282,7 +283,7 @@ handle_gallery :: proc(req: http.Header, conn: net.TCP_Socket) {
 		return
 	}
 
-	filtered := filter_images(library_images, q.tags[:])
+	filtered := filter_images(library_images[:], q.tags[:])
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
@@ -331,7 +332,7 @@ handle_fragment_gallery_content :: proc(req: http.Header, conn: net.TCP_Socket) 
 		return
 	}
 
-	filtered := filter_images(library_images, q.tags[:])
+	filtered := filter_images(library_images[:], q.tags[:])
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
@@ -380,7 +381,7 @@ handle_fragment_items :: proc(req: http.Header, conn: net.TCP_Socket) {
 		return
 	}
 
-	filtered := filter_images(library_images, q.tags[:])
+	filtered := filter_images(library_images[:], q.tags[:])
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
