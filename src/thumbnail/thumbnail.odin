@@ -107,7 +107,9 @@ main :: proc() {
 // TODO: use a prebuffered
 // THUMBNAIL_MISSING / UNSUPPORTED_TYPE
 // thumbnail
-Thumbnail_MipMap :: proc(streams: []Thumb, vec: [][]u8, alloc: runtime.Allocator) {
+Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
+	vec := make([][]u8, 3 + 9 * len(streams), alloc)
+
 	length_of_thumbs := 0
 	for t in streams {
 		// subtract RIFF header, or 12 bytes per thumb
@@ -165,6 +167,6 @@ Thumbnail_MipMap :: proc(streams: []Thumb, vec: [][]u8, alloc: runtime.Allocator
 		copy(dims[i], encoded[:3])
 	}
 
-	vec := vec
 	Vectorized_Webp_Extended(chunks[:], &vec, prefix, dims)
+	return vec
 }

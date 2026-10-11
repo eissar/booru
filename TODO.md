@@ -9,6 +9,8 @@
   - Start with the existing benchmark's allocate → touch → free stages. Account for batched kernel counters and peaks missed by polling; AST matches identify candidate events, not proof of resource attribution.
 
 
+- Fix leaks in `Thumbnail_MipMap`.
+
 # LOD 0 Micro-Atlas TODO
 
 1. Vendor libwebp into a new `src/img-slop/` package with Odin foreign imports and a decode/encode smoke test.

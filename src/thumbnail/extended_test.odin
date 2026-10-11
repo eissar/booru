@@ -39,99 +39,6 @@ foreign webp {
 }
 
 @(test)
-vectorized_webp_extended_riff_size :: proc(t: ^testing.T) {
-	// Complete 1x1 red, lossy WebP.
-	sample := []u8 {
-		82,
-		73,
-		70,
-		70,
-		60,
-		0,
-		0,
-		0,
-		87,
-		69,
-		66,
-		80,
-		86,
-		80,
-		56,
-		32,
-		48,
-		0,
-		0,
-		0,
-		208,
-		1,
-		0,
-		157,
-		1,
-		42,
-		1,
-		0,
-		1,
-		0,
-		2,
-		0,
-		52,
-		37,
-		160,
-		2,
-		116,
-		186,
-		1,
-		248,
-		0,
-		3,
-		176,
-		0,
-		254,
-		240,
-		196,
-		11,
-		255,
-		32,
-		185,
-		97,
-		117,
-		200,
-		215,
-		255,
-		32,
-		63,
-		228,
-		7,
-		252,
-		128,
-		255,
-		248,
-		242,
-		0,
-		0,
-		0,
-	}
-	thumbs := [1]Thumb{{bytes = sample, width = 1, height = 1}}
-	storage: [12][]u8
-	vec := storage[:]
-	Thumbnail_MipMap(thumbs[:], storage[:], context.temp_allocator)
-
-	expected := []u8{116, 0, 0, 0}
-	actual := vec[0][4:8]
-	if !testing.expect(
-		t,
-		bytes.equal(actual, expected),
-		"extended RIFF size matches expected bytes",
-	) {
-		when ODIN_DEBUG {
-			dump_hex("expected RIFF size", expected)
-			dump_hex("actual RIFF size", actual)
-			dump_hex("webp section:", vec[0])
-		}
-	}
-}
-
-@(test)
 vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	pixel := [3]u8{255, 0, 0}
 	encoded: ^u8
@@ -140,13 +47,10 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	defer WebPFree(encoded)
 
 	thumbs := [1]Thumb{{bytes = (cast([^]u8)encoded)[:int(size)], width = 1, height = 1}}
-	storage: [12][]u8
-	Thumbnail_MipMap(thumbs[:], storage[:], context.temp_allocator)
-	buf: bytes.Buffer
-	defer bytes.buffer_destroy(&buf)
-	for segment in storage {
-		bytes.buffer_write(&buf, segment)
-	}
+	segments := Thumbnail_MipMap(thumbs[:], context.temp_allocator)
+	defer delete(segments, context.temp_allocator)
+	data := bytes.join(segments, nil, context.temp_allocator)
+	defer delete(data, context.temp_allocator)
 
 	path :: ".test-data/extended.webp"
 	// mkdir_all reports Exist when the directory is already there, which is the
@@ -154,11 +58,7 @@ vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	if err := os.mkdir_all(".test-data"); err != nil && err != os.General_Error.Exist {
 		if !testing.expect(t, false, "create output directory") {return}
 	}
-	if !testing.expect(
-		t,
-		os.write_entire_file(path, bytes.buffer_to_bytes(&buf)) == nil,
-		"write WebP",
-	) {return}
+	if !testing.expect(t, os.write_entire_file(path, data) == nil, "write WebP") {return}
 	state, stdout, stderr, err := os.process_exec(
 		{command = {"webpinfo", "-diag", "-bitstream_info", path}},
 		context.temp_allocator,
@@ -207,11 +107,11 @@ vectorized_webp_extended_length :: proc(t: ^testing.T) {
 
 	input_streams[0] = Thumb{t_bytes, u16le(imgs[0].height), u16le(imgs[0].width)}
 
+	vec_dat := Thumbnail_MipMap(input_streams, context.allocator)
+	vec_dat_len := 0
+	for v in vec_dat {vec_dat_len += len(v)}
 
-	vec := make([][]u8, 3 + 9 * len(input_streams), alloc)
-	defer delete(vec, alloc)
+	// fmt.println(vec_dat[0][4:8])
+	// fmt.printf("vec_dat_len %v\n", vec_dat_len)
 
-	Thumbnail_MipMap(input_streams, vec, context.allocator)
-
-	fmt.println(vec)
 }

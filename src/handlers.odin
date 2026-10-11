@@ -45,10 +45,6 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 	t_slice, alloc_err = make([]thumbnail.Thumb, len(library_images), req.alloc)
 	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
 
-	vectored_slice: [][]u8
-	vectored_slice, alloc_err = make([][]u8, 3 + 9 * len(library_images), req.alloc)
-	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
-
 	for l, i in library_images {
 		p := fmt.aprintf("./test/fixture/library/thumbnails/%v.webp", l.oid, allocator = req.alloc)
 		t_bytes, _ := os.read_entire_file(p, req.alloc)
@@ -56,7 +52,7 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 		t_slice[i] = thumbnail.Thumb{t_bytes, u16le(l.height), u16le(l.width)}
 	}
 
-	thumbnail.Thumbnail_MipMap(t_slice, vectored_slice, req.alloc)
+	vectored_slice := thumbnail.Thumbnail_MipMap(t_slice, req.alloc)
 	length := 0
 	for part in vectored_slice {length += len(part)}
 	header := fmt.aprintf(
