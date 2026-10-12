@@ -14,6 +14,12 @@ Thumb :: struct {
 	height: u16le,
 }
 
+NOT_FOUND_WEBP :: #load("../../static/not_found.webp")
+new_not_found_thumb :: proc() -> Thumb {
+	return Thumb{transmute([]u8)NOT_FOUND_WEBP, 96, 96}
+}
+
+
 // attempt to implement
 // RFC9649 https://www.rfc-editor.org/info/rfc9649/
 // contextless specifiers (e.g., 2.7.1.1) reference sections of

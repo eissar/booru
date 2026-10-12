@@ -45,7 +45,9 @@ unit_smoke_res_helper :: proc(t: ^testing.T) {
 assert_res_helper :: proc "contextless" (res: ^Response) {
 	context = runtime.default_context()
 	assert(res != nil)
-	assert(cap(res.headers) > 0)
+
+	raw := cast(^runtime.Raw_Map)&res.headers
+	assert(raw.allocator.procedure != nil)
 }
 // ENDREGION
 

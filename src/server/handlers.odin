@@ -1,6 +1,5 @@
 package server
 
-import "base:runtime"
 import "core:fmt"
 import "core:mem"
 import "core:net"
@@ -28,11 +27,25 @@ send_vectored :: proc(conn: net.TCP_Socket, parts: [][]u8) -> bool {
 	return true
 }
 
-handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket, body: []u8 = nil) {
+lookup_thumbnail_oid_by_id :: proc(s: library.State, id: int) -> (oid: string, ok: bool) {
+	for img in s.library_images {
+		if img.id == id {return img.oid, true}
+	}
+	return "", false
+}
 
+
+handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket, body: []u8 = nil) {
 	defer net.close(conn)
-	count, ok := strconv.parse_int(req.header.path[len("/mipmap/"):])
-	if !ok || count <= 0 {
+
+	res: thumbnail.LOD_RESOLUTION
+	switch req.header.path[len("/mipmap/"):] {
+	case "64":
+		res = .x64
+	case "128":
+		res = .x128
+	case:
+		// err = "invalid lod passed to /mipmap/:res path parameter"
 		header := fmt.aprintf(
 			"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nServer-Timing: app;dur=%.2f\r\n\r\n",
 			time.duration_milliseconds(time.since(req.rec_time)),
@@ -42,22 +55,49 @@ handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket, bod
 		return
 	}
 
-	alloc_err: runtime.Allocator_Error
-	t_slice: []thumbnail.Thumb
-	t_slice, alloc_err = make([]thumbnail.Thumb, len(s.library_images), req.alloc)
-	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
-
-	for l, i in s.library_images {
-		p := fmt.aprintf("%s/thumbnails/%v.webp", s.library_path, l.oid, allocator = req.alloc)
-		t_bytes, _ := os.read_entire_file(p, req.alloc)
-
-		// The current animated WebP canvas is fixed at 96×96.
-		// Original image dimensions in the library are not thumbnail dimensions.
-		// t_slice[i] = thumbnail.Thumb{t_bytes, u16le(l.height), u16le(l.width)}
-		t_slice[i] = thumbnail.Thumb{t_bytes, 96, 96}
+	if len(body) == 0 {
+		_ = send_vectored(
+			conn,
+			{transmute([]u8)string("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")},
+		)
+		return
 	}
 
-	vectored_slice := thumbnail.Thumbnail_MipMap(t_slice, req.alloc)
+	img_ids_raw := transmute(string)body
+	requested_count := strings.count(img_ids_raw, ",") + 1
+
+	thumbnails := make([dynamic]thumbnail.Thumb, requested_count, req.alloc)
+	defer delete(thumbnails)
+
+	idx := 0
+	for raw_str_id in strings.split_iterator(&img_ids_raw, ",") {
+		id, ok := strconv.parse_int(raw_str_id)
+		assert(ok)
+
+		oid, found := lookup_thumbnail_oid_by_id(s, id)
+		if !found {
+			thumbnails[idx] = thumbnail.new_not_found_thumb()
+		}
+
+		p := fmt.aprintf("%s/thumbnails/%v.webp", s.library_path, oid, allocator = req.alloc)
+		t_bytes, err := os.read_entire_file(p, req.alloc)
+		if err != nil {
+			fmt.eprintfln("thumbnail id=%v lookup failed err=%v", id, err)
+		}
+		// The current animated WebP canvas is fixed at 96×96.
+		thumbnails[idx] = thumbnail.Thumb{t_bytes, 96, 96}
+		idx += 1
+	}
+
+	if len(thumbnails) == 0 {
+		_ = send_vectored(
+			conn,
+			{transmute([]u8)string("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")},
+		)
+		return
+	}
+
+	vectored_slice := thumbnail.Thumbnail_MipMap(thumbnails[:], req.alloc)
 	length := 0
 	for part in vectored_slice {length += len(part)}
 	header := fmt.aprintf(
@@ -69,13 +109,6 @@ handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket, bod
 	headers := [1][]u8{transmute([]u8)header}
 	if !send_vectored(conn, headers[:]) {return}
 	_ = send_vectored(conn, vectored_slice)
-
-	// free after send
-	// err := free_all(req.alloc)
-	// if err != nil {
-	// 	panic(fmt.aprintf("err=%s", err, allocator = context.temp_allocator))
-	// }
-
 }
 
 @(test)
@@ -106,7 +139,8 @@ test_mip :: proc(_: ^testing.T) {
 	defer net.close(client)
 	conn, _, _ := net.accept_tcp(listener)
 
-	handle_mipmap(s, http.Req{{path = "/mipmap/3"}, alloc, time.now()}, conn)
+	body := transmute([]u8)string("3,1,2")
+	handle_mipmap(s, http.Req{{path = "/mipmap/3"}, alloc, time.now()}, conn, body)
 }
 
 MIN_LIMIT :: 10
