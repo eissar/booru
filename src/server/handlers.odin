@@ -28,7 +28,7 @@ send_vectored :: proc(conn: net.TCP_Socket, parts: [][]u8) -> bool {
 	return true
 }
 
-handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket) {
+handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket, body: []u8 = nil) {
 
 	defer net.close(conn)
 	count, ok := strconv.parse_int(req.header.path[len("/mipmap/"):])
