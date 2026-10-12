@@ -13,7 +13,6 @@ import "core:time"
 import "../cli"
 import "../http"
 import "../library"
-import "../render"
 import "../template"
 import "../thumbnail"
 
@@ -321,7 +320,7 @@ handle_gallery :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket)
 		gallery_url  = gallery_url,
 		fragment_url = fragment_url,
 	}
-	body := render.render_gallery_page("Gallery", render.Renderer_Version, filter, page, has_more)
+	body := template.render_gallery_page("Gallery", filter, page, has_more)
 	{
 		body := body
 		resp := fmt.tprintf(
@@ -342,7 +341,7 @@ handle_fragment_gallery_content :: proc(s: library.State, req: http.Header, conn
 	q, ok := parse_gallery_query(req.query)
 	if !ok {
 		{
-			body := render.render_toast("invalid offset", .Error)
+			body := template.render_toast("invalid offset", .Error)
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
 				"400 Bad Request",
@@ -370,7 +369,7 @@ handle_fragment_gallery_content :: proc(s: library.State, req: http.Header, conn
 		gallery_url  = gallery_url,
 		fragment_url = fragment_url,
 	}
-	body := render.render_gallery_content(filter, page, has_more)
+	body := template.render_gallery_content(filter, page, has_more)
 	{
 		body := body
 		resp := fmt.tprintf(
@@ -391,7 +390,7 @@ handle_fragment_items :: proc(s: library.State, req: http.Header, conn: net.TCP_
 	q, ok := parse_gallery_query(req.query)
 	if !ok {
 		{
-			body := render.render_toast("invalid offset", .Error)
+			body := template.render_toast("invalid offset", .Error)
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
 				"400 Bad Request",
@@ -410,9 +409,7 @@ handle_fragment_items :: proc(s: library.State, req: http.Header, conn: net.TCP_
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
-	body := render.render_card_grid(
-		{cards = page, offset = q.offset + len(page), has_more = has_more},
-	)
+	body := template.render_photo_grid(page, q.offset + len(page), has_more)
 	push_url := fmt.tprintf(
 		"/gallery?limit=%d&offset=%d&sort=%s",
 		q.limit,
@@ -440,7 +437,7 @@ handle_fragment_inspect :: proc(s: library.State, req: http.Header, conn: net.TC
 	id, ok := strconv.parse_int(id_str)
 	if !ok {
 		{
-			body := render.render_toast("Missing image id", .Error)
+			body := template.render_toast("Missing image id", .Error)
 			resp := fmt.tprintf(
 				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
 				"400 Bad Request",
@@ -457,7 +454,7 @@ handle_fragment_inspect :: proc(s: library.State, req: http.Header, conn: net.TC
 	for img in s.library_images {
 		if img.id == id {
 			{
-				body := render.render_inspector(img)
+				body := template.render_inspector(img)
 				resp := fmt.tprintf(
 					"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
 					"200 OK",
@@ -473,7 +470,7 @@ handle_fragment_inspect :: proc(s: library.State, req: http.Header, conn: net.TC
 		}
 	}
 	{
-		body := render.render_toast("Could not find image", .Error)
+		body := template.render_toast("Could not find image", .Error)
 		resp := fmt.tprintf(
 			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
 			"404 Not Found",

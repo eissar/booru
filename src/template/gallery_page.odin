@@ -91,10 +91,9 @@ render_gallery_content :: proc(
 	return strings.to_string(b)
 }
 
-// render_gallery_page renders the full initial gallery document. version is
-// stamped on <body data-renderer-version>.
+// render_gallery_page renders the full initial gallery document.
 render_gallery_page :: proc(
-	title, version: string,
+	title: string,
 	filter: Gallery_Filter,
 	images: []library.Image,
 	has_more: bool,
@@ -110,7 +109,6 @@ render_gallery_page :: proc(
 		&b,
 		"</title><script src=\"https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js\"></script><script src=\"https://cdn.jsdelivr.net/npm/htmx-ext-response-targets@2.0.4\"></script><script src=\"https://cdn.tailwindcss.com\"></script><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"/><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin=\"anonymous\"/><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap\" rel=\"stylesheet\"/><link href=\"/static/gallery.css\" rel=\"stylesheet\"/><script src=\"/static/gallery.js\"></script></head><body",
 	)
-	attr(&b, "data-renderer-version", version)
 	wr(&b, " class=\"antialiased\" hx-ext=\"response-targets\">")
 	write_toolbar(&b, filter)
 	wr(

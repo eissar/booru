@@ -1,6 +1,6 @@
 ---
 name: html-fixture-tdd
-description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-booru-odin (htmx frontend, no JSX/templates). Use when adding or changing any rendered HTML — templates in src/template/, handlers in src/render/, or htmx-driven client behavior. The workflow: hand-edit the expected HTML fixture first, watch the test go red, then bring the Odin code into agreement. Triggers: add UI, change markup, new template, htmx fragment, update the page/card/toast/grid."
+description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-booru-odin (htmx frontend, no JSX/templates). Use when adding or changing any rendered HTML — templates in src/template/, handlers in src/server/, or htmx-driven client behavior. The workflow: hand-edit the expected HTML fixture first, watch the test go red, then bring the Odin code into agreement. Triggers: add UI, change markup, new template, htmx fragment, update the page/card/toast/grid."
 ---
 
 # html-fixture-tdd
@@ -27,13 +27,13 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
 
    (also included in `odin test test -all-packages` from the repo root; requires Perl and `HTML::Tidy5`, available on Debian as `libhtml-tidy5-perl`)
 
-   Individual Odin tests in `src/render/fixture_test.odin` render each case and invoke `test/html-fixture-tdd/compare_html.pl` to compare HTML::Tidy5-normalized strings against fixtures (alphabetically sorted attributes and normalized formatting). Tidy can repair markup, so this is not identical to DOM structural comparison. Confirm the failing case is the one you edited, failing for the reason you expect.
+   Individual Odin tests in `src/template/fixture_test.odin` render each case and invoke `test/html-fixture-tdd/compare_html.pl` to compare HTML::Tidy5-normalized strings against fixtures (alphabetically sorted attributes and normalized formatting). Tidy can repair markup, so this is not identical to DOM structural comparison. Confirm the failing case is the one you edited, failing for the reason you expect.
 
 3. **Update the Odin code to match.** Change only the template file(s) mapped to that fixture. Shared escaping helpers live in `src/template/html.odin` (`write_text`, `write_attr`, `write_attr_bool`, `escape`). Prefer editing the smallest sibling; don't touch other fixtures.
 
 4. **Run again to GREEN.** Repeat steps 1–4 per feature increment. Small loops: one markup change → one code change → one test run.
 
-5. **Client behavior follows the fixture.** For htmx interactions, ensure endpoints/handlers return fragments whose structure matches what the fixture (and `src/render/render.odin`) produce. New ids/classes introduced in the fixture get wired in `static/` JS/CSS in the same pass.
+5. **Client behavior follows the fixture.** For htmx interactions, ensure endpoints/handlers return fragments whose structure matches what the fixture in `src/template/` produce. New ids/classes introduced in the fixture get wired in `static/` JS/CSS in the same pass.
 
 ## Rules & guardrails
 
@@ -43,4 +43,4 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
 - **Bounded retries.** If a template proc needs more than two revisions to match a fixture, stop and reconsider the fixture or the data model rather than iterating blindly.
 - **Escaping is part of the spec.** Put literal escaped entities (`&amp;`, `&lt;` …) in the fixture where you expect them; use `write_text`/`write_attr` in code so they arise naturally.
 - Run `task fmt` (and the format check) before committing, per AGENTS.md.
-- Adding a brand-new template: create the fixture file first, add an individual test in `src/render/fixture_test.odin`, then RED → implement → GREEN.
+- Adding a brand-new template: create the fixture file first, add an individual test in `src/template/fixture_test.odin`, then RED → implement → GREEN.

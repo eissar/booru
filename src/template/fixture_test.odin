@@ -1,4 +1,4 @@
-package render
+package template
 
 // Render synthetic data and compare against hand-authored HTML fixtures.
 
@@ -7,6 +7,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
+import "../library"
 import "core:testing"
 
 Event :: struct {
@@ -23,13 +24,13 @@ Event :: struct {
 	contentType: string,
 }
 
-load_images :: proc(path: string) -> []Render_Image {
+load_images :: proc(path: string) -> []library.Image {
 	data, err := os.read_entire_file(path, context.allocator)
 	if err != nil {
 		fmt.eprintln("cannot read", path)
 		os.exit(1)
 	}
-	images: [dynamic]Render_Image
+	images: [dynamic]library.Image
 	lines := strings.split(string(data), "\n")
 	defer delete(lines)
 	for line in lines {
@@ -42,7 +43,7 @@ load_images :: proc(path: string) -> []Render_Image {
 		if ev.op != "add" {continue}
 		append(
 			&images,
-			Render_Image {
+			library.Image {
 				id = ev.id,
 				oid = ev.oid,
 				path = ev.path,
@@ -120,11 +121,7 @@ html_photo_grid :: proc(t: ^testing.T) {
 	defer free_all(alloc)
 	context.allocator = alloc
 	images := load_images("test/fixture/library/events/2026-01.ndjson")
-	expect_html_fixture(
-		t,
-		"photo_grid",
-		render_card_grid({cards = images[:2], offset = 2, has_more = true}),
-	)
+	expect_html_fixture(t, "photo_grid", render_photo_grid(images[:2], 2, true))
 }
 
 @(test)
@@ -158,12 +155,6 @@ html_gallery_page :: proc(t: ^testing.T) {
 	expect_html_fixture(
 		t,
 		"gallery_page",
-		render_gallery_page(
-			"Synthetic library",
-			Renderer_Version,
-			fixture_gallery_filter(),
-			images[:2],
-			true,
-		),
+		render_gallery_page("Synthetic library", fixture_gallery_filter(), images[:2], true),
 	)
 }

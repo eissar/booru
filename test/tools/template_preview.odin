@@ -11,7 +11,7 @@ package main
 // markup.
 //
 // Nothing here is a second renderer. Every case calls the same
-// src/render procs the test harness calls, so what you preview is exactly what
+// src/template procs the test harness calls, so what you preview is exactly what
 // test/html-fixture-tdd/fixture_harness_test.ts asserts on. The fixtures stay
 // read-only baselines: this tool never writes into test/html-fixture-tdd/fixture.
 //
@@ -34,7 +34,8 @@ import "core:os"
 import "core:strings"
 import "core:time"
 
-import "../../src/render"
+import "../../src/library"
+import "../../src/template"
 
 // Case identifiers. Order drives the tab strip.
 CASE_NAMES := []string {
@@ -78,7 +79,7 @@ FIXTURES_DIR :: "test/html-fixture-tdd/fixture"
 
 // load_images reads the synthetic library event shard and returns the images
 // in file order, matching the test harness exactly.
-load_images :: proc(path: string) -> []render.Render_Image {
+load_images :: proc(path: string) -> []library.Image {
 	data, err := os.read_entire_file(path, context.allocator)
 	if err != nil {
 		fmt.eprintln("template_preview: cannot read", path)
@@ -86,7 +87,7 @@ load_images :: proc(path: string) -> []render.Render_Image {
 		os.exit(1)
 	}
 
-	images: [dynamic]render.Render_Image
+	images: [dynamic]library.Image
 	lines := strings.split(string(data), "\n")
 	defer delete(lines)
 
@@ -100,7 +101,7 @@ load_images :: proc(path: string) -> []render.Render_Image {
 		if ev.op != "add" {continue}
 		append(
 			&images,
-			render.Render_Image {
+			library.Image {
 				id = ev.id,
 				oid = ev.oid,
 				path = ev.path,
@@ -117,8 +118,8 @@ load_images :: proc(path: string) -> []render.Render_Image {
 	return images[:]
 }
 
-fixture_filter :: proc() -> render.Gallery_Filter {
-	return render.Gallery_Filter {
+fixture_filter :: proc() -> template.Gallery_Filter {
+	return template.Gallery_Filter {
 		limit = 2,
 		sort = "addedAtAsc",
 		offset = 2,
@@ -132,7 +133,7 @@ fixture_filter :: proc() -> render.Gallery_Filter {
 // ---------------------------------------------------------------------------
 
 // render_cases renders every template case and returns name -> html.
-render_cases :: proc(images: []render.Render_Image) -> map[string]string {
+render_cases :: proc(images: []library.Image) -> map[string]string {
 	cases := make(map[string]string)
 
 	if len(images) == 0 {
@@ -140,18 +141,15 @@ render_cases :: proc(images: []render.Render_Image) -> map[string]string {
 		os.exit(1)
 	}
 
-	cases["toast"] = render.render_toast("Library imported", .Success)
-	cases["item_card"] = render.render_item_card(images[0], -1)
-	cases["photo_grid"] = render.render_card_grid(
-		render.Render_Card_Grid_Input{cards = images[:2], offset = 2, has_more = true},
-	)
-	cases["inspector"] = render.render_inspector(images[0])
+	cases["toast"] = template.render_toast("Library imported", .Success)
+	cases["item_card"] = template.render_item_card(images[0], -1)
+	cases["photo_grid"] = template.render_photo_grid(images[:2], 2, true)
+	cases["inspector"] = template.render_inspector(images[0])
 
 	filter := fixture_filter()
-	cases["gallery_content"] = render.render_gallery_content(filter, images[:2], true)
-	cases["gallery_page"] = render.render_gallery_page(
+	cases["gallery_content"] = template.render_gallery_content(filter, images[:2], true)
+	cases["gallery_page"] = template.render_gallery_page(
 		"Synthetic library",
-		render.Renderer_Version,
 		filter,
 		images[:2],
 		true,
@@ -551,7 +549,6 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
   var SCHEMA = {
     gallery_page: [
       { key: "title", kind: "text", label: "title", def: "Synthetic library" },
-      { key: "version", kind: "text", label: "version", def: "default" },
       { key: "limit", kind: "number", label: "filter.limit", def: 2 },
       { key: "sort", kind: "select", label: "filter.sort", def: "addedAtAsc", options: ["", "addedAtAsc", "addedAtDesc"] },
       { key: "offset", kind: "number", label: "filter.offset", def: 2 },
@@ -818,7 +815,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
   function scriptTag(attrs) { return LT + "script" + (attrs ? " " + attrs : "") + GT; }
   function scriptEnd() { return LT + "/script" + GT; }
 
-  function galleryPage(title, version, f, images, hasMore) {
+  function galleryPage(title, f, images, hasMore) {
     var b = "";
     b += '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>';
     b += escText(title);
@@ -829,7 +826,6 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
     b += '<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>';
     b += '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>';
     b += '<link href="' + STATIC_URL + '/gallery.css" rel="stylesheet"/>' + scriptTag('src="' + STATIC_URL + '/gallery.js"') + scriptEnd() + '</head><body';
-    b += attr("data-renderer-version", version);
     b += ' class="antialiased" hx-ext="response-targets">';
     b += writeToolbar(f);
     b += '<main id="gallery-main" class="gallery-main main-scroll">' + scriptTag() + 'try{if(localStorage.getItem(\'inspector-open\')===\'true\')document.getElementById(\'gallery-main\')?.classList.add(\'inspector-open\')}catch(_){}' + scriptEnd();
@@ -864,7 +860,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
           limit: Number(st.limit), sort: st.sort, offset: Number(st.offset),
           gallery_url: st.gallery_url, fragment_url: st.fragment_url
         };
-        return galleryPage(st.title, st.version, filter, pick(st.images), !!st.has_more);
+        return galleryPage(st.title, filter, pick(st.images), !!st.has_more);
     }
     return "";
   }
@@ -1178,7 +1174,7 @@ case_titles_json :: proc() -> string {
 }
 
 // images_json renders the fixture images in the shape the viewer expects.
-images_json :: proc(images: []render.Render_Image) -> string {
+images_json :: proc(images: []library.Image) -> string {
 	b := strings.builder_make()
 	strings.write_string(&b, "[")
 	for img, i in images {
@@ -1213,7 +1209,7 @@ images_json :: proc(images: []render.Render_Image) -> string {
 // build_preview_page assembles the full previewer document.
 build_preview_page :: proc(
 	cases: map[string]string,
-	images: []render.Render_Image,
+	images: []library.Image,
 	thumb_url, static_url: string,
 ) -> string {
 	docs := build_documents(cases, thumb_url, static_url)
