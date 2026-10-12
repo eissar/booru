@@ -17,8 +17,8 @@ Opts :: struct {
 	/* reset derived index artifacts and replay
        committed events from the beginning */
 	// rebuildIndex: bool
-	/* skip scanning for missing thumbnails on startup default true*/
-	scanThumbnail: bool,
+	// Scan and generate missing thumbnails before listening by default.
+	scanThumbnail: bool `usage:"Generate missing 64px and 128px thumbnails on startup."`,
 }
 //REGION: cli flag validation
 
@@ -43,8 +43,9 @@ check_valid_port :: proc(
 
 getFlags :: proc() -> Opts {
 	opts: Opts = {
-		port    = 8080,
-		library = "test/fixture/library",
+		port          = 8080,
+		library       = "test/fixture/library",
+		scanThumbnail = true,
 	}
 	flags.register_flag_checker(check_valid_port)
 	flags.parse_or_exit(&opts, os.args)

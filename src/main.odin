@@ -9,6 +9,7 @@ import "core:time"
 import "cli"
 import "library"
 import "server"
+import "thumbnail"
 
 // Loaded once at startup from the NDJSON event log; no DB for this prototype.
 // library_images: [dynamic]library.Image
@@ -50,6 +51,11 @@ main :: proc() {
 		time.duration_milliseconds(time.since(load_start)),
 		cfg.library,
 	)
+
+	if cfg.scanThumbnail {
+		generated, failed := thumbnail.generate_missing_thumbnails(state)
+		log.infof("thumbnails: %d generated, %d failed", generated, failed)
+	}
 
 	ep := net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port})
 	// net.parse_address
