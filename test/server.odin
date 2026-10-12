@@ -1,6 +1,6 @@
 package test
 
-import server "../src"
+import "../src/server"
 import "base:runtime"
 import "core:fmt"
 import "core:net"
@@ -20,7 +20,7 @@ server_get_gallery :: proc(t: ^testing.T) {
 
 	worker := thread.create_and_start_with_data(&sock, proc(data: rawptr) {
 		defer runtime.default_temp_allocator_destroy(auto_cast context.temp_allocator.data)
-		server.Serve((cast(^net.TCP_Socket)data)^)
+		server.Serve({}, (cast(^net.TCP_Socket)data)^)
 	})
 	defer {
 		// Shutdown wakes the blocking accept so Serve can return before join.

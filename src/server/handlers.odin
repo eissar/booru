@@ -1,4 +1,4 @@
-package main
+package server
 
 import "base:runtime"
 import "core:fmt"
@@ -7,15 +7,15 @@ import "core:net"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "core:testing"
 import "core:time"
 
-import "cli"
-import "core:testing"
-import "http"
-import "library"
-import "render"
-import "template"
-import "thumbnail"
+import "../cli"
+import "../http"
+import "../library"
+import "../render"
+import "../template"
+import "../thumbnail"
 
 send_vectored :: proc(conn: net.TCP_Socket, parts: [][]u8) -> bool {
 	for part in parts {
@@ -29,7 +29,7 @@ send_vectored :: proc(conn: net.TCP_Socket, parts: [][]u8) -> bool {
 	return true
 }
 
-handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
+handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket) {
 
 	defer net.close(conn)
 	count, ok := strconv.parse_int(req.header.path[len("/mipmap/"):])
@@ -45,11 +45,11 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 
 	alloc_err: runtime.Allocator_Error
 	t_slice: []thumbnail.Thumb
-	t_slice, alloc_err = make([]thumbnail.Thumb, len(library_images), req.alloc)
+	t_slice, alloc_err = make([]thumbnail.Thumb, len(s.library_images), req.alloc)
 	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
 
-	for l, i in library_images {
-		p := fmt.aprintf("%s/thumbnails/%v.webp", library_path, l.oid, allocator = req.alloc)
+	for l, i in s.library_images {
+		p := fmt.aprintf("%s/thumbnails/%v.webp", s.library_path, l.oid, allocator = req.alloc)
 		t_bytes, _ := os.read_entire_file(p, req.alloc)
 
 		// The current animated WebP canvas is fixed at 96×96.
@@ -82,20 +82,23 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 @(test)
 test_mip :: proc(_: ^testing.T) {
 	cfg := cli.getFlags()
-	previous_library_path := library_path
-	library_path = cfg.library
-	defer library_path = previous_library_path
 
-	backing := make([]u8, 64 * mem.Megabyte)
-	defer delete(backing)
+	backing := make([]u8, 64 * mem.Megabyte, allocator = context.allocator)
+	defer delete(backing, allocator = context.allocator)
+
 	arena: mem.Arena
 	mem.arena_init(&arena, backing)
 	alloc := mem.arena_allocator(&arena)
+
+	images := make([dynamic]library.Image, alloc)
+	library.load_library(cfg.library, &images, alloc)
 	defer free_all(alloc)
 
-	library_images = make([dynamic]library.Image, alloc)
-	defer library_images = {}
-	library.load_library(cfg.library, &library_images, alloc)
+
+	s := library.State {
+		library_images = images[:],
+		library_path   = cfg.library,
+	}
 
 	listener, _ := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
 	defer net.close(listener)
@@ -104,7 +107,7 @@ test_mip :: proc(_: ^testing.T) {
 	defer net.close(client)
 	conn, _, _ := net.accept_tcp(listener)
 
-	handle_mipmap(http.Req{{path = "/mipmap/3"}, alloc, time.now()}, conn)
+	handle_mipmap(s, http.Req{{path = "/mipmap/3"}, alloc, time.now()}, conn)
 }
 
 MIN_LIMIT :: 10
@@ -286,7 +289,7 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 //region: page + fragment handlers
 
 // handle_gallery serves "/" (alias) and "/gallery" -- the full page.
-handle_gallery :: proc(req: http.Header, conn: net.TCP_Socket) {
+handle_gallery :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
 	q, ok := parse_gallery_query(req.query)
 	if !ok {
 		{
@@ -305,7 +308,7 @@ handle_gallery :: proc(req: http.Header, conn: net.TCP_Socket) {
 		return
 	}
 
-	filtered := filter_images(library_images[:], q.tags[:])
+	filtered := filter_images(s.library_images[:], q.tags[:])
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
@@ -335,7 +338,7 @@ handle_gallery :: proc(req: http.Header, conn: net.TCP_Socket) {
 }
 
 // handle_fragment_gallery_content serves /fragment/gallery-content.
-handle_fragment_gallery_content :: proc(req: http.Header, conn: net.TCP_Socket) {
+handle_fragment_gallery_content :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
 	q, ok := parse_gallery_query(req.query)
 	if !ok {
 		{
@@ -354,7 +357,7 @@ handle_fragment_gallery_content :: proc(req: http.Header, conn: net.TCP_Socket) 
 		return
 	}
 
-	filtered := filter_images(library_images[:], q.tags[:])
+	filtered := filter_images(s.library_images[:], q.tags[:])
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
@@ -384,7 +387,7 @@ handle_fragment_gallery_content :: proc(req: http.Header, conn: net.TCP_Socket) 
 }
 
 // handle_fragment_items serves /fragment/items -- the load-more card grid.
-handle_fragment_items :: proc(req: http.Header, conn: net.TCP_Socket) {
+handle_fragment_items :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
 	q, ok := parse_gallery_query(req.query)
 	if !ok {
 		{
@@ -403,7 +406,7 @@ handle_fragment_items :: proc(req: http.Header, conn: net.TCP_Socket) {
 		return
 	}
 
-	filtered := filter_images(library_images[:], q.tags[:])
+	filtered := filter_images(s.library_images[:], q.tags[:])
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
@@ -432,7 +435,7 @@ handle_fragment_items :: proc(req: http.Header, conn: net.TCP_Socket) {
 }
 
 // handle_fragment_inspect serves /fragment/inspect/:id.
-handle_fragment_inspect :: proc(req: http.Header, conn: net.TCP_Socket) {
+handle_fragment_inspect :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
 	id_str := req.path[len("/fragment/inspect/"):]
 	id, ok := strconv.parse_int(id_str)
 	if !ok {
@@ -451,7 +454,7 @@ handle_fragment_inspect :: proc(req: http.Header, conn: net.TCP_Socket) {
 		}
 		return
 	}
-	for img in library_images {
+	for img in s.library_images {
 		if img.id == id {
 			{
 				body := render.render_inspector(img)
@@ -549,7 +552,7 @@ handle_static :: proc(req: http.Header, conn: net.TCP_Socket) {
 
 // handle_image serves /image/:oid -- thumbnails first (webp), then originals
 // by oid, mirroring ../lfs-booru/server.ts.
-handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
+handle_image :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
 	oid := req.path[len("/image/"):]
 	if !oid_path_safe(oid) {
 		{
@@ -568,7 +571,7 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 		return
 	}
 
-	thumb_fp := fmt.tprintf("%s/thumbnails/%s.webp", library_path, oid)
+	thumb_fp := fmt.tprintf("%s/thumbnails/%s.webp", s.library_path, oid)
 	data, err := os.read_entire_file(thumb_fp, context.temp_allocator)
 	body := string(data)
 	resp := fmt.tprintf(
@@ -582,9 +585,9 @@ handle_image :: proc(req: http.Header, conn: net.TCP_Socket) {
 	net.send_tcp(conn, transmute([]u8)resp)
 	net.close(conn)
 
-	for img in library_images {
+	for img in s.library_images {
 		if img.oid == oid {
-			orig_fp := fmt.tprintf("%s/images/%s", library_path, oid)
+			orig_fp := fmt.tprintf("%s/images/%s", s.library_path, oid)
 			data, err := os.read_entire_file(orig_fp, context.temp_allocator)
 			mime := img.content_type
 			if mime == "" {mime = "application/octet-stream"}

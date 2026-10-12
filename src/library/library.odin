@@ -10,6 +10,11 @@ import "core:os"
 import "core:strings"
 
 
+State :: struct {
+	library_images: []Image,
+	library_path:   string,
+}
+
 Image :: struct {
 	id:           int,
 	oid:          string,

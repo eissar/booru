@@ -1,25 +1,32 @@
 package main
 
-import "core:bytes"
-import "core:fmt"
+import "core:log"
 import "core:mem"
 import "core:net"
-import "core:strings"
+import "core:os"
 import "core:time"
 
 import "cli"
-import "http"
 import "library"
+import "server"
 
 // Loaded once at startup from the NDJSON event log; no DB for this prototype.
-library_images: [dynamic]library.Image
-library_path: string
+// library_images: [dynamic]library.Image
+// library_path: string
 
 main :: proc() {
+	load_start := time.now()
+
+	// consider: `when ODIN_DEBUG { log.debug("debugging") }` on hot paths
+	lvl := log.Level.Debug when ODIN_DEBUG else log.Level.Info
+	context.logger = log.create_console_logger(
+		lowest = lvl,
+		opt = log.Options{.Level, .Short_File_Path, .Procedure, .Line},
+	)
+	defer log.destroy_console_logger(context.logger)
+
 
 	cfg := cli.getFlags()
-	library_path = cfg.library
-	load_start := time.now()
 
 	backing := make([]u8, 64 * mem.Megabyte)
 	defer delete(backing)
@@ -28,13 +35,18 @@ main :: proc() {
 	mem.arena_init(&arena, backing)
 	alloc := mem.arena_allocator(&arena)
 
-	library_images = make([dynamic]library.Image, alloc)
-	library.load_library(cfg.library, &library_images, alloc)
+	images := make([dynamic]library.Image, alloc)
+	library.load_library(cfg.library, &images, alloc)
 	defer free_all(alloc)
 
-	fmt.eprintfln(
+	state := library.State {
+		library_images = images[:],
+		library_path   = cfg.library,
+	}
+
+	log.infof(
 		"%d images loaded in %.2f ms: %s",
-		len(library_images),
+		len(state.library_images),
 		time.duration_milliseconds(time.since(load_start)),
 		cfg.library,
 	)
@@ -43,89 +55,12 @@ main :: proc() {
 	// net.parse_address
 	sock, err := net.listen_tcp(ep)
 	if err != nil {
-		fmt.panicf("%v\n", err)
+		log.fatal(err)
+		os.exit(1)
 	}
 
-	fmt.eprintfln("server listening on %v", net.endpoint_to_string(ep))
+	log.infof("server listening on %v", net.endpoint_to_string(ep))
 
 	defer net.close(sock)
-	Serve(sock) // this should take an allocator
-}
-
-// Serve handles requests on an already-listening socket until accept fails.
-// The caller owns the socket and must initialize library_path and library_images.
-Serve :: proc(sock: net.TCP_Socket) {
-	// loop new client conns
-	for conn, src, err := net.accept_tcp(sock); err == nil; conn, src, err = net.accept_tcp(sock) {
-		_ = src
-
-		// just read into a 16 kb slice
-		raw: [16 * 1024]byte
-
-		rec_time := time.now()
-		bytes_read, err := net.recv_tcp(conn, raw[:])
-		if err != nil {
-			fmt.eprintfln("recv error: %v", err)
-			net.close(conn)
-			continue
-		}
-
-		// intermediate buffer
-		ib: bytes.Buffer
-		bytes.buffer_init(&ib, raw[:bytes_read])
-
-		req, ok := http.read_header(conn, &ib)
-		if !ok {
-			resp := "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-			continue
-		}
-
-		if req.method != "GET" {
-			resp := "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nAllow: GET\r\n\r\n"
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-			continue
-		}
-
-		if req.known_headers.content_length > 0 {
-			http.read_body(req, conn, &ib)
-		}
-
-		if req.path == "/" || req.path == "/gallery" {
-			handle_gallery(req, conn)
-			continue
-		}
-
-		if req.path == "/fragment/gallery-content" {
-			handle_fragment_gallery_content(req, conn)
-			continue
-		}
-		if req.path == "/fragment/items" {
-			handle_fragment_items(req, conn)
-			continue
-		}
-		if strings.starts_with(req.path, "/fragment/inspect/") {
-			handle_fragment_inspect(req, conn)
-			continue
-		}
-		if strings.starts_with(req.path, "/mipmap/") {
-			handle_mipmap({req, context.allocator, rec_time}, conn)
-			continue
-		}
-		if strings.starts_with(req.path, "/image/") {
-			handle_image(req, conn)
-			continue
-		}
-		if strings.starts_with(req.path, "/static/") {
-			handle_static(req, conn)
-			continue
-		}
-
-		// fallback
-		resp := "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
-		net.send_tcp(conn, transmute([]u8)resp)
-		net.close(conn)
-	}
+	server.Serve(state, sock) // this should take an allocator
 }
