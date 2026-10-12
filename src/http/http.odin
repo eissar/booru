@@ -1,6 +1,5 @@
 package http
 
-import "base:runtime"
 import "core:bytes"
 import "core:fmt"
 import "core:mem"
@@ -8,6 +7,7 @@ import "core:net"
 import "core:strconv"
 import "core:strings"
 import "core:time"
+
 Accept_Type :: enum {
 	Html,
 	Json,
