@@ -72,6 +72,7 @@ Serve :: proc(sock: net.TCP_Socket) {
 		// just read into a 16 kb slice
 		raw: [16 * 1024]byte
 
+		rec_time := time.now()
 		bytes_read, err := net.recv_tcp(conn, raw[:])
 		if err != nil {
 			log.error("recv error:", err)
@@ -120,7 +121,7 @@ Serve :: proc(sock: net.TCP_Socket) {
 			continue
 		}
 		if strings.starts_with(req.path, "/mipmap/") {
-			handle_mipmap({req, context.allocator}, conn)
+			handle_mipmap({req, context.allocator, rec_time}, conn)
 			continue
 		}
 		if strings.starts_with(req.path, "/image/") {

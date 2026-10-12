@@ -11,6 +11,11 @@
 
 - Fix leaks in `Thumbnail_MipMap`.
 
+# Thumbnail Preview TODO
+
+- If visible-grid redraws become a bottleneck, render changed slots into a persistent texture-backed framebuffer and blit it to the canvas on rAF. Compare blit bandwidth and framebuffer memory against drawing the cached textures; invalidate affected slots on sorting, scrolling, and resize.
+- Expose the RIFF frame-to-image-ID mapping so the GPU cache can follow images across reordered or filtered streams instead of using endpoint/frame-index keys.
+
 # LOD 0 Micro-Atlas TODO
 
 1. Vendor libwebp into a new `src/img-slop/` package with Odin foreign imports and a decode/encode smoke test.

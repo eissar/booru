@@ -8,6 +8,7 @@ import "core:mem"
 import "core:net"
 import "core:strconv"
 import "core:strings"
+import "core:time"
 Accept_Type :: enum {
 	Html,
 	Json,
@@ -38,8 +39,9 @@ Header :: struct {
 }
 
 Req :: struct {
-	header: Header,
-	alloc:  mem.Allocator,
+	header:   Header,
+	alloc:    mem.Allocator,
+	rec_time: time.Time,
 }
 
 read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header, ok: bool) {

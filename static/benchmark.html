@@ -1,39 +1,58 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Preloaded /mipmap/70 → WebGL2 benchmark</title>
+<title>Streaming /mipmap/70 → WebGL2 benchmark</title>
 <style>
 body{font:15px system-ui;background:#181818;color:#eee;max-width:1100px;margin:30px auto;padding:0 20px}button,input{font:inherit;padding:6px}canvas{display:block;width:100%;margin:20px 0;background:#333}pre{white-space:pre-wrap}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}td,th{text-align:right;padding:8px;border-bottom:1px solid #444}td:first-child,th:first-child{text-align:left}
 </style>
-<h1>Preloaded /mipmap/70 → WebGL2</h1>
-<p>Preloads <code>/mipmap/70</code> once when this page opens. Each benchmark run creates a fresh ImageDecoder, uploads decoded frames to a texture array, generates GPU mipmaps, and draws every layer. Network time is excluded from measured runs.</p>
-<p>The server currently ignores the requested count and returns the whole library. This benchmark uses the actual animation frame count. Download completes before decoding so texture allocation does not assume a fixed number of frames.</p>
-<pre id="preload">Preloading /mipmap/70…</pre>
+<h1>Streaming /mipmap/70 → WebGL2</h1>
+<p>Each run fetches <code>/mipmap/70</code> and feeds its response stream directly to ImageDecoder. Complete frames are decoded, uploaded, and drawn while the download continues. Network time is included.</p>
+<p>The server currently ignores the requested count and returns the whole library. Texture arrays are allocated in batches as frames arrive; the client does not wait for the final frame count. The preview has 100 fixed slots in a 10×10 grid backed by a persistent GPU thumbnail cache. This endpoint supplies no image IDs, so cache keys use the endpoint and frame index and assume an unchanged stream order.</p>
 <label>Measured runs <input id="runs" type="number" value="5" min="1" max="30"></label>
-<button id="start" disabled>Benchmark</button>
-<p>One warmup is excluded. The preload uses cache: no-store. Each run copies the encoded bytes before starting its timer, so byte-copy time is also excluded. Decoder setup is included in elapsed milestones but not summed decode waits. This is not a streaming benchmark. Upload measures CPU submission, not GPU execution. GPU-complete includes a fence after mipmaps and drawing; polling adds latency. No gl.finish() in the measured path.</p>
-<canvas id="view" width="1024" height="256"></canvas>
+<button id="start">Benchmark</button>
+<p>One warmup is excluded. Each run uses a fresh high-priority fetch with cache: no-store. WebGL initialization is outside the measured runs. Decode waits include waiting for incoming bytes. The preview redraws all loaded visible slots on requestAnimationFrame when thumbnails arrive, the view resizes, or a run requests a draw. It uses the default non-preserved drawing buffer and linearly filtered cached textures. The first upload of each thumbnail is retained for the preview; subsequent runs still decode and upload fresh textures to measure cold processing, then release those temporary textures. GPU mipmap generation is measured after all frames arrive. Upload and draw timings measure CPU submission, not presentation or GPU execution. GPU-complete includes a fence after final mipmaps and drawing; polling adds latency. No gl.finish() in the measured path.</p>
+<canvas id="view" width="1000" height="1000" aria-label="100 fixed thumbnail slots in a 10 by 10 grid"></canvas>
 <pre id="status">Serve this directory over localhost; ImageDecoder requires a supported browser and secure context.</pre>
 <table><thead><tr><th>Metric (ms)</th><th>Mean</th><th>Min</th><th>Max</th></tr></thead><tbody id="results"></tbody></table>
 <pre id="raw"></pre>
 <script type="module">
 const $=s=>document.querySelector(s), canvas=$('#view');
-const gl=canvas.getContext('webgl2');
-let program;
+let gl,program;
 const endpoint='/mipmap/70';
-let preloaded,preloadInfo;
-async function preload(){
- const t0=performance.now();
- const response=await fetch(endpoint,{cache:'no-store'});
- if(!response.ok)throw Error(`Preload HTTP ${response.status}`);
- const headers=performance.now()-t0;
- preloaded=await response.arrayBuffer();
- preloadInfo={headers,download:performance.now()-t0,bytes:preloaded.byteLength};
- $('#preload').textContent=`Preloaded ${preloadInfo.bytes.toLocaleString()} bytes in ${preloadInfo.download.toFixed(2)} ms (not part of measured runs).`;
- $('#status').textContent='Ready. Click Benchmark to decode and render the preloaded response.';
- $('#start').disabled=false;
+const previewColumns=10,previewRows=10,previewSlots=previewColumns*previewRows;
+// Page-owned resources, independent of benchmark runs. Replace positional keys
+// with library image IDs when the response exposes its frame-to-image mapping.
+const thumbnailCache=new Map(),cachedTextures=new Set(),visibleThumbnails=[];
+let previewDrawPending;
+function thumbnailKey(frameIndex){return `${endpoint}#frame=${frameIndex}`;}
+function drawPreview(){
+ gl.useProgram(program);gl.clearColor(.15,.15,.15,1);gl.clear(gl.COLOR_BUFFER_BIT);
+ const loc=gl.getUniformLocation(program,'layer');
+ for(let i=0;i<Math.min(visibleThumbnails.length,previewSlots);i++){
+  const thumbnail=thumbnailCache.get(visibleThumbnails[i]);
+  if(!thumbnail)continue;
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY,thumbnail.texture);
+  const x=i%previewColumns,y=Math.floor(i/previewColumns);
+  const left=Math.floor(x*canvas.width/previewColumns),right=Math.floor((x+1)*canvas.width/previewColumns);
+  const top=Math.floor(y*canvas.height/previewRows),bottom=Math.floor((y+1)*canvas.height/previewRows);
+  gl.viewport(left+2,canvas.height-bottom+2,right-left-4,bottom-top-4);
+  gl.uniform1i(loc,thumbnail.layer);gl.drawArrays(gl.TRIANGLES,0,3);
+ }
+ gl.flush();
+}
+function requestPreviewDraw(){
+ if(!previewDrawPending){
+  previewDrawPending=new Promise((resolve,reject)=>{
+   requestAnimationFrame(()=>{
+    previewDrawPending=undefined;
+    try{drawPreview();resolve();}catch(e){reject(e);}
+   });
+  });
+ }
+ return previewDrawPending;
 }
 function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
 function init(){
+ gl=canvas.getContext('webgl2');
  if(!gl)throw Error('WebGL2 unavailable');
  const vs=shader(gl.VERTEX_SHADER,`#version 300 es
  out vec2 uv;
@@ -46,6 +65,10 @@ function init(){
  if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
  gl.deleteShader(vs);gl.deleteShader(fs);gl.useProgram(program);gl.uniform1i(gl.getUniformLocation(program,'tex'),0);
  gl.bindVertexArray(gl.createVertexArray());
+ // CSS resizing needs a repaint, not another download or texture upload.
+ new ResizeObserver(()=>{
+  requestPreviewDraw().catch(e=>{$('#status').textContent=`Preview error: ${e.message}`;console.error(e);});
+ }).observe(canvas);
 }
 async function fence(){
  const sync=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);if(!sync)throw Error('Cannot create GPU fence');gl.flush();
@@ -56,56 +79,89 @@ async function fence(){
   resolve();};poll();});}finally{gl.deleteSync(sync);}
 }
 async function run(){
- let decoder,texture;
- // Give each decoder its own buffer; keep the preload intact if the decoder transfers it.
- const data=preloaded.slice(0);
- const t0=performance.now(),m={};let frameCount=0;
+ let decoder;
+ const textures=[],abort=new AbortController();
+ const t0=performance.now(),m={allocateCPU:0,decodeWait:0,uploadCPU:0};
+ let frameCount=0,bytes=0,width,height,streamError,drawError;
+ const batchSize=Math.min(64,gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS));
  try{
+  const response=await fetch(endpoint,{cache:'no-store',priority:'high',signal:abort.signal});
+  m.headers=performance.now()-t0;
+  if(!response.ok)throw Error(`Fetch HTTP ${response.status}`);
+  if(!response.body)throw Error('Response has no stream');
+  const data=response.body.pipeThrough(new TransformStream({
+   transform(chunk,controller){bytes+=chunk.byteLength;controller.enqueue(chunk);},
+   flush(){m.downloadComplete=performance.now()-t0;}
+  }));
   decoder=new ImageDecoder({data,type:'image/webp',preferAnimation:true});
+  // Observe completion errors now, but do not wait for EOF before decoding.
+  const completed=decoder.completed.catch(e=>{streamError=e;});
   await decoder.tracks.ready;
-  await decoder.completed;
-  const expected=decoder.tracks.selectedTrack?.frameCount;
+  if(!decoder.tracks.selectedTrack)throw Error('Response has no image track');
   m.decoderReady=performance.now()-t0;
-  if(!expected)throw Error('Response has no decodable frames');
-  if(expected>gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS))throw Error('Too many texture layers');
-  let width,height;let decodeWait=0,uploadCPU=0;
-  for(let i=0;i<expected;i++){
-   const d0=performance.now();const {image}=await decoder.decode({frameIndex:i,completeFramesOnly:true});decodeWait+=performance.now()-d0;
+  for(let i=0;;i++){
+   if(streamError)throw streamError;
+   if(drawError)throw drawError;
+   if(decoder.complete&&i>=decoder.tracks.selectedTrack.frameCount)break;
+   const d0=performance.now();let image,cacheAdded=false;
+   try{({image}=await decoder.decode({frameIndex:i,completeFramesOnly:true}));}
+   catch(e){
+    // An outstanding next-frame request rejects at EOF when there is no next frame.
+    if(e instanceof RangeError&&decoder.complete&&i>=decoder.tracks.selectedTrack.frameCount)break;
+    throw e;
+   }
+   m.decodeWait+=performance.now()-d0;
    try{
     if(i===0){
-     m.firstDecoded=performance.now()-t0;
-     width=image.displayWidth;height=image.displayHeight;
+     m.firstDecoded=performance.now()-t0;width=image.displayWidth;height=image.displayHeight;
      if(Math.max(width,height)>gl.getParameter(gl.MAX_TEXTURE_SIZE))throw Error('Texture too large');
-     const a0=performance.now();texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D_ARRAY,texture);
-     gl.texStorage3D(gl.TEXTURE_2D_ARRAY,1+Math.floor(Math.log2(Math.max(width,height))),gl.RGBA8,width,height,expected);
-     gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+    }
+    if(image.displayWidth!==width||image.displayHeight!==height)throw Error('Unequal decoded canvas sizes');
+    if(i%batchSize===0){
+     const a0=performance.now(),texture=gl.createTexture();
+     if(!texture)throw Error('Cannot allocate texture');
+     textures.push(texture);gl.bindTexture(gl.TEXTURE_2D_ARRAY,texture);
+     gl.texStorage3D(gl.TEXTURE_2D_ARRAY,1+Math.floor(Math.log2(Math.max(width,height))),gl.RGBA8,width,height,batchSize);
+     gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
      gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
      gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
      gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-     m.allocateCPU=performance.now()-a0;
+     m.allocateCPU+=performance.now()-a0;
     }
-    if(image.displayWidth!==width||image.displayHeight!==height)throw Error('Unequal decoded canvas sizes');
-    const u0=performance.now();
-    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY,0,0,0,i,width,height,1,gl.RGBA,gl.UNSIGNED_BYTE,image);
-    uploadCPU+=performance.now()-u0;frameCount++;
+    const u0=performance.now();gl.bindTexture(gl.TEXTURE_2D_ARRAY,textures[Math.floor(i/batchSize)]);
+    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY,0,0,0,i%batchSize,width,height,1,gl.RGBA,gl.UNSIGNED_BYTE,image);
+    m.uploadCPU+=performance.now()-u0;frameCount++;
     if(i===0)m.firstUploaded=performance.now()-t0;
+    const key=thumbnailKey(i);
+    if(!thumbnailCache.has(key)){
+     const texture=textures[Math.floor(i/batchSize)];
+     thumbnailCache.set(key,{texture,layer:i%batchSize,width,height});
+     cachedTextures.add(texture);cacheAdded=true;
+     if(i<previewSlots)visibleThumbnails[i]=key;
+    }
    }finally{image.close();}
+   if(i===0){
+    await requestPreviewDraw();m.firstDrawSubmitted=performance.now()-t0;
+   }else if(i<previewSlots&&cacheAdded){
+    requestPreviewDraw().catch(e=>{drawError=e;});
+   }
   }
-  m.decodeWait=decodeWait;m.uploadCPU=uploadCPU;
-  const p0=performance.now();gl.generateMipmap(gl.TEXTURE_2D_ARRAY);m.mipmapCPU=performance.now()-p0;
-  gl.useProgram(program);gl.clearColor(.15,.15,.15,1);gl.clear(gl.COLOR_BUFFER_BIT);
-  const loc=gl.getUniformLocation(program,'layer');
-  const columns=Math.ceil(Math.sqrt(expected*canvas.width/canvas.height)),rows=Math.ceil(expected/columns);
-  for(let i=0;i<expected;i++){const x=i%columns,y=Math.floor(i/columns);const left=Math.floor(x*canvas.width/columns),bottom=Math.floor(y*canvas.height/rows);gl.viewport(left,bottom,Math.floor((x+1)*canvas.width/columns)-left,Math.floor((y+1)*canvas.height/rows)-bottom);gl.uniform1i(loc,i);gl.drawArrays(gl.TRIANGLES,0,3);}
+  await completed;if(streamError)throw streamError;
+  if(!frameCount)throw Error('Response has no decodable frames');
+  await requestPreviewDraw();if(drawError)throw drawError;
+  const p0=performance.now();
+  for(const texture of textures){gl.bindTexture(gl.TEXTURE_2D_ARRAY,texture);gl.generateMipmap(gl.TEXTURE_2D_ARRAY);}
+  m.mipmapCPU=performance.now()-p0;
   const error=gl.getError();if(error!==gl.NO_ERROR)throw Error(`WebGL error 0x${error.toString(16)}`);
-  m.submitted=performance.now()-t0;
-  await fence();m.gpuComplete=performance.now()-t0;
-  await decoder.completed;
-
-  return {ms:m,bytes:preloaded.byteLength,frames:frameCount,width,height};
- }finally{decoder?.close();if(texture)gl.deleteTexture(texture);}
+  m.submitted=performance.now()-t0;await fence();m.gpuComplete=performance.now()-t0;
+  return {ms:m,bytes,frames:frameCount,width,height};
+ }finally{
+  abort.abort();decoder?.close();
+  // Textures adopted by the cache outlive this run, including a partial load.
+  for(const texture of textures)if(!cachedTextures.has(texture))gl.deleteTexture(texture);
+ }
 }
-const labels={decoderReady:'Decoder metadata ready',firstDecoded:'First frame decoded',firstUploaded:'First frame upload submitted',allocateCPU:'Texture allocation CPU',decodeWait:'Summed decode waits',uploadCPU:'Summed upload CPU',mipmapCPU:'Mipmap submission CPU',submitted:'All rendering submitted',gpuComplete:'GPU-complete elapsed (fence)'};
+const labels={headers:'Response headers',decoderReady:'Decoder metadata ready',firstDecoded:'First frame decoded',firstUploaded:'First frame upload submitted',firstDrawSubmitted:'Preview redraw after first decode',downloadComplete:'Response stream complete',allocateCPU:'Summed texture allocation CPU',decodeWait:'Summed decode waits (including network)',uploadCPU:'Summed upload CPU',mipmapCPU:'Mipmap submission CPU',submitted:'All rendering submitted',gpuComplete:'GPU-complete elapsed (fence)'};
 $('#start').onclick=async()=>{
  $('#start').disabled=true;$('#results').replaceChildren();$('#raw').textContent='';
  try{
@@ -118,9 +174,9 @@ $('#start').onclick=async()=>{
    const vals=rows.map(r=>r.ms[key]).filter(Number.isFinite);if(!vals.length)continue;
    const tr=document.createElement('tr');for(const text of [label,(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2),Math.min(...vals).toFixed(2),Math.max(...vals).toFixed(2)]){const td=document.createElement('td');td.textContent=text;tr.append(td);}$('#results').append(tr);
   }
-  $('#status').textContent=`Done: ${rows[0].frames} frames, ${rows[0].width}×${rows[0].height}, ${rows[0].bytes.toLocaleString()} preloaded bytes. Preview shows all layers (stretched to fit cells).`;
-  $('#raw').textContent=JSON.stringify({endpoint,mode:'preloaded; network and encoded-byte copy excluded',preload:preloadInfo,userAgent:navigator.userAgent,runs:rows},null,2);
+  $('#status').textContent=`Done: ${rows[0].frames} frames, ${rows[0].width}×${rows[0].height}, ${rows[0].bytes.toLocaleString()} streamed bytes. Preview shows ${Math.min(rows[0].frames,previewSlots)} frames in 100 fixed slots.`;
+  $('#raw').textContent=JSON.stringify({endpoint,mode:'streaming; network included; persistent cached preview; fresh benchmark uploads',userAgent:navigator.userAgent,runs:rows},null,2);
  }catch(e){$('#status').textContent=`Error: ${e.message}`;console.error(e);}finally{$('#start').disabled=false;}
 };
-preload().catch(e=>{$('#preload').textContent=`Preload failed: ${e.message}. Reload the page to retry.`;$('#status').textContent='Cannot benchmark without preloaded data.';console.error(e);});
+
 </script>

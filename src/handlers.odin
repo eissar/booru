@@ -7,6 +7,7 @@ import "core:net"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "core:time"
 
 import "cli"
 import "core:testing"
@@ -33,10 +34,12 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 	defer net.close(conn)
 	count, ok := strconv.parse_int(req.header.path[len("/mipmap/"):])
 	if !ok || count <= 0 {
-		net.send_tcp(
-			conn,
-			transmute([]u8)string("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"),
+		header := fmt.aprintf(
+			"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nServer-Timing: app;dur=%.2f\r\n\r\n",
+			time.duration_milliseconds(time.since(req.rec_time)),
+			allocator = req.alloc,
 		)
+		net.send_tcp(conn, transmute([]u8)header)
 		return
 	}
 
@@ -59,8 +62,9 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 	length := 0
 	for part in vectored_slice {length += len(part)}
 	header := fmt.aprintf(
-		"HTTP/1.1 200 OK\r\nContent-Type: image/webp\r\nContent-Length: %d\r\n\r\n",
+		"HTTP/1.1 200 OK\r\nContent-Type: image/webp\r\nContent-Length: %d\r\nServer-Timing: app;dur=%.2f\r\n\r\n",
 		length,
+		time.duration_milliseconds(time.since(req.rec_time)),
 		allocator = req.alloc,
 	)
 	headers := [1][]u8{transmute([]u8)header}
@@ -100,7 +104,7 @@ test_mip :: proc(_: ^testing.T) {
 	defer net.close(client)
 	conn, _, _ := net.accept_tcp(listener)
 
-	handle_mipmap(http.Req{{path = "/mipmap/3"}, alloc}, conn)
+	handle_mipmap(http.Req{{path = "/mipmap/3"}, alloc, time.now()}, conn)
 }
 
 MIN_LIMIT :: 10
