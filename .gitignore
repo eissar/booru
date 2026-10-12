@@ -1,5 +1,4 @@
 # Odin build outputs
-server
 src.bin
 src/src
 src/importers-slop/eagle-import
