@@ -68,14 +68,28 @@ res_blob :: proc(b: []u8, res: ^Response, type := Content_Type.Octet_Stream, sta
 	res.status = status
 }
 
-res_html :: proc(b: []u8, res: ^Response, status := STATUS.OK) {
+// parapoly or whatever
+res_html :: proc {
+	res_html_string,
+	res_html_bytes,
+}
+
+res_html_bytes :: proc(b: []u8, res: ^Response, status := STATUS.OK) {
 	when ODIN_DEBUG {assert_res_helper(res)}
 
 	res.headers["Content-Type"] = CONTENT_TYPE_MIME[.Html]
 	res.body = b
 	res.status = status
-
 }
+
+res_html_string :: proc(b: string, res: ^Response, status := STATUS.OK) {
+	when ODIN_DEBUG {assert_res_helper(res)}
+
+	res.headers["Content-Type"] = CONTENT_TYPE_MIME[.Html]
+	res.body = transmute([]u8)b
+	res.status = status
+}
+
 res_json :: proc(b: []u8, res: ^Response, status := STATUS.OK) {
 	when ODIN_DEBUG {assert_res_helper(res)}
 
