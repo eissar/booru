@@ -1,7 +1,6 @@
 package thumbnail
 
 import "core:bytes"
-import "core:c"
 import "core:fmt"
 import "core:mem"
 import "core:os"
@@ -9,6 +8,7 @@ import "core:testing"
 
 import "../cli"
 import "../library"
+import libwebp "../vendor/libwebp"
 
 WEBP_TEST_DATA_DIR :: ".test-data/libwebp"
 
@@ -30,21 +30,13 @@ clone_webp_test_data :: proc() {
 	}
 }
 
-// Requires libwebp (input encoding) and webpinfo (output validation).
-foreign import webp "system:webp"
-
-foreign webp {
-	WebPEncodeRGB :: proc(rgb: ^u8, width, height, stride: c.int, quality: c.float, output: ^^u8) -> c.size_t ---
-	WebPFree :: proc(p: rawptr) ---
-}
-
 @(test)
 vectorized_webp_extended_validates :: proc(t: ^testing.T) {
 	pixel := [3]u8{255, 0, 0}
 	encoded: ^u8
-	size := WebPEncodeRGB(&pixel[0], 1, 1, 3, 75, &encoded)
+	size := libwebp.WebPEncodeRGB(&pixel[0], 1, 1, 3, 75, &encoded)
 	if !testing.expect(t, size > 0 && encoded != nil, "encode input thumbnail") {return}
-	defer WebPFree(encoded)
+	defer libwebp.WebPFree(encoded)
 
 	thumbs := [1]Thumb{{bytes = (cast([^]u8)encoded)[:int(size)], width = 1, height = 1}}
 	segments := Thumbnail_MipMap(thumbs[:], context.temp_allocator)
