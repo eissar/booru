@@ -5,8 +5,6 @@ import "core:c"
 // Requires libwebp (input encoding) and webpinfo (output validation).
 foreign import webp "system:webp"
 
-WEBP_ENCODER_ABI_VERSION :: 0x0210
-
 // Mirrors of encode.h structs. Keep field order identical to the C headers.
 WebPConfig :: struct {
 	lossless:          c.int,
@@ -81,13 +79,9 @@ WebPMemoryWriter :: struct {
 
 foreign webp {
 	WebPEncodeRGB :: proc(rgb: ^u8, width, height, stride: c.int, quality: c.float, output: ^^u8) -> c.size_t ---
-	WebPDecodeRGB :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int) -> ^u8 ---
 	WebPDecodeYUV :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int, u, v: ^^u8, stride, uv_stride: ^c.int) -> ^u8 ---
 	WebPFree :: proc(p: rawptr) ---
 
-	WebPConfigInitInternal :: proc(config: ^WebPConfig, preset: c.int, quality: c.float, version: c.int) -> c.int ---
-	WebPPictureInitInternal :: proc(picture: ^WebPPicture, version: c.int) -> c.int ---
-	WebPPictureImportRGB :: proc(picture: ^WebPPicture, rgb: [^]u8, rgb_stride: c.int) -> c.int ---
 	WebPPictureRescale :: proc(picture: ^WebPPicture, width, height: c.int) -> c.int ---
 	WebPPictureFree :: proc(picture: ^WebPPicture) ---
 	WebPEncode :: proc(config: ^WebPConfig, picture: ^WebPPicture) -> c.int ---
