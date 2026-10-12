@@ -3,7 +3,6 @@ package http
 import "base:runtime"
 import "core:bytes"
 import "core:fmt"
-import "core:log"
 import "core:mem"
 import "core:net"
 import "core:strconv"
@@ -51,7 +50,7 @@ read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header
 
 		fl, ib_err := bytes.buffer_read_string(buf, '\n')
 		if ib_err != nil {
-			log.error(ib_err)
+			fmt.eprintfln("%v", ib_err)
 			return header, false
 		}
 
@@ -60,7 +59,7 @@ read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header
 		// GET /path?query HTTP/1.1
 		first_line, split_err := strings.split(fl, " ")
 		if split_err != nil || len(first_line) < 2 {
-			log.error("passed invalid header")
+			fmt.eprintfln("passed invalid header")
 			return header, false
 		}
 		header.method = strings.trim_space(first_line[0])
@@ -88,7 +87,7 @@ read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header
 
 		colon := strings.index_byte(line, ':')
 		if colon < 0 {
-			log.error("malformed header line, ignoring")
+			fmt.eprintfln("malformed header line, ignoring")
 			continue
 		}
 		label := strings.trim_space(line[:colon])

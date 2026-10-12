@@ -1,10 +1,9 @@
 package main
 
 import "core:bytes"
-import "core:log"
+import "core:fmt"
 import "core:mem"
 import "core:net"
-import "core:os"
 import "core:strings"
 import "core:time"
 
@@ -17,14 +16,6 @@ library_images: [dynamic]library.Image
 library_path: string
 
 main :: proc() {
-
-	// consider: `when ODIN_DEBUG { log.debug("debugging") }` on hot paths
-	lvl := log.Level.Debug when ODIN_DEBUG else log.Level.Info
-	context.logger = log.create_console_logger(
-		lowest = lvl,
-		opt = log.Options{.Level, .Short_File_Path, .Procedure, .Line},
-	)
-	defer log.destroy_console_logger(context.logger)
 
 	cfg := cli.getFlags()
 	library_path = cfg.library
@@ -41,7 +32,7 @@ main :: proc() {
 	library.load_library(cfg.library, &library_images, alloc)
 	defer free_all(alloc)
 
-	log.infof(
+	fmt.eprintfln(
 		"%d images loaded in %.2f ms: %s",
 		len(library_images),
 		time.duration_milliseconds(time.since(load_start)),
@@ -52,11 +43,10 @@ main :: proc() {
 	// net.parse_address
 	sock, err := net.listen_tcp(ep)
 	if err != nil {
-		log.fatal(err)
-		os.exit(1)
+		fmt.panicf("%v\n", err)
 	}
 
-	log.infof("server listening on %v", net.endpoint_to_string(ep))
+	fmt.eprintfln("server listening on %v", net.endpoint_to_string(ep))
 
 	defer net.close(sock)
 	Serve(sock) // this should take an allocator
@@ -75,7 +65,7 @@ Serve :: proc(sock: net.TCP_Socket) {
 		rec_time := time.now()
 		bytes_read, err := net.recv_tcp(conn, raw[:])
 		if err != nil {
-			log.error("recv error:", err)
+			fmt.eprintfln("recv error: %v", err)
 			net.close(conn)
 			continue
 		}
