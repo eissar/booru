@@ -136,12 +136,39 @@ parse_accept :: proc(val: string) -> (accept: Accept) {
 	return accept
 }
 
-read_body :: proc(req: Header, sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (err: string) {
-	b := make([]u8, req.known_headers.content_length)
-	left := len(buf.buf) - buf.off
-	n := copy(b[:], bytes.buffer_next(buf, left))
-	fmt.println("len(b)", len(b))
-	fmt.printf("n %T \n", n)
+MAX_BODY_SIZE :: 16 * 1024 * 1024
 
-	return ""
+// Reads once into caller-owned storage. Returns bytes read, zero at EOF,
+// or -1 on a socket error. The caller handles buffering and partial reads.
+read_body :: proc(sock: net.TCP_Socket, body: []u8) -> int {
+	if len(body) == 0 {
+		return 0
+	}
+	n, err := net.recv_tcp(sock, body)
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// Reads until body is full or EOF. Returns total bytes read, or -1 on a
+// socket error. On EOF or error, body may be partially filled.
+read_body_sync :: proc(sock: net.TCP_Socket, body: []u8) -> int {
+	if len(body) == 0 {
+		return 0
+	}
+	read := 0
+	for read < len(body) {
+		// should do handling of net.TCP_Recv_Error
+		// here.
+		n, err := net.recv_tcp(sock, body[read:])
+		if err != nil {
+			return -1
+		}
+		if n == 0 {
+			return read
+		}
+		read += n
+	}
+	return read
 }

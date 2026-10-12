@@ -45,8 +45,28 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			continue
 		}
 
-		if req.known_headers.content_length > 0 {
-			http.read_body(req, conn, &ib)
+		body: []u8
+		body_err: string
+		length := req.known_headers.content_length
+		if length < 0 || length > http.MAX_BODY_SIZE {
+			body_err = "invalid request body length"
+		} else {
+			body = make([]u8, length, context.temp_allocator)
+			n := copy(body, ib.buf[ib.off:])
+			received := http.read_body_sync(conn, body[n:])
+			if received < 0 {
+				body_err = "failed to receive request body"
+			} else if received != length - n {
+				body_err = "connection closed before request body was complete"
+			}
+		}
+		defer delete(body, context.temp_allocator)
+		if body_err != "" {
+			log.error("read body:", body_err)
+			resp := "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
+			net.send_tcp(conn, transmute([]u8)resp)
+			net.close(conn)
+			continue
 		}
 
 		if req.path == "/" || req.path == "/gallery" {
@@ -67,7 +87,7 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			continue
 		}
 		if strings.starts_with(req.path, "/mipmap/") {
-			handle_mipmap(s, {req, context.allocator, rec_time}, conn)
+			handle_mipmap(s, {req, context.allocator, rec_time}, conn, body)
 			continue
 		}
 		if strings.starts_with(req.path, "/image/") {
