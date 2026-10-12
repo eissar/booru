@@ -12,16 +12,6 @@ import "core:thread"
 // Run from the repository root with `odin test test`. Requires curl on PATH.
 @(test)
 server_get_gallery :: proc(t: ^testing.T) {
-	// An empty library is enough to exercise the HTTP and gallery render paths.
-	previous_path := server.library_path
-	previous_images := server.library_images
-	defer {
-		server.library_path = previous_path
-		server.library_images = previous_images
-	}
-	server.library_path = "test/fixture/library"
-	server.library_images = nil
-
 	sock, err := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
 	if !testing.expect(t, err == nil, "listen on an ephemeral port") {return}
 	defer net.close(sock)
