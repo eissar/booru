@@ -46,10 +46,13 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 	if alloc_err != nil {fmt.panicf("error %v", alloc_err)}
 
 	for l, i in library_images {
-		p := fmt.aprintf("./test/fixture/library/thumbnails/%v.webp", l.oid, allocator = req.alloc)
+		p := fmt.aprintf("%s/thumbnails/%v.webp", library_path, l.oid, allocator = req.alloc)
 		t_bytes, _ := os.read_entire_file(p, req.alloc)
 
-		t_slice[i] = thumbnail.Thumb{t_bytes, u16le(l.height), u16le(l.width)}
+		// The current animated WebP canvas is fixed at 96×96.
+		// Original image dimensions in the library are not thumbnail dimensions.
+		// t_slice[i] = thumbnail.Thumb{t_bytes, u16le(l.height), u16le(l.width)}
+		t_slice[i] = thumbnail.Thumb{t_bytes, 96, 96}
 	}
 
 	vectored_slice := thumbnail.Thumbnail_MipMap(t_slice, req.alloc)
@@ -65,16 +68,19 @@ handle_mipmap :: proc(req: http.Req, conn: net.TCP_Socket) {
 	_ = send_vectored(conn, vectored_slice)
 
 	// free after send
-	err := free_all(req.alloc)
-	if err != nil {
-		panic(fmt.aprintf("err=%s", err, allocator = context.temp_allocator))
-	}
+	// err := free_all(req.alloc)
+	// if err != nil {
+	// 	panic(fmt.aprintf("err=%s", err, allocator = context.temp_allocator))
+	// }
 
 }
 
 @(test)
 test_mip :: proc(_: ^testing.T) {
 	cfg := cli.getFlags()
+	previous_library_path := library_path
+	library_path = cfg.library
+	defer library_path = previous_library_path
 
 	backing := make([]u8, 64 * mem.Megabyte)
 	defer delete(backing)
@@ -490,6 +496,7 @@ oid_path_safe :: proc(oid: string) -> bool {
 }
 
 static_mime :: proc(name: string) -> string {
+	if strings.has_suffix(name, ".html") {return "text/html; charset=utf-8"}
 	if strings.has_suffix(name, ".css") {return "text/css; charset=utf-8"}
 	if strings.has_suffix(name, ".js") {return "text/javascript; charset=utf-8"}
 	return "application/octet-stream"
