@@ -56,11 +56,7 @@ rescale_fixtures :: proc(t: ^testing.T) {
 			uv_stride = uv_stride,
 		}
 		defer libwebp.WebPPictureFree(&pic)
-		testing.expectf(t, rescale_half(&pic, file), "rescale %s", oid)
-		testing.expect(
-			t,
-			pic.width == max(w / 2, 1) && pic.height == max(h / 2, 1),
-			"half dimensions",
-		)
+		testing.expectf(t, libwebp.rescale(&pic, file, 48), "rescale %s", oid)
+		testing.expect(t, max(pic.width, pic.height) == 48, "48px longest edge")
 	}
 }

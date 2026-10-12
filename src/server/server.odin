@@ -14,7 +14,6 @@ import "../library"
 Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 	// loop new client conns
 	for conn, src, err := net.accept_tcp(sock); err == nil; conn, src, err = net.accept_tcp(sock) {
-		_ = src
 
 		// just read into a 16 kb slice
 		raw: [16 * 1024]byte

@@ -6,10 +6,10 @@ import "core:os"
 
 Opts :: struct {
 	/* default 8080 */
-	port:    int `usage:"Port to bind."`,
+	port:          int `usage:"Port to bind."`,
 
 	/* default test/fixture/library */
-	library: string `usage:"Path to the library root (contains events/ and images/)."`,
+	library:       string `usage:"Path to the library root (contains events/ and images/)."`,
 
 	// pack: string
 	/* remove cached renderer artifacts before startup */
@@ -18,7 +18,7 @@ Opts :: struct {
        committed events from the beginning */
 	// rebuildIndex: bool
 	/* skip scanning for missing thumbnails on startup default true*/
-	// scanThumbnail: bool
+	scanThumbnail: bool,
 }
 //REGION: cli flag validation
 

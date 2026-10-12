@@ -1,6 +1,8 @@
 package libwebp
 
+import "base:runtime"
 import "core:c"
+import "core:os"
 
 // Requires libwebp (input encoding) and webpinfo (output validation).
 foreign import webp "system:webp"
@@ -88,4 +90,56 @@ foreign webp {
 	WebPMemoryWriterInit :: proc(writer: ^WebPMemoryWriter) ---
 	WebPMemoryWriterClear :: proc(writer: ^WebPMemoryWriter) ---
 	WebPMemoryWrite :: proc "c" (data: [^]u8, data_size: c.size_t, picture: ^WebPPicture) -> c.int ---
+}
+
+DEFAULT_CONFIG := WebPConfig {
+	quality           = 75,
+	method            = 4,
+	segments          = 4,
+	sns_strength      = 50,
+	filter_strength   = 60,
+	filter_type       = 1,
+	alpha_compression = 1,
+	alpha_filtering   = 1,
+	alpha_quality     = 100,
+	pass              = 1,
+	near_lossless     = 100,
+	qmax              = 100,
+}
+
+// Resizes to longest_edge, preserving aspect ratio, and writes WebP to file.
+rescale :: proc(
+	pic: ^WebPPicture,
+	file: ^os.File,
+	longest_edge: c.int,
+	cfg: ^WebPConfig = nil,
+) -> bool {
+	cfg := &DEFAULT_CONFIG if cfg == nil else cfg
+	assert(file != nil)
+
+	// WebPPictureRescale derives
+	// dimension automatically
+	// from aspect ratio if passed as 0
+	w, h := longest_edge, longest_edge
+	if pic.width >= pic.height {h = 0} else {w = 0}
+
+	if WebPPictureRescale(pic, w, h) == 0 {
+		return false
+	}
+
+	pic.writer = proc "c" (data: [^]u8, data_size: c.size_t, picture: ^WebPPicture) -> c.int {
+		context = runtime.default_context()
+		file := (^os.File)(picture.custom_ptr)
+		bytes := data[:int(data_size)]
+		for len(bytes) > 0 {
+			n, err := os.write(file, bytes)
+			if err != nil || n <= 0 {return 0}
+			bytes = bytes[n:]
+		}
+		return 1
+	}
+	pic.custom_ptr = file
+	defer pic.custom_ptr = nil
+
+	return WebPEncode(cfg, pic) != 0
 }
