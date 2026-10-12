@@ -77,13 +77,8 @@ tasks:
   test:
     desc: 'Run the project''s Odin tests (extra odin flags after --; ODIN_TEST_PKGS=src/cli picks a package)'
     deps: [hooks:check]
-    # Set ODIN_TEST_PKGS to choose the package for interactive testing.
-    # It cannot come from -- because -- is odin flags, as in
-    # `task test -- -error-pos-style:unix`.
-    vars:
-      ODIN_TEST_PKGS: '{{.ODIN_TEST_PKGS | default "test"}}'
     cmds:
-      - odin test {{.ODIN_TEST_PKGS}} {{.CLI_ARGS}}
+      - odin test {{.CLI_ARGS}}
 
   test:render:
     desc: 'Run HTML fixture tests (requires Perl and HTML::Tidy5; extra Odin flags after --)'

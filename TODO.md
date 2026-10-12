@@ -9,7 +9,6 @@
   - Start with the existing benchmark's allocate → touch → free stages. Account for batched kernel counters and peaks missed by polling; AST matches identify candidate events, not proof of resource attribution.
 
 
-- Fix leaks in `Thumbnail_MipMap`.
 
 # Thumbnail Preview TODO
 
