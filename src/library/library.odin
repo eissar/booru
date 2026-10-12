@@ -1,7 +1,6 @@
 package library
 
 import "core:mem"
-import "core:sys/linux"
 // Library loading: replay NDJSON add-events into an in-memory image list.
 // Prototype only -- no derived index, no DB.
 
@@ -103,81 +102,5 @@ load_ndjson :: proc(images: ^[dynamic]Image, data: string, alloc: mem.Allocator)
 				content_type = ev.contentType,
 			},
 		)
-	}
-}
-
-filter_missing_thumbnails :: proc(
-	dfd: ^os.File,
-	list: ^map[string]bit_set[LOD_RESOLUTION],
-	resolution: LOD_RESOLUTION,
-) {
-	dents_buf: [32 * 1024]u8
-
-	fd := linux.Fd(os.fd(dfd))
-
-	for {
-		n, err := linux.getdents(fd, dents_buf[:])
-		if err != nil {return}
-		if n == 0 {break} 	// end of directory
-
-		offset := 0
-		for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
-			name := linux.dirent_name(entry)
-			if name[0] == '.' {continue} 	// ignore ./../.*
-
-			if !strings.has_suffix(name, ".webp") {continue}
-			oid := name[:len(name) - len(".webp")]
-			remaining, exists := list^[oid]
-			if !exists {continue}
-			remaining -= bit_set[LOD_RESOLUTION]{resolution}
-			if remaining == {} {
-				delete_key(list, oid)
-			} else {
-				value := &list^[oid]
-				value^ = remaining
-			}
-		}
-	}
-}
-
-LOD_RESOLUTION :: enum {
-	x1024 = 0,
-	x512  = 1,
-	x256  = 2,
-	x128  = 3,
-	x64   = 4,
-}
-
-find_missing_thumbnails :: proc(s: State, missing: ^map[string]bit_set[LOD_RESOLUTION]) {
-	resolutions := make(map[string]LOD_RESOLUTION, allocator = context.temp_allocator)
-	defer delete(resolutions)
-	resolutions["64"] = .x64
-	resolutions["128"] = .x128
-
-	for img in s.library_images {
-		missing^[img.oid] = {.x64, .x128}
-	}
-
-	for n, r in resolutions {
-		pth := fmt.aprintf(
-			"%v/thumbnails/%v",
-			s.library_path,
-			n, // e.g. 64
-			allocator = context.temp_allocator,
-		)
-		osf, err := os.open(pth, {.Read}, {})
-		if err != nil {
-			continue
-		}
-		filter_missing_thumbnails(osf, missing, r)
-		os.close(osf)
-	}
-
-	for n, r in resolutions {
-		count := 0
-		for _, sizes in missing^ {
-			if r in sizes {count += 1}
-		}
-		fmt.printfln("missing %spx thumbnails: %d", n, count)
 	}
 }
