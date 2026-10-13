@@ -25,8 +25,8 @@ generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
 		t,
 		os.mkdir_all(fmt.tprintf("%s/images", root), os.Permissions_Default_Directory) == nil,
 	)
-	testing.expect(t, os.write_entire_file(fmt.tprintf("%s/images/%s", root, oid), data) == nil)
-	images := [?]library.Image{{oid = oid}}
+	testing.expect(t, os.write_entire_file(fmt.tprintf("%s/images/2.webp", root), data) == nil)
+	images := [?]library.Image{{id = 2, oid = oid}}
 	state := library.State {
 		library_path   = root,
 		library_images = images[:],
@@ -61,7 +61,7 @@ generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
 		if y != nil {libwebp.WebPFree(y)}
 	}
 	// Removing the source makes any accidental attempt to regenerate fail.
-	os.remove(fmt.tprintf("%s/images/%s", root, oid))
+	os.remove(fmt.tprintf("%s/images/2.webp", root))
 	n, failed = generate_missing_thumbnails(state)
 	testing.expect(t, n == 0 && failed == 0, "existing thumbnails are skipped")
 	os.remove(fmt.tprintf("%s/thumbnails/64/%s.webp", root, oid))

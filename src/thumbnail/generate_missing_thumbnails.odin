@@ -50,15 +50,17 @@ write_missing_thumbnail :: proc(
 
 generate_image_thumbnails :: proc(
 	s: library.State,
-	oid: string,
+	img: library.Image,
 	sizes: bit_set[LOD_RESOLUTION],
 ) -> (
 	generated, failed: int,
 ) {
+	oid := img.oid
+	id_prefix := fmt.tprintf("%d.", img.id)
 	dir, open_err := os.open(fmt.tprintf("%v/images/", s.library_path), {.Read}, {})
 	if open_err != nil {return 0, card(sizes)}
 	defer os.close(dir)
-	img_path := fmt.tprintf("%s/images/%s", s.library_path, oid)
+	img_path := ""
 	dents_buf: [32 * 1024]u8
 	scan: for {
 		n, err := linux.getdents(linux.Fd(os.fd(dir)), dents_buf[:])
@@ -66,7 +68,7 @@ generate_image_thumbnails :: proc(
 		offset := 0
 		for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
 			name := linux.dirent_name(entry)
-			if strings.has_prefix(name, oid) {
+			if strings.has_prefix(name, id_prefix) {
 				img_path = fmt.tprintf("%s/images/%s", s.library_path, name)
 				break scan
 			}
@@ -119,8 +121,10 @@ generate_missing_thumbnails :: proc(s: library.State) -> (generated, failed: int
 	missing := make(map[string]bit_set[LOD_RESOLUTION])
 	defer delete(missing)
 	find_missing_thumbnails(s, &missing)
-	for oid, sizes in missing {
-		n, f := generate_image_thumbnails(s, oid, sizes)
+	for img in s.library_images {
+		sizes, exists := missing[img.oid]
+		if !exists {continue}
+		n, f := generate_image_thumbnails(s, img, sizes)
 		generated += n
 		failed += f
 	}
