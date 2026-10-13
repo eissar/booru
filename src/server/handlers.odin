@@ -1,69 +1,191 @@
 package server
 
 import "core:fmt"
-import "core:mem"
-import "core:net"
 import "core:os"
+import "core:slice"
 import "core:strconv"
 import "core:strings"
-import "core:testing"
 import "core:time"
 
-import "../cli"
 import "../http"
 import "../library"
 import "../template"
 import "../thumbnail"
 
-send_vectored :: proc(conn: net.TCP_Socket, parts: [][]u8) -> bool {
-	for part in parts {
-		remaining := part
-		for len(remaining) > 0 {
-			sent, err := net.send_tcp(conn, remaining)
-			if err != nil || sent == 0 {return false}
-			remaining = remaining[sent:]
+
+//region: page + fragment handlers
+
+// handle_gallery serves "/" (alias) and "/gallery" -- the full page.
+handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Header) {
+	q, ok := parse_gallery_query(req.query)
+	if !ok {
+		http.res_error("", res, .BadRequest); return
+	}
+
+	filtered := filter_images(s.library_images[:], q.tags[:])
+	sort_gallery(filtered, q.sort)
+	page, has_more := page_slice(filtered, q.offset, q.limit)
+
+	gallery_url, fragment_url := filter_urls(q)
+	filter := template.Gallery_Filter {
+		limit        = q.limit,
+		sort         = q.sort,
+		tags         = q.tags,
+		offset       = q.offset + len(page),
+		gallery_url  = gallery_url,
+		fragment_url = fragment_url,
+	}
+	http.res_html(template.render_gallery_page("Gallery", filter, page, has_more), res)
+}
+
+// handle_fragment_gallery_content serves /fragment/gallery-content.
+handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, req: http.Header) {
+	q, ok := parse_gallery_query(req.query)
+	if !ok {
+		http.res_html(template.render_toast("invalid offset", .Error), res, .BadRequest)
+		return
+	}
+
+	filtered := filter_images(s.library_images[:], q.tags[:])
+	sort_gallery(filtered, q.sort)
+	page, has_more := page_slice(filtered, q.offset, q.limit)
+
+	gallery_url, fragment_url := filter_urls(q)
+	filter := template.Gallery_Filter {
+		limit        = q.limit,
+		sort         = q.sort,
+		tags         = q.tags,
+		offset       = q.offset + len(page),
+		gallery_url  = gallery_url,
+		fragment_url = fragment_url,
+	}
+	http.res_html(template.render_gallery_content(filter, page, has_more), res)
+}
+
+// handle_fragment_items serves /fragment/items -- the load-more card grid.
+handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.Header) {
+	q, ok := parse_gallery_query(req.query)
+	if !ok {
+		http.res_html(template.render_toast("invalid offset", .Error), res)
+		return
+	}
+
+	filtered := filter_images(s.library_images[:], q.tags[:])
+	sort_gallery(filtered, q.sort)
+	page, has_more := page_slice(filtered, q.offset, q.limit)
+
+	res.headers["Hx-Push-Url"] = fmt.tprintf(
+		"/gallery?limit=%d&offset=%d&sort=%s",
+		q.limit,
+		q.offset + len(page),
+		q.sort,
+	)
+
+	http.res_html(template.render_photo_grid(page, q.offset + len(page), has_more), res)
+}
+
+// handle_fragment_inspect serves /fragment/inspect/:id.
+handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http.Header) {
+	id_str := req.path[len("/fragment/inspect/"):]
+	id, ok := strconv.parse_int(id_str)
+	if !ok {
+		http.res_html(template.render_toast("Missing image id", .Error), res, .BadRequest)
+		return
+	}
+	for img in s.library_images {
+		if img.id == id {
+			http.res_html(template.render_inspector(img), res)
+			return
 		}
 	}
-	return true
+	// not found
+	http.res_html(template.render_toast("Could not find image", .Error), res, .NotFound)
 }
 
-lookup_thumbnail_oid_by_id :: proc(s: library.State, id: int) -> (oid: string, ok: bool) {
-	for img in s.library_images {
-		if img.id == id {return img.oid, true}
+//endregion
+
+//region: binary handlers
+
+handle_static :: proc(res: ^http.Response, req: http.Header) {
+	resp: string
+	rp := strings.split(req.path, "/")
+	leaf := rp[len(rp) - 1]
+
+	// TODO spread these conditions out more
+	if strings.contains_any(leaf, "\\/\"'<>|&$`;:*? ") ||
+	   len(leaf) < 3 ||
+	   strings.contains(leaf, "..") {
+
+		http.res_html("", res, .NotFound)
+		return
 	}
-	return "", false
+
+	local_fp := strings.join({"./static/", leaf}, "")
+	data, err := os.read_entire_file(local_fp, context.temp_allocator)
+	if err != nil {
+		if err == os.General_Error.Not_Exist {
+			http.res_html("", res, .NotFound)
+			return
+		}
+
+		fmt.printfln("error at handle_static: %v", err)
+
+		http.res_html("", res, .InternalServerError)
+		return
+	}
+	http.res_blob(data, res, mime_from_leaf(leaf))
 }
 
+// TODO: make this more thorough, with support for more filetypes
+//
+// handle_image serves /image/:oid -- thumbnails first (webp), then originals
+// by oid, mirroring ../lfs-booru/server.ts.
+handle_image :: proc(s: library.State, res: ^http.Response, req: http.Header) {
+	oid := req.path[len("/image/"):]
 
-handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket, body: []u8 = nil) {
-	defer net.close(conn)
+	if !oid_path_safe(oid) {
+		http.res_html("", res, .NotFound)
+	}
 
-	res: thumbnail.LOD_RESOLUTION
-	switch req.header.path[len("/mipmap/"):] {
-	case "64":
-		res = .x64
-	case "128":
-		res = .x128
-	case:
-		// err = "invalid lod passed to /mipmap/:res path parameter"
-		header := fmt.aprintf(
-			"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nServer-Timing: app;dur=%.2f\r\n\r\n",
+	thumb_fp := fmt.tprintf("%s/thumbnails/%s.webp", s.library_path, oid)
+	data, err := os.read_entire_file(thumb_fp, context.temp_allocator)
+	if err == nil {
+		http.res_blob(data, res, .Webp)
+		return
+	}
+	// fmt.printfln err
+	// the thumbnail doesn't exist, fallback?
+}
+
+handle_mipmap :: proc(
+	s: library.State,
+	res: ^http.Response,
+	req: http.Req,
+	raw_req_body: []u8 = nil,
+) {
+	// 64|128
+	req_resolution: u16le
+	raw_resolution := req.header.path[len("/mipmap/"):]
+	if raw_resolution == "64" {req_resolution = 64}
+	if raw_resolution == "128" {req_resolution = 128}
+
+	if !slice.contains([]string{"64", "128"}, req.header.path[len("/mipmap/"):]) {
+		res.headers["Server-Timing"] = fmt.aprintf(
+			"app;dur=%.2f",
 			time.duration_milliseconds(time.since(req.rec_time)),
 			allocator = req.alloc,
 		)
-		net.send_tcp(conn, transmute([]u8)header)
+
+		http.res_error("", res, status = .BadRequest)
 		return
 	}
 
-	if len(body) == 0 {
-		_ = send_vectored(
-			conn,
-			{transmute([]u8)string("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")},
-		)
+	if len(raw_req_body) == 0 {
+		http.res_error("", res, status = .BadRequest)
 		return
 	}
 
-	img_ids_raw := transmute(string)body
+	img_ids_raw := transmute(string)raw_req_body
 	requested_count := strings.count(img_ids_raw, ",") + 1
 
 	thumbnails := make([dynamic]thumbnail.Thumb, requested_count, req.alloc)
@@ -72,583 +194,59 @@ handle_mipmap :: proc(s: library.State, req: http.Req, conn: net.TCP_Socket, bod
 	idx := 0
 	for raw_str_id in strings.split_iterator(&img_ids_raw, ",") {
 		id, ok := strconv.parse_int(raw_str_id)
-		assert(ok)
+		assert(ok) // HACK:
 
 		oid, found := lookup_thumbnail_oid_by_id(s, id)
 		if !found {
 			thumbnails[idx] = thumbnail.new_not_found_thumb()
+			continue
 		}
 
 		p := fmt.aprintf("%s/thumbnails/%v.webp", s.library_path, oid, allocator = req.alloc)
 		t_bytes, err := os.read_entire_file(p, req.alloc)
 		if err != nil {
 			fmt.eprintfln("thumbnail id=%v lookup failed err=%v", id, err)
+			thumbnails[idx] = thumbnail.new_not_found_thumb()
+			continue
 		}
-		// The current animated WebP canvas is fixed at 96×96.
-		thumbnails[idx] = thumbnail.Thumb{t_bytes, 96, 96}
+
+		// TODO: enrich output of lookup_thumbnail_oid_by_id
+		// or something; need to retrieve actual thumbnail dims;
+		thumbnails[idx] = thumbnail.Thumb{t_bytes, req_resolution, req_resolution}
 		idx += 1
 	}
 
-	if len(thumbnails) == 0 {
-		_ = send_vectored(
-			conn,
-			{transmute([]u8)string("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")},
-		)
-		return
+	parts := thumbnail.Thumbnail_MipMap(thumbnails[:], req.alloc)
+	length := 0
+	for part in parts {length += len(part)}
+
+	res.body = make([]u8, length, req.alloc)
+	offset := 0
+	for part in parts {
+		offset += copy(res.body[offset:], part)
 	}
 
-	vectored_slice := thumbnail.Thumbnail_MipMap(thumbnails[:], req.alloc)
-	length := 0
-	for part in vectored_slice {length += len(part)}
-	header := fmt.aprintf(
-		"HTTP/1.1 200 OK\r\nContent-Type: image/webp\r\nContent-Length: %d\r\nServer-Timing: app;dur=%.2f\r\n\r\n",
-		length,
+
+	res.headers["Server-Timing"] = fmt.aprintf(
+		"app;dur=%.2f",
 		time.duration_milliseconds(time.since(req.rec_time)),
 		allocator = req.alloc,
 	)
-	headers := [1][]u8{transmute([]u8)header}
-	if !send_vectored(conn, headers[:]) {return}
-	_ = send_vectored(conn, vectored_slice)
+
+	res.headers["Content-Type"] = http.CONTENT_TYPE_MIME[.Webp]
+	res.status = .OK
 }
 
-@(test)
-test_mip :: proc(_: ^testing.T) {
-	cfg := cli.getFlags()
 
-	backing := make([]u8, 64 * mem.Megabyte, allocator = context.allocator)
-	defer delete(backing, allocator = context.allocator)
-
-	arena: mem.Arena
-	mem.arena_init(&arena, backing)
-	alloc := mem.arena_allocator(&arena)
-
-	images := make([dynamic]library.Image, alloc)
-	library.load_library(cfg.library, &images, alloc)
-	defer free_all(alloc)
-
-
-	s := library.State {
-		library_images = images[:],
-		library_path   = cfg.library,
-	}
-
-	listener, _ := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
-	defer net.close(listener)
-	endpoint, _ := net.bound_endpoint(listener)
-	client, _ := net.dial_tcp(endpoint)
-	defer net.close(client)
-	conn, _, _ := net.accept_tcp(listener)
-
-	body := transmute([]u8)string("3,1,2")
-	handle_mipmap(s, http.Req{{path = "/mipmap/3"}, alloc, time.now()}, conn, body)
-}
-
-MIN_LIMIT :: 10
-VALID_SORTS := [4]string{"idAsc", "idDesc", "addedAtAsc", "addedAtDesc"}
-
-//region: query parsing
-
-Gallery_Query :: struct {
-	limit:  int,
-	offset: int,
-	sort:   string,
-	tags:   []string,
-}
-
-parse_int_param :: proc(values: []string) -> (out: int, ok: bool) {
-	if len(values) == 0 {return 0, false}
-	v, perr := strconv.parse_int(values[0])
-	if !perr {return 0, false}
-	return v, true
-}
-
-// parse_gallery_query parses limit/offset/sort/tags from a raw query string.
-// Semantics follow ../lfs-booru/server.ts: invalid or small limit clamps to
-// MIN_LIMIT; unknown sort falls back to idDesc; an invalid or negative offset
-// marks the query invalid (caller returns 400).
-parse_gallery_query :: proc(query: string) -> (q: Gallery_Query, ok: bool) {
-	q = Gallery_Query {
-		limit = MIN_LIMIT,
-		sort  = "idDesc",
-	}
-	params := parse_query_params(query)
-	defer delete(params)
-
-	if values, ok_param := params["limit"]; ok_param {
-		if n, parse_ok := parse_int_param(values[:]); parse_ok && n >= MIN_LIMIT {
-			q.limit = n
-		}
-	}
-	if values, ok_param := params["offset"]; ok_param {
-		n, parse_ok := parse_int_param(values[:])
-		if !parse_ok || n < 0 {
-			return q, false
-		}
-		q.offset = n
-	}
-	if values, ok_param := params["sort"]; ok_param && len(values) > 0 {
-		for s in VALID_SORTS {
-			if values[0] == s {
-				q.sort = s
-				break
-			}
-		}
-	}
-	tags_dyn: [dynamic]string
-	seen := make(map[string]bool)
-	defer delete(seen)
-	if values, ok_param := params["tags"]; ok_param {
-		for value in values {
-			for raw_tag in strings.split(value, ",") {
-				tag := strings.trim_space(raw_tag)
-				if tag == "" {continue}
-				if seen[tag] {continue}
-				seen[tag] = true
-				append(&tags_dyn, tag)
-			}
-		}
-	}
-	q.tags = tags_dyn[:]
-	return q, true
-}
-
-// parse_query_params splits a raw query string into a multimap. Keys and
-// values are used as-is (no percent-decoding) -- see limitations.
-parse_query_params :: proc(query: string) -> map[string][dynamic]string {
-	params := make(map[string][dynamic]string)
-	if query == "" {return params}
-	for pair in strings.split(query, "&") {
-		if pair == "" {continue}
-		key, value := pair, ""
-		if eq := strings.index_byte(pair, '='); eq >= 0 {
-			key, value = pair[:eq], pair[eq + 1:]
-		}
-		if _, ok := params[key]; !ok {
-			params[key] = make([dynamic]string, 0, 1)
-		}
-		append(&params[key], value)
-	}
-	return params
-}
-
-//region: filtering + sorting
-
-// filter_images returns the images carrying every requested tag.
-filter_images :: proc(all: []library.Image, tags: []string) -> []library.Image {
-	if len(tags) == 0 {return all}
-	out := make([dynamic]library.Image, 0, len(all))
-	for img in all {
-		matched := 0
-		for want in tags {
-			for tag in img.tags {
-				if tag == want {
-					matched += 1
-					break
-				}
-			}
-		}
-		if matched == len(tags) {
-			append(&out, img)
-		}
-	}
-	return out[:]
-}
-
-less_img :: proc(a, b: library.Image, sort: string) -> bool {
-	switch sort {
-	case "idAsc":
-		return a.id < b.id
-	case "idDesc":
-		return a.id > b.id
-	case "addedAtAsc":
-		return a.added_at < b.added_at
-	case "addedAtDesc":
-		return a.added_at > b.added_at
-	}
-	return a.id > b.id
-}
-
-// sort_gallery sorts the slice in place by the named sort parameter.
-sort_gallery :: proc(images: []library.Image, sort: string) {
-	for i := 1; i < len(images); i += 1 {
-		j := i
-		for j > 0 && less_img(images[j], images[j - 1], sort) {
-			images[j], images[j - 1] = images[j - 1], images[j]
-			j -= 1
-		}
-	}
-}
-
-// page_slice slices images[offset:offset+limit] and reports whether more
-// items follow the page.
-page_slice :: proc(
-	images: []library.Image,
-	offset, limit: int,
-) -> (
-	page: []library.Image,
-	has_more: bool,
-) {
-	if offset >= len(images) || offset < 0 {return images[:0], false}
-	end := offset + limit
-	if end < len(images) {
-		return images[offset:end], true
-	}
-	if end > len(images) {end = len(images)}
-	return images[offset:end], false
-}
-
-// filter_urls builds the canonical chip URLs for the filter bar.
-filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
-	tags_query := ""
-	for tag, i in q.tags[:] {
-		if i == 0 {
-			tags_query = fmt.tprintf("&tags=%s", tag)
-		} else {
-			tags_query = fmt.tprintf("%s&tags=%s", tags_query, tag)
-		}
-	}
-	gallery_url = fmt.tprintf("/gallery?limit=%d&sort=%s%s", q.limit, q.sort, tags_query)
-	fragment_url = fmt.tprintf(
-		"/fragment/gallery-content?limit=%d&sort=%s%s",
-		q.limit,
-		q.sort,
-		tags_query,
-	)
-	return
-}
-
-//endregion
-
-//region: page + fragment handlers
-
-// handle_gallery serves "/" (alias) and "/gallery" -- the full page.
-handle_gallery :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
-	q, ok := parse_gallery_query(req.query)
-	if !ok {
-		{
-			body := ""
-			resp := fmt.tprintf(
-				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"400 Bad Request",
-				"text/plain; charset=utf-8",
-				len(body),
-				"",
-				body,
-			)
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-		}
-		return
-	}
-
-	filtered := filter_images(s.library_images[:], q.tags[:])
-	sort_gallery(filtered, q.sort)
-	page, has_more := page_slice(filtered, q.offset, q.limit)
-
-	gallery_url, fragment_url := filter_urls(q)
-	filter := template.Gallery_Filter {
-		limit        = q.limit,
-		sort         = q.sort,
-		tags         = q.tags,
-		offset       = q.offset + len(page),
-		gallery_url  = gallery_url,
-		fragment_url = fragment_url,
-	}
-	body := template.render_gallery_page("Gallery", filter, page, has_more)
-	{
-		body := body
-		resp := fmt.tprintf(
-			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"200 OK",
-			"text/html; charset=utf-8",
-			len(body),
-			"",
-			body,
-		)
-		net.send_tcp(conn, transmute([]u8)resp)
-		net.close(conn)
-	}
-}
-
-// handle_fragment_gallery_content serves /fragment/gallery-content.
-handle_fragment_gallery_content :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
-	q, ok := parse_gallery_query(req.query)
-	if !ok {
-		{
-			body := template.render_toast("invalid offset", .Error)
-			resp := fmt.tprintf(
-				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"400 Bad Request",
-				"text/html; charset=utf-8",
-				len(body),
-				"",
-				body,
-			)
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-		}
-		return
-	}
-
-	filtered := filter_images(s.library_images[:], q.tags[:])
-	sort_gallery(filtered, q.sort)
-	page, has_more := page_slice(filtered, q.offset, q.limit)
-
-	gallery_url, fragment_url := filter_urls(q)
-	filter := template.Gallery_Filter {
-		limit        = q.limit,
-		sort         = q.sort,
-		tags         = q.tags,
-		offset       = q.offset + len(page),
-		gallery_url  = gallery_url,
-		fragment_url = fragment_url,
-	}
-	body := template.render_gallery_content(filter, page, has_more)
-	{
-		body := body
-		resp := fmt.tprintf(
-			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"200 OK",
-			"text/html; charset=utf-8",
-			len(body),
-			"",
-			body,
-		)
-		net.send_tcp(conn, transmute([]u8)resp)
-		net.close(conn)
-	}
-}
-
-// handle_fragment_items serves /fragment/items -- the load-more card grid.
-handle_fragment_items :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
-	q, ok := parse_gallery_query(req.query)
-	if !ok {
-		{
-			body := template.render_toast("invalid offset", .Error)
-			resp := fmt.tprintf(
-				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"400 Bad Request",
-				"text/html; charset=utf-8",
-				len(body),
-				"",
-				body,
-			)
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-		}
-		return
-	}
-
-	filtered := filter_images(s.library_images[:], q.tags[:])
-	sort_gallery(filtered, q.sort)
-	page, has_more := page_slice(filtered, q.offset, q.limit)
-
-	body := template.render_photo_grid(page, q.offset + len(page), has_more)
-	push_url := fmt.tprintf(
-		"/gallery?limit=%d&offset=%d&sort=%s",
-		q.limit,
-		q.offset + len(page),
-		q.sort,
-	)
-	{
-		body := body
-		resp := fmt.tprintf(
-			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"200 OK",
-			"text/html; charset=utf-8",
-			len(body),
-			fmt.tprintf("HX-Push-Url: %s\r\n", push_url),
-			body,
-		)
-		net.send_tcp(conn, transmute([]u8)resp)
-		net.close(conn)
-	}
-}
-
-// handle_fragment_inspect serves /fragment/inspect/:id.
-handle_fragment_inspect :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
-	id_str := req.path[len("/fragment/inspect/"):]
-	id, ok := strconv.parse_int(id_str)
-	if !ok {
-		{
-			body := template.render_toast("Missing image id", .Error)
-			resp := fmt.tprintf(
-				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"400 Bad Request",
-				"text/html; charset=utf-8",
-				len(body),
-				"",
-				body,
-			)
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-		}
-		return
-	}
-	for img in s.library_images {
-		if img.id == id {
-			{
-				body := template.render_inspector(img)
-				resp := fmt.tprintf(
-					"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-					"200 OK",
-					"text/html; charset=utf-8",
-					len(body),
-					"",
-					body,
-				)
-				net.send_tcp(conn, transmute([]u8)resp)
-				net.close(conn)
-			}
-			return
-		}
-	}
-	{
-		body := template.render_toast("Could not find image", .Error)
-		resp := fmt.tprintf(
-			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"404 Not Found",
-			"text/html; charset=utf-8",
-			len(body),
-			"",
-			body,
-		)
-		net.send_tcp(conn, transmute([]u8)resp)
-		net.close(conn)
-	}
-}
-
-//endregion
-
-//region: binary handlers
-
-// oid_path_safe rejects anything that is not a plain object id (hex), which
-// also rules out path traversal.
-oid_path_safe :: proc(oid: string) -> bool {
-	if len(oid) == 0 || len(oid) > 128 {return false}
-	for c in oid {
-		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {continue}
-		return false
-	}
-	return true
-}
-
-static_mime :: proc(name: string) -> string {
-	if strings.has_suffix(name, ".html") {return "text/html; charset=utf-8"}
-	if strings.has_suffix(name, ".css") {return "text/css; charset=utf-8"}
-	if strings.has_suffix(name, ".js") {return "text/javascript; charset=utf-8"}
-	return "application/octet-stream"
-}
-
-handle_static :: proc(req: http.Header, conn: net.TCP_Socket) {
-	resp: string
-	rp := strings.split(req.path, "/")
-	leaf := rp[len(rp) - 1]
-
-	if strings.contains_any(leaf, "\\/\"'<>|&$`;:*? ") ||
-	   len(leaf) < 3 ||
-	   strings.contains(leaf, "..") {
-		resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
-		net.send_tcp(conn, transmute([]u8)resp)
-		net.close(conn)
-		return
-	}
-
-	local_fp := strings.join({"./static/", leaf}, "")
-	data, err := os.read_entire_file(local_fp, context.temp_allocator)
-	if err != nil {
-		if err == os.General_Error.Not_Exist {
-			resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-			return
-		}
-
-		fmt.printfln("error at handle_static: %v", err)
-
-		resp = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n"
-		net.send_tcp(conn, transmute([]u8)resp)
-		net.close(conn)
-		return
-	}
-	header := fmt.tprintf(
-		"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
-		static_mime(leaf),
-		len(data),
-	)
-	net.send_tcp(conn, transmute([]u8)header)
-	net.send_tcp(conn, data)
-	net.close(conn)
-}
-
-// handle_image serves /image/:oid -- thumbnails first (webp), then originals
-// by oid, mirroring ../lfs-booru/server.ts.
-handle_image :: proc(s: library.State, req: http.Header, conn: net.TCP_Socket) {
-	oid := req.path[len("/image/"):]
-	if !oid_path_safe(oid) {
-		{
-			body := ""
-			resp := fmt.tprintf(
-				"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-				"404 Not Found",
-				"text/plain; charset=utf-8",
-				len(body),
-				"",
-				body,
-			)
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
-		}
-		return
-	}
-
-	thumb_fp := fmt.tprintf("%s/thumbnails/%s.webp", s.library_path, oid)
-	data, err := os.read_entire_file(thumb_fp, context.temp_allocator)
-	body := string(data)
-	resp := fmt.tprintf(
-		"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-		"200 OK",
-		"image/webp",
-		len(body),
-		"",
-		body,
-	)
-	net.send_tcp(conn, transmute([]u8)resp)
-	net.close(conn)
-
-	for img in s.library_images {
-		if img.oid == oid {
-			orig_fp := fmt.tprintf("%s/images/%s", s.library_path, oid)
-			data, err := os.read_entire_file(orig_fp, context.temp_allocator)
-			mime := img.content_type
-			if mime == "" {mime = "application/octet-stream"}
-			{
-				body := string(data)
-				resp := fmt.tprintf(
-					"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-					"200 OK",
-					mime,
-					len(body),
-					"",
-					body,
-				)
-				net.send_tcp(conn, transmute([]u8)resp)
-				net.close(conn)
-			}
-			return
-		}
-	}
-	{
-		body := ""
-		resp := fmt.tprintf(
-			"HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
-			"404 Not Found",
-			"text/plain; charset=utf-8",
-			len(body),
-			"",
-			body,
-		)
-		net.send_tcp(conn, transmute([]u8)resp)
-		net.close(conn)
+mime_from_leaf :: proc(name: string) -> http.Content_Type {
+	switch {
+	case strings.has_suffix(name, ".html"):
+		return .Html
+	case strings.has_suffix(name, ".css"):
+		return .Css
+	case strings.has_suffix(name, ".js"):
+		return .Javascript
+	case:
+		return .Octet_Stream
 	}
 }

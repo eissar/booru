@@ -30,78 +30,79 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		ib: bytes.Buffer
 		bytes.buffer_init(&ib, raw[:bytes_read])
 
+		res := http.Response {
+			headers = make(map[string]string, context.temp_allocator),
+		}
+
 		req, ok := http.read_header(conn, &ib)
 		if !ok {
-			resp := "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
+			http.res_error("", &res, .BadRequest)
+			http.marshal_and_send(conn, res, context.allocator)
 			continue
 		}
 
 		if req.method != "GET" {
-			resp := "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nAllow: GET\r\n\r\n"
-			net.send_tcp(conn, transmute([]u8)resp)
-			net.close(conn)
+			http.res_error("", &res, .MethodNotAllowed)
+			http.marshal_and_send(conn, res, context.allocator)
 			continue
 		}
 
-		body: []u8
-		body_err: string
 		length := req.known_headers.content_length
 		if length < 0 || length > http.MAX_BODY_SIZE {
-			body_err = "invalid request body length"
-		} else {
-			body = make([]u8, length, context.temp_allocator)
-			n := copy(body, ib.buf[ib.off:])
-			received := http.read_body_sync(conn, body[n:])
-			if received < 0 {
-				body_err = "failed to receive request body"
-			} else if received != length - n {
-				body_err = "connection closed before request body was complete"
+			log.error("read body:", "invalid content-length from req of:", length)
+
+			http.res_error("Bad Request", &res, status = .BadRequest)
+			if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {
+				log.error("send response:", err)
 			}
-		}
-		defer delete(body, context.temp_allocator)
-		if body_err != "" {
-			log.error("read body:", body_err)
-			resp := "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
-			net.send_tcp(conn, transmute([]u8)resp)
 			net.close(conn)
 			continue
 		}
 
-		if req.path == "/" || req.path == "/gallery" {
-			handle_gallery(s, req, conn)
+		body := make([]u8, length, context.temp_allocator)
+		defer delete(body, context.temp_allocator)
+		n := copy(body, ib.buf[ib.off:])
+		received := http.read_body_sync(conn, body[n:])
+		if received < 0 {
+			log.error("read body:", "failed to receive request body")
+			http.res_error("Bad Request", &res, status = .BadRequest)
+			if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {
+				log.error("send response:", err)
+			}
+			net.close(conn)
+			continue
+		}
+		if received != length - n {
+			log.error("read body:", "connection closed before request body was complete")
+			http.res_error("Bad Request", &res, status = .BadRequest)
+			if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {
+				log.error("send response:", err)
+			}
+			net.close(conn)
 			continue
 		}
 
-		if req.path == "/fragment/gallery-content" {
-			handle_fragment_gallery_content(s, req, conn)
-			continue
+		switch {
+		case req.path == "/" || req.path == "/gallery":
+			handle_gallery(s, &res, req)
+		case req.path == "/fragment/gallery-content":
+			handle_fragment_gallery_content(s, &res, req)
+		case req.path == "/fragment/items":
+			handle_fragment_items(s, &res, req)
+		case strings.starts_with(req.path, "/fragment/inspect/"):
+			handle_fragment_inspect(s, &res, req)
+		case strings.starts_with(req.path, "/mipmap/"):
+			handle_mipmap(s, &res, {req, context.temp_allocator, rec_time}, body)
+		case strings.starts_with(req.path, "/image/"):
+			handle_image(s, &res, req)
+		case strings.starts_with(req.path, "/static/"):
+			handle_static(&res, req)
+		case:
+			http.res_text("Not Found", &res, .NotFound)
 		}
-		if req.path == "/fragment/items" {
-			handle_fragment_items(s, req, conn)
-			continue
+		if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {
+			log.error("send response:", err)
 		}
-		if strings.starts_with(req.path, "/fragment/inspect/") {
-			handle_fragment_inspect(s, req, conn)
-			continue
-		}
-		if strings.starts_with(req.path, "/mipmap/") {
-			handle_mipmap(s, {req, context.allocator, rec_time}, conn, body)
-			continue
-		}
-		if strings.starts_with(req.path, "/image/") {
-			handle_image(s, req, conn)
-			continue
-		}
-		if strings.starts_with(req.path, "/static/") {
-			handle_static(req, conn)
-			continue
-		}
-
-		// fallback
-		resp := "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
-		net.send_tcp(conn, transmute([]u8)resp)
 		net.close(conn)
 	}
 }

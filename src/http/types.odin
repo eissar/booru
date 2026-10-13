@@ -79,11 +79,15 @@ Content_Type :: enum {
 	Avif,
 	Jpeg,
 	Png,
+	Css,
+	Javascript,
 }
 
 CONTENT_TYPE_MIME := [Content_Type]string {
 	.Text         = "text/plain; charset=utf-8",
 	.Json         = "application/json",
+	.Javascript   = "text/javascript; charset=utf-8",
+	.Css          = "text/css; charset=utf-8",
 	.Html         = "text/html; charset=utf-8",
 	.Octet_Stream = "application/octet-stream",
 	.Webp         = "image/webp",

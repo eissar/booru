@@ -1,6 +1,9 @@
 package http
 
 import "base:runtime"
+import "core:fmt"
+import "core:net"
+import "core:strings"
 import "core:testing"
 
 // TODO: When reusing request buffers, reset them only after response sending completes.
@@ -8,6 +11,74 @@ Response :: struct {
 	headers: map[string]string,
 	body:    []u8,
 	status:  STATUS,
+}
+
+// Serializes an HTTP/1.1 response. The caller owns the returned string.
+// Uses an empty reason phrase, which HTTP/1.1 permits. Bodies are copied verbatim.
+// Transfer-Encoding is unsupported; Content-Length is computed for body-bearing statuses.
+@(require_results)
+marshal :: proc(res: Response, alloc: runtime.Allocator) -> string {
+	builder: strings.Builder
+	strings.builder_init(&builder, alloc)
+	fmt.sbprintf(&builder, "HTTP/1.1 %d \r\n", int(res.status))
+	for name, value in res.headers {
+		assert(!strings.contains(name, "\r") && !strings.contains(name, "\n"))
+		assert(!strings.contains(value, "\r") && !strings.contains(value, "\n"))
+		assert(!strings.equal_fold(name, "Transfer-Encoding"))
+		if strings.equal_fold(name, "Content-Length") {continue}
+		fmt.sbprintf(&builder, "%s: %s\r\n", name, value)
+	}
+	if int(res.status) < 200 || res.status == .NoContent || res.status == .NotModified {
+		assert(len(res.body) == 0)
+		strings.write_string(&builder, "\r\n")
+	} else {
+		fmt.sbprintf(&builder, "Content-Length: %d\r\n\r\n", len(res.body))
+		strings.write_bytes(&builder, res.body)
+	}
+	return strings.to_string(builder)
+}
+
+marshal_and_send :: proc(
+	sock: net.TCP_Socket,
+	res: Response,
+	alloc: runtime.Allocator,
+) -> net.TCP_Send_Error {
+	wire := marshal(res, alloc)
+	defer delete(wire, alloc)
+
+	remaining := transmute([]u8)wire
+	for len(remaining) > 0 {
+		sent, err := net.send_tcp(sock, remaining)
+		if err != nil {return err}
+		if sent == 0 {return .Connection_Closed}
+		remaining = remaining[sent:]
+	}
+	return nil
+}
+
+
+@(test)
+unit_marshal :: proc(t: ^testing.T) {
+	headers := make(map[string]string)
+	defer delete(headers)
+	headers["Content-Type"] = "application/octet-stream"
+	headers["content-length"] = "999"
+	body := [3]u8{0, 255, 65}
+	res := Response {
+		headers = headers,
+		body    = body[:],
+		status  = .OK,
+	}
+	wire := marshal(res, context.temp_allocator)
+	defer delete(wire, context.temp_allocator)
+	expected :=
+		"HTTP/1.1 200 \r\nContent-Type: application/octet-stream\r\nContent-Length: 3\r\n\r\n" +
+		"\x00\xffA"
+	testing.expect(t, wire == expected, "serializes headers and binary body")
+
+	empty := marshal(Response{status = .NoContent}, context.temp_allocator)
+	defer delete(empty, context.temp_allocator)
+	testing.expect(t, empty == "HTTP/1.1 204 \r\n\r\n", "serializes a bodyless response")
 }
 
 // REGION: asserts
@@ -37,7 +108,7 @@ unit_smoke_res_helper :: proc(t: ^testing.T) {
 	res_json(transmute([]u8)string("{}"), &res)
 
 	reset(&res)
-	res_error(transmute([]u8)string("error"), &res)
+	res_error("error", &res)
 
 	reset(&res)
 	res_redirect("/gallery", &res)
@@ -98,16 +169,11 @@ res_json :: proc(b: []u8, res: ^Response, status := STATUS.OK) {
 	res.status = status
 }
 
-res_error :: proc(
-	b: []u8,
-	res: ^Response,
-	type := Content_Type.Text,
-	status := STATUS.InternalServerError,
-) {
+res_error :: proc(txt: string, res: ^Response, status := STATUS.InternalServerError) {
 	when ODIN_DEBUG {assert_res_helper(res)}
 
-	res.headers["Content-Type"] = CONTENT_TYPE_MIME[type]
-	res.body = b
+	res.headers["Content-Type"] = CONTENT_TYPE_MIME[.Text]
+	res.body = transmute([]u8)txt
 	res.status = status
 
 }
