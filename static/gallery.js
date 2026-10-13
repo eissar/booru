@@ -1,129 +1,18 @@
-// TODO: the logic for masonry layout is unnecessarily complex.
-// fix it.
+// Masonry layout: one dispatcher, one policy.
+//
+// Every trigger (htmx settle, breakpoint change, view switch, boot) funnels
+// into scheduleMasonrySync, a single rAF-coalesced queue. syncMasonry then
+// rebuilds the grid as a pure function of what the DOM contains: the cards,
+// the current view mode, and --masonry-columns. No state is carried between
+// runs, so the same cards always pack the same way no matter which events
+// led here (load more, delete, resize), or in what order they fired.
 
 (function () {
-  var galleryColHeights = [];
-  var pendingMasonryResetRequests = 0;
-  var isReflowingMasonry = false;
-  var masonryResetQueued = false;
+  var syncQueued = false;
+  var lastSyncKey = null;
 
-  function clearMasonryLayout() {
-    isReflowingMasonry = true;
-    var grid = document.getElementById("photo-grid");
-    if (!grid) {
-      isReflowingMasonry = false;
-      return;
-    }
-    var pagination = grid.querySelector("#pagination-controls");
-    var columns = grid.querySelectorAll(".masonry-column");
-
-    var articles = [];
-    for (var i = 0; i < columns.length; i++) {
-      var col = columns[i];
-      while (col.firstChild) {
-        var child = col.firstChild;
-        if (child.nodeType === 1) {
-          articles.push(child);
-          col.removeChild(child);
-        } else {
-          if (pagination) grid.insertBefore(child, pagination);
-          else grid.appendChild(child);
-        }
-      }
-      col.remove();
-    }
-
-    articles.sort(function (a, b) {
-      var aOrder = Number(a.dataset.renderOrderId);
-      var bOrder = Number(b.dataset.renderOrderId);
-      return aOrder - bOrder;
-    });
-
-    for (var i = 0; i < articles.length; i++) {
-      if (pagination) grid.insertBefore(articles[i], pagination);
-      else grid.appendChild(articles[i]);
-    }
-
-    galleryColHeights = [];
-    Promise.resolve().then(function () {
-      isReflowingMasonry = false;
-    });
-  }
-
-  function resetMasonryLayout() {
-    isReflowingMasonry = true;
-    try {
-      clearMasonryLayout();
-      layoutMasonry();
-    } finally {
-      Promise.resolve().then(function () {
-        isReflowingMasonry = false;
-      });
-    }
-  }
-
-  function queueMasonryReset() {
-    if (masonryResetQueued) return;
-    masonryResetQueued = true;
-    requestAnimationFrame(function () {
-      masonryResetQueued = false;
-      resetMasonryLayout();
-    });
-  }
-
-  function layoutMasonry() {
-    var grid = document.getElementById("photo-grid");
-    if (!grid) return;
-
-    var styles = getComputedStyle(grid);
-    var parsedColumns = Number.parseInt(
-      styles.getPropertyValue("--masonry-columns"),
-      10,
-    );
-    var columns =
-      Number.isFinite(parsedColumns) && parsedColumns > 0 ? parsedColumns : 1;
-    var cols = [];
-    var pagination = grid.querySelector("#pagination-controls");
-    var existingCols = Array.from(
-      grid.querySelectorAll(":scope > .masonry-column"),
-    );
-
-    for (var i = 0; i < columns; i++) {
-      var col = existingCols[i];
-      if (!col) {
-        col = document.createElement("div");
-        col.className = "masonry-column";
-        if (pagination) grid.insertBefore(col, pagination);
-        else grid.appendChild(col);
-      }
-      cols.push(col);
-    }
-
-    for (var i = 0; i < columns; i++) {
-      if (galleryColHeights[i] == null) galleryColHeights[i] = 0;
-    }
-
-    var newArticles = Array.from(
-      grid.querySelectorAll(":scope > article.masonry-item"),
-    );
-
-    newArticles.forEach(function (article) {
-      var img = article.querySelector("img[width][height]");
-      var ratio = 1;
-      if (img) {
-        var w = Number(img.getAttribute("width"));
-        var h = Number(img.getAttribute("height"));
-        ratio = w > 0 && h > 0 ? h / w : 1;
-      }
-
-      var shortest = 0;
-      for (var i = 1; i < columns; i++) {
-        if (galleryColHeights[i] < galleryColHeights[shortest]) shortest = i;
-      }
-
-      cols[shortest].appendChild(article);
-      galleryColHeights[shortest] += ratio;
-    });
+  function getGrid() {
+    return document.getElementById("photo-grid");
   }
 
   function getCurrentView() {
@@ -131,109 +20,145 @@
     return checked instanceof HTMLInputElement ? checked.value : "masonry";
   }
 
-  globalThis.booruLayoutMasonry = layoutMasonry;
-  globalThis.booruClearMasonry = clearMasonryLayout;
-  globalThis.booruRequestMasonryReset = function () {
-    queueMasonryReset();
-  };
-  globalThis.booruGetCurrentView = getCurrentView;
-
-  function removedMasonryItem(node) {
-    if (node.nodeType !== 1) return false;
-    if (node.matches && node.matches("article.masonry-item")) return true;
-    return !!(node.querySelector && node.querySelector("article.masonry-item"));
+  function insertBeforePagination(grid, el) {
+    var pagination = grid.querySelector("#pagination-controls");
+    if (pagination) grid.insertBefore(el, pagination);
+    else grid.appendChild(el);
   }
 
-  function observeMasonryDeletes() {
-    var grid = document.getElementById("photo-grid");
-    if (!grid || grid.dataset.masonryDeleteObserver === "1") return;
-    grid.dataset.masonryDeleteObserver = "1";
+  function cardRatio(card) {
+    var img = card.querySelector("img[width][height]");
+    if (!img) return 1;
+    var w = Number(img.getAttribute("width"));
+    var h = Number(img.getAttribute("height"));
+    return w > 0 && h > 0 ? h / w : 1;
+  }
 
-    new MutationObserver(function (mutations) {
-      if (isReflowingMasonry) return;
+  function cardOrder(card) {
+    var raw = card.getAttribute("data-render-order-id");
+    var order = raw == null ? NaN : Number(raw);
+    return Number.isFinite(order) ? order : Number.POSITIVE_INFINITY;
+  }
 
-      for (var i = 0; i < mutations.length; i++) {
-        var removed = mutations[i].removedNodes;
-        for (var j = 0; j < removed.length; j++) {
-          if (removedMasonryItem(removed[j])) {
-            if (grid.contains(removed[j])) continue;
-            queueMasonryReset();
-            return;
-          }
-        }
+  // collectCards returns every card in canonical render-order sequence,
+  // wherever packing left them in the DOM.
+  function collectCards(grid) {
+    var cards = Array.from(grid.querySelectorAll(".masonry-item"));
+    cards.sort(function (a, b) {
+      return cardOrder(a) - cardOrder(b);
+    });
+    return cards;
+  }
+
+  function columnCount(grid) {
+    var parsed = Number.parseInt(
+      getComputedStyle(grid).getPropertyValue("--masonry-columns"),
+      10,
+    );
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+  }
+
+  // The sync key is the canonical spec of the layout: view, column count,
+  // and each card's (order, image id) in canonical sequence. It is stable
+  // across pack/unpack, so repeated triggers after a no-op settle skip.
+  function buildSyncKey(view, columns, cards) {
+    var parts = [];
+    for (var i = 0; i < cards.length; i++) {
+      parts.push(cardOrder(cards[i]) + ":" + cards[i].getAttribute("data-image-id"));
+    }
+    return view + "|" + columns + "|" + parts.join(",");
+  }
+
+  function packedColumnsMatch(grid, columns) {
+    return grid.querySelectorAll(":scope > .masonry-column").length === columns;
+  }
+
+  function syncMasonry() {
+    var grid = getGrid();
+    if (!grid) return;
+
+    var view = getCurrentView();
+    var columns = view === "masonry" ? columnCount(grid) : 0;
+    var cards = collectCards(grid);
+    var key = buildSyncKey(view, columns, cards);
+    if (key === lastSyncKey && packedColumnsMatch(grid, columns)) return;
+    lastSyncKey = key;
+
+    // Flatten: unload packed columns back into the grid, then re-append the
+    // cards in canonical order.
+    var packed = Array.from(grid.querySelectorAll(":scope > .masonry-column"));
+    for (var i = 0; i < packed.length; i++) {
+      var col = packed[i];
+      while (col.firstChild) insertBeforePagination(grid, col.firstChild);
+      col.remove();
+    }
+    for (var i = 0; i < cards.length; i++) insertBeforePagination(grid, cards[i]);
+
+    // Grid/list views render flat cards; only masonry packs.
+    if (columns === 0) return;
+
+    var cols = [];
+    for (var i = 0; i < columns; i++) {
+      var col = document.createElement("div");
+      col.className = "masonry-column";
+      insertBeforePagination(grid, col);
+      cols.push(col);
+    }
+    var heights = [];
+    for (var i = 0; i < columns; i++) heights.push(0);
+    for (var i = 0; i < cards.length; i++) {
+      var shortest = 0;
+      for (var j = 1; j < columns; j++) {
+        if (heights[j] < heights[shortest]) shortest = j;
       }
-    }).observe(grid, { childList: true, subtree: true });
-  }
-
-  function pathFromUrl(value) {
-    if (!value) return "";
-    try {
-      return new URL(value, location.href).pathname;
-    } catch (_err) {
-      return "";
+      cols[shortest].appendChild(cards[i]);
+      heights[shortest] += cardRatio(cards[i]);
     }
   }
 
-  function isDeleteRequest(event) {
-    var detail = event.detail || {};
-    var pathInfo = detail.pathInfo || {};
-    var requestConfig = detail.requestConfig || {};
-    var paths = [
-      pathInfo.requestPath,
-      pathInfo.finalRequestPath,
-      requestConfig.path,
-      detail.xhr && detail.xhr.responseURL,
-    ];
-
-    for (var i = 0; i < paths.length; i++) {
-      if (pathFromUrl(paths[i]) === "/delete") return true;
-    }
-
-    var elt = detail.elt || requestConfig.elt || detail.target;
-    if (elt && elt.getAttribute && elt.getAttribute("hx-post") === "/delete") {
-      return true;
-    }
-    if (elt && elt.closest && elt.closest('[hx-post="/delete"]')) return true;
-
-    return false;
+  // The single dispatcher: coalesce all triggers into one animation frame.
+  function scheduleMasonrySync() {
+    if (syncQueued) return;
+    syncQueued = true;
+    requestAnimationFrame(function () {
+      syncQueued = false;
+      syncMasonry();
+    });
   }
+
+  // Triggers. Each one is dumb: it only requests a sync.
+  document.addEventListener("htmx:afterSettle", scheduleMasonrySync);
 
   ["(min-width: 768px)", "(min-width: 1024px)", "(min-width: 1280px)"].forEach(
     function (query) {
-      matchMedia(query).addEventListener("change", function () {
-        requestAnimationFrame(function () {
-          if (getCurrentView() === "masonry") {
-            resetMasonryLayout();
-          }
-        });
-      });
+      matchMedia(query).addEventListener("change", scheduleMasonrySync);
     },
   );
 
-  document.addEventListener("htmx:beforeSend", function (event) {
-    if (isDeleteRequest(event)) pendingMasonryResetRequests++;
-  });
-
-  document.addEventListener("htmx:afterSettle", function (event) {
-    if (pendingMasonryResetRequests > 0 || isDeleteRequest(event)) {
-      pendingMasonryResetRequests = 0;
-      resetMasonryLayout();
-      return;
-    }
-
-    if (getCurrentView() === "masonry") {
-      layoutMasonry();
-    } else {
-      clearMasonryLayout();
-    }
-    observeMasonryDeletes();
-  });
-
   document.addEventListener("DOMContentLoaded", function () {
-    if (getCurrentView() === "masonry") {
-      layoutMasonry();
+    var requestedView = new URLSearchParams(window.location.search).get("view");
+    if (
+      requestedView === "masonry" ||
+      requestedView === "grid" ||
+      requestedView === "list"
+    ) {
+      var selected = document.getElementById("gallery-view-" + requestedView);
+      if (selected instanceof HTMLInputElement) selected.checked = true;
     }
-    observeMasonryDeletes();
+
+    var viewInputs = document.querySelectorAll('input[name="gallery-view"]');
+    for (var i = 0; i < viewInputs.length; i++) {
+      viewInputs[i].addEventListener("change", function (event) {
+        var input = event.target;
+        if (!(input instanceof HTMLInputElement) || !input.checked) return;
+        var nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set("view", input.value);
+        window.history.replaceState(null, "", nextUrl);
+        scheduleMasonrySync();
+      });
+    }
+
+    scheduleMasonrySync();
   });
 })();
 
@@ -275,34 +200,4 @@ document.addEventListener("click", function (event) {
       detail.open = false;
     }
   });
-});
-
-document.addEventListener("DOMContentLoaded", function () {
-  var viewInputs = document.querySelectorAll('input[name="gallery-view"]');
-  var views = new Set(["masonry", "grid", "list"]);
-  var requestedView = new URLSearchParams(window.location.search).get("view");
-  if (requestedView && views.has(requestedView)) {
-    var selected = document.getElementById("gallery-view-" + requestedView);
-    if (selected instanceof HTMLInputElement) selected.checked = true;
-  }
-
-  viewInputs.forEach(function (input) {
-    input.addEventListener("change", function () {
-      if (!(input instanceof HTMLInputElement) || !input.checked) return;
-      var nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set("view", input.value);
-      window.history.replaceState(null, "", nextUrl);
-      if (input.value === "masonry") {
-        globalThis.booruLayoutMasonry?.();
-      } else {
-        globalThis.booruClearMasonry?.();
-      }
-    });
-  });
-
-  if (globalThis.booruGetCurrentView?.() === "masonry") {
-    globalThis.booruLayoutMasonry?.();
-  } else {
-    globalThis.booruClearMasonry?.();
-  }
 });

@@ -715,7 +715,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
 
     b += '<button type="button" id="inspector-header-delete" hx-post="/delete" hx-include="#inspector-content input[name=id]"';
     b += attr("hx-target", 'article[data-image-id="' + id + '"]');
-    b += " hx-swap=\"delete\" hx-indicator=\"#inspector-header-delete\" class=\"rounded p-1 hover-surface\" data-hx-on:htmx:before-request=\"if(this.dataset.confirmed){delete this.dataset.confirmed;booruRequestMasonryReset?.()}else{event.preventDefault();this.dataset.confirmed='1';setTimeout(()=>delete this.dataset.confirmed,2000)}\" data-hx-on:htmx:after-request=\"if(event.detail.successful)document.getElementById('inspector-content').innerHTML=''\">";
+    b += " hx-swap=\"delete\" hx-indicator=\"#inspector-header-delete\" class=\"rounded p-1 hover-surface\" data-hx-on:htmx:before-request=\"if(this.dataset.confirmed){delete this.dataset.confirmed}else{event.preventDefault();this.dataset.confirmed='1';setTimeout(()=>delete this.dataset.confirmed,2000)}\" data-hx-on:htmx:after-request=\"if(event.detail.successful)document.getElementById('inspector-content').innerHTML=''\">";
     b += inspectorIcon("trash", "Delete") + "</button>";
 
     b += '<a id="inspector-header-download"' + attr("href", "/image/" + image.oid) + attr("download", image.name);

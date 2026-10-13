@@ -125,6 +125,17 @@ html_photo_grid :: proc(t: ^testing.T) {
 }
 
 @(test)
+html_photo_grid_offset :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	context.allocator = alloc
+	images := load_images("test/fixture/library/events/2026-01.ndjson")
+	// offset counts cards already shown including this page, so a second
+	// page's cards must carry globally increasing render-order ids.
+	expect_html_fixture(t, "photo_grid_offset", render_photo_grid(images[:2], 4, true))
+}
+
+@(test)
 html_inspector :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)

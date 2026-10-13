@@ -54,7 +54,7 @@ render_inspector :: proc(image: library.Image) -> string {
 	attr(&b, "hx-target", fmt.tprintf("article[data-image-id=\"%s\"]", id))
 	wr(
 		&b,
-		" hx-swap=\"delete\" hx-indicator=\"#inspector-header-delete\" class=\"rounded p-1 hover-surface\" data-hx-on:htmx:before-request=\"if(this.dataset.confirmed){delete this.dataset.confirmed;booruRequestMasonryReset?.()}else{event.preventDefault();this.dataset.confirmed='1';setTimeout(()=>delete this.dataset.confirmed,2000)}\" data-hx-on:htmx:after-request=\"if(event.detail.successful)document.getElementById('inspector-content').innerHTML=''\">",
+		" hx-swap=\"delete\" hx-indicator=\"#inspector-header-delete\" class=\"rounded p-1 hover-surface\" data-hx-on:htmx:before-request=\"if(this.dataset.confirmed){delete this.dataset.confirmed}else{event.preventDefault();this.dataset.confirmed='1';setTimeout(()=>delete this.dataset.confirmed,2000)}\" data-hx-on:htmx:after-request=\"if(event.detail.successful)document.getElementById('inspector-content').innerHTML=''\">",
 	)
 	inspector_icon(&b, "trash", "Delete")
 	wr(&b, "</button>")

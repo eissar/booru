@@ -10,8 +10,13 @@ render_photo_grid :: proc(images: []library.Image, offset: int, has_more: bool) 
 	b := strings.builder_make()
 
 	wr(&b, "<div id=\"photo-grid\" class=\"masonry-grid\">")
+	// offset is the count shown including this page, so this batch starts at
+	// position `offset - len(images)` in the listing. Cards carry globally
+	// increasing render-order ids so client JS can restore canonical order
+	// after masonry packing, regardless of arrival order.
+	first_order := offset - len(images)
 	for image, i in images {
-		wr(&b, render_item_card(image, i))
+		wr(&b, render_item_card(image, first_order + i))
 	}
 
 	wr(
