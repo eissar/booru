@@ -11,6 +11,18 @@ import "../http"
 import "../library"
 
 @(test)
+sorting_filtered_images_preserves_library_order :: proc(t: ^testing.T) {
+	images := [?]library.Image{{id = 2, tags = {"match"}}, {id = 1, tags = {"match"}}}
+	for tags in ([]([]string){nil, {"match"}}) {
+		filtered := filter_images(images[:], tags)
+		sort_gallery(filtered, "idAsc")
+		testing.expect(t, filtered[0].id == 1 && filtered[1].id == 2)
+		testing.expect(t, images[0].id == 2 && images[1].id == 1, "source order remains unchanged")
+		delete(filtered)
+	}
+}
+
+@(test)
 image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 	root, err := os.make_directory_temp("", "booru-image-*", context.allocator)
 	if !testing.expect(t, err == nil) {return}

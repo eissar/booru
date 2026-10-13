@@ -23,6 +23,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Header) 
 	}
 
 	filtered := filter_images(s.library_images[:], q.tags[:])
+	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
@@ -47,6 +48,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 	}
 
 	filtered := filter_images(s.library_images[:], q.tags[:])
+	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
@@ -59,6 +61,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		gallery_url  = gallery_url,
 		fragment_url = fragment_url,
 	}
+	res.headers["Hx-Push-Url"] = gallery_url
 	http.res_html(template.render_gallery_content(filter, page, has_more), res)
 }
 
@@ -71,15 +74,12 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.H
 	}
 
 	filtered := filter_images(s.library_images[:], q.tags[:])
+	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
 
-	res.headers["Hx-Push-Url"] = fmt.tprintf(
-		"/gallery?limit=%d&offset=%d&sort=%s",
-		q.limit,
-		q.offset + len(page),
-		q.sort,
-	)
+	gallery_url, _ := filter_urls(q)
+	res.headers["Hx-Push-Url"] = gallery_url
 
 	http.res_html(template.render_photo_grid(page, q.offset + len(page), has_more), res)
 }

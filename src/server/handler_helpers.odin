@@ -1,6 +1,7 @@
 package server
 
 import "core:fmt"
+import "core:slice"
 import "core:strconv"
 import "core:strings"
 
@@ -104,9 +105,11 @@ parse_query_params :: proc(query: string) -> map[string][dynamic]string {
 
 //region: filtering + sorting
 
-// filter_images returns the images carrying every requested tag.
+// Returns an owned, shallow copy so sorting never reorders shared library state.
+// Tradeoff: even unfiltered requests allocate/copy all Image structs; strings and
+// tags stay shared and must not be mutated. Caller owns only the returned slice.
 filter_images :: proc(all: []library.Image, tags: []string) -> []library.Image {
-	if len(tags) == 0 {return all}
+	if len(tags) == 0 {return slice.clone(all)}
 	out := make([dynamic]library.Image, 0, len(all))
 	for img in all {
 		matched := 0

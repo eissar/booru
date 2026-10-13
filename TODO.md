@@ -24,6 +24,10 @@
 3. Swap the card renderer to a CSS-sprite div using the atlas as LOD 0 with the existing webp thumbs lazy-loaded as LOD 1, then update the render fixture tests.
 4. Harden the provisional mipmap handler: replace sequential sends with writev, right-size the arena, use configured thumbnail paths/cache, and assert response correctness in tests.
 
+# Gallery Pagination TODO
+
+- Open question: choose a reasonable default for fresh loads after loading more. Load-more URLs currently omit offset; should refresh start with one page, restore the displayed count, or restore a position? Decide the URL semantics and default before implementing accumulated-offset restoration.
+
 # Gallery Masonry TODO
 
 - Current layout is stateless JS by design: `data-render-order-id` (stamped by `photo_grid.odin` as `offset - len(images) + i`) is the only order source; `gallery.js` holds just a sync key string and an rAF flag, with no per-card listeners.
