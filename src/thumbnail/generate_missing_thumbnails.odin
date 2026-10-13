@@ -55,10 +55,24 @@ generate_image_thumbnails :: proc(
 ) -> (
 	generated, failed: int,
 ) {
-	data, err := os.read_entire_file(
-		fmt.tprintf("%s/images/%s", s.library_path, oid),
-		context.allocator,
-	)
+	dir, open_err := os.open(fmt.tprintf("%v/images/", s.library_path), {.Read}, {})
+	if open_err != nil {return 0, card(sizes)}
+	defer os.close(dir)
+	img_path := fmt.tprintf("%s/images/%s", s.library_path, oid)
+	dents_buf: [32 * 1024]u8
+	scan: for {
+		n, err := linux.getdents(linux.Fd(os.fd(dir)), dents_buf[:])
+		if err != nil || n == 0 {break}
+		offset := 0
+		for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
+			name := linux.dirent_name(entry)
+			if strings.has_prefix(name, oid) {
+				img_path = fmt.tprintf("%s/images/%s", s.library_path, name)
+				break scan
+			}
+		}
+	}
+	data, err := os.read_entire_file(img_path, context.allocator)
 	if err != nil {
 		fmt.eprintfln("thumbnail: read %s: %v", oid, err)
 		return 0, card(sizes)
