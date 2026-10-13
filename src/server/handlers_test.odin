@@ -1,6 +1,7 @@
 package server
 
 import "core:bytes"
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -8,6 +9,45 @@ import "core:time"
 
 import "../http"
 import "../library"
+
+@(test)
+image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
+	root, err := os.make_directory_temp("", "booru-image-*", context.allocator)
+	if !testing.expect(t, err == nil) {return}
+	defer delete(root)
+	defer os.remove_all(root)
+	source, read_err := os.read_entire_file(
+		"test/fixture/library/images/1.png",
+		context.temp_allocator,
+	)
+	if !testing.expect(t, read_err == nil) {return}
+	if !testing.expect(
+		t,
+		os.mkdir_all(fmt.tprintf("%s/images", root), os.Permissions_Default_Directory) == nil,
+	) {return}
+	if !testing.expect(
+		t,
+		os.write_entire_file(fmt.tprintf("%s/images/1.png", root), source) == nil,
+	) {return}
+	oid :: "4ef24abe584d4358473279073cc0a35150802774bb97f5fea35e24d661668ce6"
+	images := [?]library.Image{{id = 1, oid = oid, content_type = "image/png"}}
+	state := library.State {
+		library_path   = root,
+		library_images = images[:],
+	}
+	res := http.Response {
+		headers = make(map[string]string),
+	}
+	defer delete(res.headers)
+	handle_image(state, &res, http.Header{path = "/image/" + oid})
+	testing.expect(t, res.status == .OK)
+	testing.expect(t, res.headers["Content-Type"] == "image/png")
+	testing.expect(t, bytes.equal(res.body, source), "serve ID-named original")
+	for path in ([]string{"/image/deadbeef", "/image/../1.png"}) {
+		handle_image(state, &res, http.Header{path = path})
+		testing.expect(t, res.status == .NotFound)
+	}
+}
 
 @(test)
 mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {

@@ -72,6 +72,11 @@ generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	defer delete(data)
+	#partial switch media.detect_format(data) {
+	case .PNG, .JPEG, .GIF, .WebP:
+	case:
+		return 0, 0
+	}
 	decoded := media.decode_rgba(data)
 	if decoded.pixels == nil {
 		fmt.eprintfln("thumbnail: cannot decode %s", oid)

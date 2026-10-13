@@ -136,15 +136,13 @@ handle_static :: proc(res: ^http.Response, req: http.Header) {
 	http.res_blob(data, res, mime_from_leaf(leaf))
 }
 
-// TODO: make this more thorough, with support for more filetypes
-//
-// handle_image serves /image/:oid -- thumbnails first (webp), then originals
-// by oid, mirroring ../lfs-booru/server.ts.
+// handle_image serves /image/:oid -- thumbnails first, then originals by library ID.
 handle_image :: proc(s: library.State, res: ^http.Response, req: http.Header) {
 	oid := req.path[len("/image/"):]
 
 	if !oid_path_safe(oid) {
-		http.res_html("", res, .NotFound)
+		http.res_error("", res, .NotFound)
+		return
 	}
 
 	thumb_fp := fmt.tprintf("%s/thumbnails/%s.webp", s.library_path, oid)
@@ -153,8 +151,26 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Header) {
 		http.res_blob(data, res, .Webp)
 		return
 	}
-	// fmt.printfln err
-	// the thumbnail doesn't exist, fallback?
+	for img in s.library_images {
+		if img.oid != oid {continue}
+		dir := fmt.tprintf("%s/images", s.library_path)
+		entries, dir_err := os.read_directory_by_path(dir, -1, context.temp_allocator)
+		if dir_err != nil {break}
+		defer os.file_info_slice_delete(entries, context.temp_allocator)
+		prefix := fmt.tprintf("%d.", img.id)
+		for entry in entries {
+			if entry.type != .Regular || !strings.has_prefix(entry.name, prefix) {continue}
+			data, err = os.read_entire_file(
+				fmt.tprintf("%s/%s", dir, entry.name),
+				context.temp_allocator,
+			)
+			if err != nil {continue}
+			http.res_blob(data, res)
+			if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
+			return
+		}
+	}
+	http.res_error("", res, .NotFound)
 }
 
 handle_mipmap :: proc(
