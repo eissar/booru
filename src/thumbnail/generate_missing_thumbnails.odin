@@ -7,14 +7,10 @@ import "core:strings"
 import "core:sys/linux"
 
 import "../library"
+import "../media"
 import libwebp "../vendor/libwebp"
 
-write_missing_thumbnail :: proc(
-	root, oid: string,
-	edge: c.int,
-	y, u, v: ^u8,
-	w, h, stride, uv_stride: c.int,
-) -> bool {
+write_missing_thumbnail :: proc(root, oid: string, edge: c.int, img: media.Decoded) -> bool {
 	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
 		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
@@ -28,17 +24,13 @@ write_missing_thumbnail :: proc(
 		fmt.eprintfln("thumbnail: open %s: %v", path, err)
 		return false
 	}
-	pic := libwebp.WebPPicture {
-		width     = w,
-		height    = h,
-		y         = y,
-		u         = u,
-		v         = v,
-		y_stride  = stride,
-		uv_stride = uv_stride,
-	}
+	pic: libwebp.WebPPicture
+	initialized := libwebp.WebPPictureInitInternal(&pic, 0x0210) != 0
 	defer libwebp.WebPPictureFree(&pic)
-	ok := libwebp.rescale(&pic, file, edge)
+	pic.width, pic.height = img.width, img.height
+	pic.use_argb = 1
+	ok := initialized && libwebp.WebPPictureImportRGBA(&pic, img.pixels, img.width * 4) != 0
+	if ok {ok = libwebp.rescale(&pic, file, edge)}
 	close_err := os.close(file)
 	if !ok || close_err != nil {
 		os.remove(path)
@@ -80,23 +72,12 @@ generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	defer delete(data)
-	w, h, stride, uv_stride: c.int
-	u, v: ^u8
-	y := libwebp.WebPDecodeYUV(
-		raw_data(data),
-		c.size_t(len(data)),
-		&w,
-		&h,
-		&u,
-		&v,
-		&stride,
-		&uv_stride,
-	)
-	if y == nil {
-		fmt.eprintfln("thumbnail: cannot decode %s as WebP", oid)
+	decoded := media.decode_rgba(data)
+	if decoded.pixels == nil {
+		fmt.eprintfln("thumbnail: cannot decode %s", oid)
 		return 0, card(sizes)
 	}
-	defer libwebp.WebPFree(y)
+	defer media.free_decoded(decoded)
 	for size in sizes {
 		edge: c.int
 		#partial switch size {
@@ -107,7 +88,7 @@ generate_image_thumbnails :: proc(
 		case:
 			continue
 		}
-		if write_missing_thumbnail(s.library_path, oid, edge, y, u, v, w, h, stride, uv_stride) {
+		if write_missing_thumbnail(s.library_path, oid, edge, decoded) {
 			generated += 1
 		} else {
 			failed += 1

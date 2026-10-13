@@ -58,13 +58,15 @@ tasks:
     desc: 'Build and run the server (e.g. task run -- -debug -- -port:9000)'
     deps: [hooks:check]
     cmds:
-      - odin run src {{.CLI_ARGS}}
+      - mkdir -p {{.BIN_DIR}}
+      - odin run src -out:{{.BIN_DIR}}/booru {{.CLI_ARGS}}
 
   preview:
     desc: 'Run the template preview server (pass a port with --, e.g. task preview -- 9000)'
     deps: [hooks:check]
     cmds:
-      - odin run test/tools -- {{.CLI_ARGS}}
+      - mkdir -p {{.BIN_DIR}}
+      - odin run test/tools -out:{{.BIN_DIR}}/preview -- {{.CLI_ARGS}}
 
   check:
     desc: 'Type-check the project packages (pass extra odin flags with --, e.g. task check -- -error-pos-style:unix)'
@@ -78,13 +80,15 @@ tasks:
     desc: 'Run the project''s Odin tests (extra odin flags after --; ODIN_TEST_PKGS=src/cli picks a package)'
     deps: [hooks:check]
     cmds:
-      - odin test {{.CLI_ARGS}}
+      - mkdir -p {{.BIN_DIR}}
+      - odin test -out:{{.BIN_DIR}}/test {{.CLI_ARGS}}
 
   test:render:
     desc: 'Run HTML fixture tests (requires Perl and HTML::Tidy5; extra Odin flags after --)'
     deps: [hooks:check]
     cmds:
-      - odin test src/template {{.CLI_ARGS}}
+      - mkdir -p {{.BIN_DIR}}
+      - odin test src/template -out:{{.BIN_DIR}}/test-render {{.CLI_ARGS}}
 
   test:all:build:
     desc: Build the full test suite
@@ -110,7 +114,8 @@ tasks:
     desc: 'test src/thumbnail'
     deps: [hooks:check]
     cmds:
-      - odin test src/thumbnail/ -debug
+      - mkdir -p {{.BIN_DIR}}
+      - odin test src/thumbnail/ -out:{{.BIN_DIR}}/test-thumbnail -debug
 
 
   fmt:

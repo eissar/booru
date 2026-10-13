@@ -8,6 +8,10 @@
   - Use two passes: a debugger-assisted diagnostic pass for attribution, and an unpaused performance pass for realistic timing and peaks. Record debugger pause durations and avoid presenting instrumented timing as normal execution time.
   - Start with the existing benchmark's allocate → touch → free stages. Account for batched kernel counters and peaks missed by polling; AST matches identify candidate events, not proof of resource attribution.
 
+# Media Decode TODO
+
+- [ ] Add AVIF decoding with libavif + dav1d: minimal Odin bindings, decode-only build with other codec backends/tools/tests disabled, and dimension/pixel-count limits before allocation. Feed decoded RGBA into the WebP thumbnail pipeline.
+
 # Thumbnail Preview TODO
 
 - If visible-grid redraws become a bottleneck, render changed slots into a persistent texture-backed framebuffer and blit it to the canvas on rAF. Compare blit bandwidth and framebuffer memory against drawing the cached textures; invalidate affected slots on sorting, scrolling, and resize.
