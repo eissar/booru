@@ -65,9 +65,9 @@ resize_half :: proc(t: ^testing.T) {
 		elapsed := time.tick_since(start)
 		delete(data)
 		fmt.printfln(
-			"resize_half/%s: %.2f us/op (%d iterations; decode, resize, encode to /dev/null, cleanup)",
+			"resize_half/%s: %.2f k ops/second (%d iterations; decode, resize, encode to /dev/null, cleanup)",
 			path,
-			time.duration_seconds(elapsed) * 1e6 / f64(iterations),
+			f64(iterations) / time.duration_seconds(elapsed) / 1e3,
 			iterations,
 		)
 	}

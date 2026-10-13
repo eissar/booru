@@ -46,9 +46,9 @@ html_escape_text :: proc(t: ^testing.T) {
 		elapsed := time.tick_since(start)
 		testing.expect_value(t, strings.to_string(b), c.expected)
 		fmt.printf(
-			"escape_text/%s: %.2f ns/op (%d iterations; includes output consumption)\n",
+			"escape_text/%s: %.2f k ops/second (%d iterations; includes output consumption)\n",
 			c.name,
-			time.duration_seconds(elapsed) * 1e9 / f64(iterations),
+			f64(iterations) / time.duration_seconds(elapsed) / 1e3,
 			iterations,
 		)
 	}
