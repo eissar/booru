@@ -209,30 +209,45 @@ handle_mipmap :: proc(
 
 	idx := 0
 	for raw_str_id in strings.split_iterator(&img_ids_raw, ",") {
+		if raw_str_id == "" {continue}
+		slot := idx
+		idx += 1
 		id, ok := strconv.parse_int(raw_str_id)
-		assert(ok) // HACK:
+		if !ok {
+			http.res_error("", res, status = .BadRequest)
+			return
+		}
 
 		oid, found := lookup_thumbnail_oid_by_id(s, id)
 		if !found {
-			thumbnails[idx] = thumbnail.new_not_found_thumb()
+			thumbnails[slot] = thumbnail.new_not_found_thumb()
 			continue
 		}
 
-		p := fmt.aprintf("%s/thumbnails/%v.webp", s.library_path, oid, allocator = req.alloc)
+		p := fmt.aprintf(
+			"%s/thumbnails/%s/%v.webp",
+			s.library_path,
+			raw_resolution,
+			oid,
+			allocator = req.alloc,
+		)
 		t_bytes, err := os.read_entire_file(p, req.alloc)
 		if err != nil {
 			fmt.eprintfln("thumbnail id=%v lookup failed err=%v", id, err)
-			thumbnails[idx] = thumbnail.new_not_found_thumb()
+			thumbnails[slot] = thumbnail.new_not_found_thumb()
 			continue
 		}
 
 		// TODO: enrich output of lookup_thumbnail_oid_by_id
 		// or something; need to retrieve actual thumbnail dims;
-		thumbnails[idx] = thumbnail.Thumb{t_bytes, req_resolution, req_resolution}
-		idx += 1
+		thumbnails[slot] = thumbnail.Thumb{t_bytes, req_resolution, req_resolution}
 	}
 
-	parts := thumbnail.Thumbnail_MipMap(thumbnails[:], req.alloc)
+	if idx == 0 {
+		http.res_error("", res, status = .NotFound)
+		return
+	}
+	parts := thumbnail.Thumbnail_MipMap(thumbnails[:idx], req.alloc)
 	length := 0
 	for part in parts {length += len(part)}
 

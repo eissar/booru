@@ -64,9 +64,13 @@ image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 @(test)
 mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 	oid :: "4ef24abe584d4358473279073cc0a35150802774bb97f5fea35e24d661668ce6"
-	images := [1]library.Image{{id = 1, oid = oid}}
+	images := [2]library.Image{{id = 1, oid = oid}, {id = 3, oid = "missing-file"}}
+	root, temp_err := os.make_directory_temp("", "booru-mipmap-*", context.allocator)
+	if !testing.expect(t, temp_err == nil) {return}
+	defer delete(root)
+	defer os.remove_all(root)
 	s := library.State {
-		library_path   = "test/fixture/library",
+		library_path   = root,
 		library_images = images[:],
 	}
 	source, err := os.read_entire_file(
@@ -74,6 +78,15 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 		context.temp_allocator,
 	)
 	if !testing.expect(t, err == nil, "read thumbnail fixture") {return}
+	if !testing.expect(
+		t,
+		os.mkdir_all(fmt.tprintf("%s/thumbnails/64", root), os.Permissions_Default_Directory) ==
+		nil,
+	) {return}
+	if !testing.expect(
+		t,
+		os.write_entire_file(fmt.tprintf("%s/thumbnails/64/%s.webp", root, oid), source) == nil,
+	) {return}
 	res := http.Response {
 		headers = make(map[string]string),
 	}
@@ -102,6 +115,21 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 		strings.has_suffix(wire, string(res.body)),
 		"serialized response includes the complete body",
 	)
+
+	// Unknown IDs and an existing ID with no thumbnail must each retain a slot.
+	handle_mipmap(
+		s,
+		&res,
+		http.Req{{path = "/mipmap/64"}, context.temp_allocator, time.now()},
+		transmute([]u8)string("2,1,3,4"),
+	)
+	testing.expect(t, res.status == .OK, "missing thumbnails do not crash the batch")
+	testing.expect(
+		t,
+		strings.count(string(res.body), "ANMF") == 4,
+		"each requested ID retains a frame, including missing thumbnails",
+	)
+	testing.expect(t, bytes.contains(res.body, source[12:]), "batch retains the valid thumbnail")
 }
 
 @(test)
