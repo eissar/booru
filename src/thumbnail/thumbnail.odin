@@ -14,10 +14,15 @@ Thumb :: struct {
 	height: u16le,
 }
 
-NOT_FOUND_WEBP :: #load("../../static/not_found.webp")
-UNSUPPORTED_FILETYPE_WEBP :: #load("../../static/unsupported_filetype.webp")
-new_not_found_thumb :: proc() -> Thumb {
-	return Thumb{transmute([]u8)NOT_FOUND_WEBP, 96, 96}
+NOT_FOUND_64_WEBP :: #load("../../static/not_found_64.webp")
+NOT_FOUND_128_WEBP :: #load("../../static/not_found_128.webp")
+UNSUPPORTED_FILETYPE_64_WEBP :: #load("../../static/unsupported_filetype_64.webp")
+UNSUPPORTED_FILETYPE_128_WEBP :: #load("../../static/unsupported_filetype_128.webp")
+new_not_found_thumb :: proc(resolution: u16le) -> Thumb {
+	if resolution == 128 {
+		return Thumb{transmute([]u8)NOT_FOUND_128_WEBP, 128, 128}
+	}
+	return Thumb{transmute([]u8)NOT_FOUND_64_WEBP, 64, 64}
 }
 
 
@@ -151,8 +156,15 @@ Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
 	length_of_thumbs := 0
 	for &t in streams {
 		if parse_fourcc(t.bytes[12:]) != .VP8 {
-			t.bytes = transmute([]u8)UNSUPPORTED_FILETYPE_WEBP
+			if t.width == 128 {
+				t.bytes = transmute([]u8)UNSUPPORTED_FILETYPE_128_WEBP
+			} else {
+				t.bytes = transmute([]u8)UNSUPPORTED_FILETYPE_64_WEBP
+			}
 		}
+		// Assume VP8: key-frame dimensions are little-endian u14 values at these offsets.
+		t.width = (u16le(t.bytes[26]) | u16le(t.bytes[27]) << 8) & 0x3fff
+		t.height = (u16le(t.bytes[28]) | u16le(t.bytes[29]) << 8) & 0x3fff
 		// subtract RIFF header, or 12 bytes per thumb
 		length_of_thumbs += len(t.bytes) - 12
 	}
@@ -176,7 +188,8 @@ Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
 	dims := new([2][]u8, alloc)
 
 	t := streams[0]
-	sizes := [2]u32{u32(t.width), u32(t.height)}
+	edge := u32(max(t.width, t.height))
+	sizes := [2]u32{edge, edge}
 	for i in 0 ..< 2 {
 		encoded := transmute([4]u8)u32le(sizes[i] - 1)
 		dims[i] = make([]u8, 3, alloc)

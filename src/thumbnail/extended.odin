@@ -103,7 +103,10 @@ Vectorized_Webp_Extended :: proc "contextless" (
 		vec_push(v[:], &vec_idx, dims[1][:])
 
 		// duration in ms
-		ANMF_Flags_Byte := transmute(u8)bit_set[ANMF_Flags;u8]{}
+		ANMF_Flags_Byte := transmute(u8)bit_set[ANMF_Flags;u8] {
+			.blend_method, // Set means no blending: replace pixels with this independent thumbnail.
+			.disposal_method, // Clear this frame's rectangle to the background before the next frame.
+		}
 		duration_flags := new([4]u8, alloc)
 		duration_flags^ = {
 			30,

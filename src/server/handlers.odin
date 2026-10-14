@@ -231,7 +231,7 @@ handle_mipmap :: proc(
 
 		oid, found := lookup_thumbnail_oid_by_id(s, id)
 		if !found {
-			thumbnails[slot] = thumbnail.new_not_found_thumb()
+			thumbnails[slot] = thumbnail.new_not_found_thumb(req_resolution)
 			continue
 		}
 
@@ -245,7 +245,7 @@ handle_mipmap :: proc(
 		t_bytes, err := os.read_entire_file(p, req.alloc)
 		if err != nil {
 			fmt.eprintfln("thumbnail id=%v lookup failed err=%v", id, err)
-			thumbnails[slot] = thumbnail.new_not_found_thumb()
+			thumbnails[slot] = thumbnail.new_not_found_thumb(req_resolution)
 			continue
 		}
 
