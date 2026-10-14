@@ -154,6 +154,17 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Header) {
 	for img in s.library_images {
 		if img.oid != oid {continue}
 		dir := fmt.tprintf("%s/images", s.library_path)
+		if img.ext != "" {
+			data, err = os.read_entire_file(
+				fmt.tprintf("%s/%d.%s", dir, img.id, img.ext),
+				context.temp_allocator,
+			)
+			if err == nil {
+				http.res_blob(data, res)
+				if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
+				return
+			}
+		}
 		entries, dir_err := os.read_directory_by_path(dir, -1, context.temp_allocator)
 		if dir_err != nil {break}
 		defer os.file_info_slice_delete(entries, context.temp_allocator)

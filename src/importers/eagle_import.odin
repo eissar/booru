@@ -1,13 +1,18 @@
 package importers
 
+import "core:encoding/hex"
 import "core:fmt"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 import "core:sys/linux"
 import "core:testing"
 
+import "core:crypto/sha2"
+
 import "core:encoding/json"
 
+import elog "../event_log"
 import "../library"
 
 Eagle_Import_Ctx :: struct {
@@ -56,6 +61,7 @@ EagleItem :: struct {
 EagleItem_Event :: struct {
 	addedAt:     Iso_Time `json:"btime"`,
 	contentType: string `json:"-"`,
+	ext:         string, // Eagle's "ext" key matches, no tag needed
 	height:      int,
 	id:          int `json:"-"`,
 	mtime:       Iso_Time,
@@ -68,8 +74,13 @@ EagleItem_Event :: struct {
 }
 
 // WIP
-// fd, open_err := linux.open(cpath, {.DIRECTORY})
-eagle_import :: proc(root: string, ctx: ^Eagle_Import_Ctx, rootFd: linux.Fd) {
+eagle_import :: proc(
+	src_images_dir: string,
+	dest_root: string,
+	ctx: ^Eagle_Import_Ctx,
+	rootFd: linux.Fd,
+	log: ^elog.EventLog,
+) {
 	data := make([]u8, METADATA_MAX_BYTES, context.allocator)
 	defer delete(data, context.allocator)
 
@@ -80,7 +91,7 @@ eagle_import :: proc(root: string, ctx: ^Eagle_Import_Ctx, rootFd: linux.Fd) {
 		n, err := linux.getdents(rootFd, buf[:])
 		if err != .NONE {
 			ctx.read_errors += 1
-			fmt.eprintfln("error: reading %s: %v", root, err, flush = true)
+			fmt.eprintfln("error: reading %s: %v", src_images_dir, err, flush = true)
 			return
 		}
 		if n == 0 {break}
@@ -92,12 +103,12 @@ eagle_import :: proc(root: string, ctx: ^Eagle_Import_Ctx, rootFd: linux.Fd) {
 
 			// An item is <id>.info/
 			// skip everything else (including . and ..).
-			name := linux.dirent_name(ent)
+			meta_dirname := linux.dirent_name(ent)
 
 			// TODO: some filesystems report .UNKNOWN
-			if ent.type != .DIR || !strings.has_suffix(name, ".info") {continue}
+			if ent.type != .DIR || !strings.has_suffix(meta_dirname, ".info") {continue}
 
-			meta_path := fmt.tprintf("%s/%s/metadata.json", root, name)
+			meta_path := fmt.tprintf("%s/%s/metadata.json", src_images_dir, meta_dirname)
 
 			meta_Fd: ^os.File
 			meta_err: os.Error
@@ -153,12 +164,32 @@ eagle_import :: proc(root: string, ctx: ^Eagle_Import_Ctx, rootFd: linux.Fd) {
 				continue
 			}
 
-			// copy file into images/
 
-			// write an event
+			// TODO:
 
+			from_leaf := fmt.aprintf("%v.%v", ev.name, ev.ext, allocator = context.temp_allocator)
+			// name = name from dirent, like ID.info/
+			from_path, _ := os.join_path(
+				{src_images_dir, meta_dirname, from_leaf},
+				context.temp_allocator,
+			)
 
-			if ctx.success < 10 {fmt.println(ev)}
+			// images are stored as images/id.ext
+			to_leaf := fmt.aprintf("%v.%v", ev.id, ev.ext, allocator = context.temp_allocator)
+			to_path, _ := os.join_path({dest_root, "images", to_leaf}, context.temp_allocator)
+
+			oid, err := copy_and_hash(to_path, from_path)
+			if err != nil {
+				// rename this or st
+				ctx.read_errors += 1
+				continue
+			}
+			ev.oid = oid
+
+			// write; an; event
+			elog.event_append(log, ev)
+
+			if ctx.success < 10 {fmt.println(meta_dirname)}
 			ctx.success += 1
 		}
 	}
@@ -181,7 +212,57 @@ eagle_import_test :: proc(t: ^testing.T) {
 		fmt.panicf("error opening lib dir %v ; err=%v", root, err)
 	}
 
-	eagle_import(root, &ctx, linux.Fd(os.fd(fd)))
+	// never write into the source library; import into a scratch library
+	dest_root := "/tmp/booru_eagle_import_test"
+	if init_err := library.init_new_library(dest_root); init_err != nil {
+		fmt.panicf("error creating dest library %v ; err=%v", dest_root, init_err)
+	}
+
+	e := elog.EventLog {
+		root = dest_root,
+	}
+	eagle_import(root, dest_root, &ctx, linux.Fd(os.fd(fd)), &e)
 
 	fmt.println(ctx)
+}
+
+copy_and_hash :: proc(dst_path: string, src_path: string) -> (sha: string, err: os.Error) {
+	src := os.open(src_path, {.Read}, os.Permissions_Read_All) or_return
+	defer os.close(src)
+
+	dst := os.open(dst_path, {.Read, .Write, .Create, .Trunc}, os.Permissions_All) or_return
+	defer os.close(dst)
+
+	// I have no idea what size is appropriate
+	buf: [64 * 1024]u8
+
+	ctx: sha2.Context_256
+	sha2.init_256(&ctx)
+
+	// ref: _copy_buffer
+	for {
+		nr, er := os.read(src, buf[:])
+		if nr > 0 {
+
+			// only read up to bytes written
+			sha2.update(&ctx, buf[:nr])
+			nw, we := os.write(dst, buf[:nr])
+
+			if we != nil {
+				err = we
+				break
+			}
+			if nr != nw {
+				err = .Short_Write
+				break
+			}
+		}
+		if er != nil {break} 	// .EOF ends the loop
+	}
+
+	digest: [sha2.DIGEST_SIZE_256]u8
+	sha2.final(&ctx, digest[:], finalize_clone = false)
+	hex_str := string(hex.encode(digest[:], context.temp_allocator))
+
+	return hex_str, err
 }

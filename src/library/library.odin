@@ -20,6 +20,7 @@ Image :: struct {
 	id:           int,
 	oid:          string,
 	path:         string,
+	ext:          string, // file extension without the dot; original is images/<id>.<ext>
 	tags:         []string,
 	width:        int,
 	height:       int,
@@ -32,6 +33,7 @@ Image :: struct {
 Event :: struct {
 	addedAt:     string,
 	contentType: string,
+	ext:         string,
 	height:      int,
 	id:          int,
 	mtime:       string,
@@ -94,6 +96,7 @@ load_ndjson :: proc(images: ^[dynamic]Image, data: string, alloc: mem.Allocator)
 				id = ev.id,
 				oid = ev.oid,
 				path = ev.path,
+				ext = ev.ext,
 				tags = ev.tags,
 				width = ev.width,
 				height = ev.height,
