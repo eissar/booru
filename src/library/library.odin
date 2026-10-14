@@ -29,17 +29,17 @@ Image :: struct {
 }
 
 Event :: struct {
-	op:          string,
+	addedAt:     string,
+	contentType: string,
+	height:      int,
 	id:          int,
+	mtime:       string,
+	name:        string,
 	oid:         string,
+	op:          string,
 	path:        string,
 	tags:        []string,
 	width:       int,
-	height:      int,
-	name:        string,
-	mtime:       string,
-	addedAt:     string,
-	contentType: string,
 }
 
 
