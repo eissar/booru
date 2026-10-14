@@ -10,6 +10,8 @@
 
 # Media Decode TODO
 
+- [ ] Check dimensions before decoding and skip oversized thumbnail inputs with a documented pixel-count limit and clear log.
+
 - [ ] Add AVIF decoding with libavif + dav1d: minimal Odin bindings, decode-only build with other codec backends/tools/tests disabled, and dimension/pixel-count limits before allocation. Feed decoded RGBA into the WebP thumbnail pipeline.
 
 # Thumbnail Preview TODO
