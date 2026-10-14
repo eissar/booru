@@ -16,6 +16,8 @@
 
 # Thumbnail Preview TODO
 
+- [ ] Handle the 96×96 mipmap fallback with correct per-frame dimensions and a canvas sized to the largest frame, rather than reusing the first input's dimensions.
+
 - If visible-grid redraws become a bottleneck, render changed slots into a persistent texture-backed framebuffer and blit it to the canvas on rAF. Compare blit bandwidth and framebuffer memory against drawing the cached textures; invalidate affected slots on sorting, scrolling, and resize.
 - Expose the RIFF frame-to-image-ID mapping so the GPU cache can follow images across reordered or filtered streams instead of using endpoint/frame-index keys.
 

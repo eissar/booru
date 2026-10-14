@@ -15,6 +15,7 @@ Thumb :: struct {
 }
 
 NOT_FOUND_WEBP :: #load("../../static/not_found.webp")
+UNSUPPORTED_FILETYPE_WEBP :: #load("../../static/unsupported_filetype.webp")
 new_not_found_thumb :: proc() -> Thumb {
 	return Thumb{transmute([]u8)NOT_FOUND_WEBP, 96, 96}
 }
@@ -124,9 +125,8 @@ thumbnail_prefix :: proc(prefix: ^Webp_Extended_Prefix, riff_size: u32le) {
 	copy(prefix.VP8X[4:8], mem.slice_to_bytes([]u32le{10}))
 	// webp_byte: 1
 	//  0, 0, 0 : 3 reserved
-	// 95, 0, 0 : 3 width: 96 , stored minus one
-	// 95, 0, 0 : 3 height: 96, stored minus one
-	copy(prefix.VP8X[8:18], mem.slice_to_bytes([]u8{webp_byte, 0, 0, 0, 95, 0, 0, 95, 0, 0}))
+	// Canvas dimensions are populated by Thumbnail_MipMap.
+	prefix.VP8X[8] = webp_byte
 
 	// optional iccp chunk
 
@@ -149,7 +149,10 @@ Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
 	vec := make([][]u8, 3 + 9 * len(streams), alloc)
 
 	length_of_thumbs := 0
-	for t in streams {
+	for &t in streams {
+		if parse_fourcc(t.bytes[12:]) != .VP8 {
+			t.bytes = transmute([]u8)UNSUPPORTED_FILETYPE_WEBP
+		}
 		// subtract RIFF header, or 12 bytes per thumb
 		length_of_thumbs += len(t.bytes) - 12
 	}
@@ -180,6 +183,9 @@ Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
 		copy(dims[i], encoded[:3])
 	}
 
-	Vectorized_Webp_Extended(chunks[:], &vec, prefix, dims)
+	copy(prefix.VP8X[12:15], dims[0])
+	copy(prefix.VP8X[15:18], dims[1])
+
+	Vectorized_Webp_Extended(chunks[:], &vec, prefix, dims, alloc)
 	return vec
 }

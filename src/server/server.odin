@@ -41,12 +41,6 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			continue
 		}
 
-		if req.method != "GET" {
-			http.res_error("", &res, .MethodNotAllowed)
-			http.marshal_and_send(conn, res, context.allocator)
-			continue
-		}
-
 		length := req.known_headers.content_length
 		if length < 0 || length > http.MAX_BODY_SIZE {
 			log.error("read body:", "invalid content-length from req of:", length)

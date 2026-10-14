@@ -74,7 +74,9 @@ Vectorized_Webp_Extended :: proc "contextless" (
 	v: ^[][]u8,
 	p: ^Webp_Extended_Prefix,
 	dims: ^[2][]u8, // 0=w,1=h
+	alloc: runtime.Allocator,
 ) {
+	context = runtime.default_context()
 	vec_idx := 0
 
 	vec_push(v[:], &vec_idx, p.WEBP[:])
@@ -94,25 +96,22 @@ Vectorized_Webp_Extended :: proc "contextless" (
 		vec_push(v[:], &vec_idx, mem.any_to_bytes(chunk.size_plus_24))
 
 		// frame x(u24)/y(u24) (6 byte)
-		vec_push(v[:], &vec_idx, []u8{0, 0, 0, 0, 0, 0})
+		offset := make([]u8, 6, alloc)
+		vec_push(v[:], &vec_idx, offset)
 
 		vec_push(v[:], &vec_idx, dims[0][:])
 		vec_push(v[:], &vec_idx, dims[1][:])
 
 		// duration in ms
 		ANMF_Flags_Byte := transmute(u8)bit_set[ANMF_Flags;u8]{}
-		vec_push(
-			v[:],
-			&vec_idx,
-			mem.slice_to_bytes(
-				[]u8 {
-					30,
-					0,
-					0, // duration in ms/3 byte
-					ANMF_Flags_Byte,
-				},
-			),
-		)
+		duration_flags := new([4]u8, alloc)
+		duration_flags^ = {
+			30,
+			0,
+			0, // Duration in ms, little-endian u24.
+			ANMF_Flags_Byte,
+		}
+		vec_push(v[:], &vec_idx, duration_flags[:])
 
 		vec_push(v[:], &vec_idx, VP8_CC[:])
 		vec_push(v[:], &vec_idx, mem.any_to_bytes(chunk.size))
