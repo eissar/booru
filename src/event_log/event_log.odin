@@ -1,8 +1,11 @@
 package event_log
 
+import "core:bufio"
+import "core:encoding/json"
 import "core:fmt"
 import "core:io"
 import "core:os"
+import "core:strings"
 import "core:sync"
 import "core:time"
 
@@ -39,7 +42,42 @@ event_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
 		return "could not open event log for writing" // retryable?
 	}
 
-	_ = fmt.wprintln(os.to_stream(ev_handle), e)
+	opt := json.Marshal_Options {
+		spec   = .JSON,
+		pretty = false,
+	}
+	s := os.to_writer(ev_handle)
+	json.marshal_to_writer(s, e, &opt)
+
+	return ""
+}
+
+events_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
+	shard := get_current_event_shard(context.temp_allocator)
+
+	path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
+	if join_err != nil {
+		return "random error joining path?"
+	}
+
+	ev_opts := os.File_Flags{.Write, .Create, .Append}
+	ev_handle, ev_open_err := os.open(path, ev_opts, os.Permissions_Default_File)
+	if ev_open_err != nil {
+		return "could not open event log for writing" // retryable?
+	}
+
+	opt := json.Marshal_Options {
+		spec   = .JSON,
+		pretty = false,
+	}
+
+	input_stream := os.to_writer(ev_handle)
+
+	bw: bufio.Writer
+	bufio.writer_init(&bw, input_stream, size = 1024, allocator = context.temp_allocator)
+
+	buffered_stream := bufio.writer_to_stream(&bw)
+	json.marshal_to_writer(buffered_stream, e, &opt)
 
 	return ""
 }

@@ -1,7 +1,9 @@
 package importers
 
+import "core:bufio"
 import "core:encoding/hex"
 import "core:fmt"
+import "core:io"
 import "core:os"
 import "core:strconv"
 import "core:strings"
@@ -96,6 +98,37 @@ eagle_import :: proc(
 		}
 		if n == 0 {break}
 
+
+		shard := elog.get_current_event_shard(context.temp_allocator)
+		path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
+		if join_err != nil {
+			panic("err during import finding event shard path")
+		}
+
+
+		ev_opts := os.File_Flags{.Write, .Create, .Append}
+		ev_handle, ev_open_err := os.open(path, ev_opts, os.Permissions_Default_File)
+		if ev_open_err != nil {
+			// retryable?
+			panic("could not open event log for writing")
+		}
+
+		opt := json.Marshal_Options {
+			spec   = .JSON,
+			pretty = false,
+		}
+
+		input_stream := os.to_writer(ev_handle)
+
+		bw: bufio.Writer
+		bufio.writer_init(&bw, input_stream, size = 1024, allocator = context.temp_allocator)
+		// the writer auto flushes when the buf is full, but we need to
+		// do this once to flush any remaining
+		defer bufio.writer_flush(&bw)
+
+		buffered_stream := bufio.writer_to_stream(&bw)
+
+
 		offs := 0
 		for {
 			ent, cont := linux.dirent_iterate_buf(buf[:n], &offs)
@@ -183,14 +216,26 @@ eagle_import :: proc(
 			}
 			ev.oid = oid
 
-			// write; an; event
-			elog.event_append(log, ev)
+			if err := json.marshal_to_writer(buffered_stream, ev^, &opt); err != nil {
+				ctx.read_errors += 1
+				continue
+			}
+			io.write_byte(buffered_stream, '\n')
+
 
 			if ctx.success < 10 {fmt.println(meta_dirname)}
 			ctx.success += 1
 		}
 	}
 }
+
+// _ :: proc() {
+//
+// 	// bufio.Writer
+// 	bufio.fl
+//
+// }
+
 
 @(test) // just for convenience, ignore
 eagle_import_test :: proc(t: ^testing.T) {
