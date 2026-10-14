@@ -3,12 +3,6 @@ version: '3'
 vars:
   BIN_DIR: '{{.BIN_DIR | default "bin"}}'
 
-includes:
-  slop:
-    taskfile: ./Taskfile_slop.yml
-    vars:
-      BIN_DIR: '{{.BIN_DIR}}'
-
 tasks:
   default:
     desc: List available tasks
