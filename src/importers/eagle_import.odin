@@ -164,9 +164,6 @@ eagle_import :: proc(
 				continue
 			}
 
-
-			// TODO:
-
 			from_leaf := fmt.aprintf("%v.%v", ev.name, ev.ext, allocator = context.temp_allocator)
 			// name = name from dirent, like ID.info/
 			from_path, _ := os.join_path(
