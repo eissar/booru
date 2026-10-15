@@ -31,6 +31,7 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 	    conn, src, err = net.accept_tcp(sock, net.DEFAULT_TCP_OPTIONS) {
 
 		free_all(alloc)
+		free_all(context.temp_allocator) // TODO: fix
 
 		// just read into a 16 kb slice
 		raw: [16 * 1024]byte
@@ -47,6 +48,7 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		// intermediate buffer
 		ib: bytes.Buffer
 		bytes.buffer_init(&ib, raw[:bytes_read])
+		defer bytes.buffer_destroy(&ib)
 
 		res := http.Response {
 			headers = make(map[string]string, alloc),
