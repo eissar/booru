@@ -1,6 +1,5 @@
 package server
 
-import "core:bytes"
 import "core:log"
 import "core:mem"
 import "core:net"
@@ -38,6 +37,9 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 
 
 		rec_time := time.now()
+		// todo: make more robust;
+		// the header/ body handling
+		// is ugly
 		bytes_read, err := net.recv_tcp(conn, raw[:])
 		if err != nil {
 			log.error("recv error:", err)
@@ -45,20 +47,16 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			continue
 		}
 
-		// intermediate buffer
-		ib: bytes.Buffer
-		bytes.buffer_init(&ib, raw[:bytes_read])
-		defer bytes.buffer_destroy(&ib)
-
 		res := http.Response {
 			headers = make(map[string]string, alloc),
 		}
 
+		request_bytes := raw[:bytes_read]
 
 		// todo rename
 		req_header: http.Header
 		req_header.headers = make(map[string]string, alloc)
-		ok := http.read_header(conn, &ib, &req_header, alloc)
+		ok := http.read_header(conn, &req_header, request_bytes, alloc)
 
 		if !ok {
 			http.res_error("", &res, .BadRequest)
@@ -84,7 +82,21 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		body := make([]u8, length, alloc)
 		// defer delete(body, alloc)
 
-		n := copy(body, ib.buf[ib.off:])
+		// probably can do this more efficiently
+		// for now, just strings. index of /r/n/r/n
+		// offset of the
+		off := strings.index(transmute(string)request_bytes, "\r\n\r\n")
+		if off == -1 {
+			// bad request
+			http.res_error("Bad Request", &res, status = .BadRequest)
+			if err := http.marshal_and_send(conn, res, alloc); err != nil {
+				log.error("send response:", err)
+			}
+			net.close(conn)
+			continue
+		}
+
+		n := copy(body, request_bytes[off + 4:])
 		received := http.read_body_sync(conn, body[n:])
 		if received < 0 {
 			log.error("read body:", "failed to receive request body")

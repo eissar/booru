@@ -1,7 +1,6 @@
 package http
 
 import "base:runtime"
-import "core:bytes"
 import "core:fmt"
 import "core:mem"
 import "core:net"
@@ -45,75 +44,69 @@ Req :: struct {
 	rec_time: time.Time,
 }
 
+// could add better error handling to this
 read_header :: proc(
 	sock: net.TCP_Socket,
-	buf: ^bytes.Buffer,
-	Req: ^Header,
+	req_header: ^Header,
+	raw_request: []u8,
 	alloc: runtime.Allocator,
 ) -> (
 	ok: bool,
 ) {
-	fl, ib_err := bytes.buffer_read_string(buf, '\n')
-	if ib_err != nil {
-		fmt.eprintfln("%v", ib_err)
-		return false
-	}
+	raw_as_string := transmute(string)raw_request
 
-	fl = strings.trim_right(fl, "\r\n")
+	first_line := true
+	for line in strings.split_iterator(&raw_as_string, "\r\n") {
+		if line == "" {break} 	// `/r/n/r/n`
 
-	// GET /path?query HTTP/1.1
-	first_line, split_err := strings.split(fl, " ", alloc)
-	if split_err != nil || len(first_line) < 2 {
-		fmt.eprintfln("passed invalid header")
-		return false
-	}
+		if first_line == true {
+			first_line = false
 
-	Req.method = strings.trim_space(first_line[0])
-	Req.uri = strings.trim_space(first_line[1])
+			// GET /path?query HTTP/1.1
+			first_line, split_err := strings.split(line, " ", alloc)
+			if split_err != nil || len(first_line) < 2 {
+				fmt.eprintfln("passed invalid header")
+				return false
+			}
 
-	uri_parts, _ := strings.split(Req.uri, "?", alloc)
-	Req.path = uri_parts[0]
-	if len(uri_parts) > 1 {
-		Req.query = uri_parts[1]
-	}
+			req_header.method = strings.trim_space(first_line[0])
+			req_header.uri = strings.trim_space(first_line[1])
 
-	// TODO: this is ugly
-	for {
-		line, ib_err := bytes.buffer_read_string(buf, '\n')
-		if ib_err != nil {
-			// EOF without the terminating blank line: tolerate it if we
-			// already collected headers, otherwise reject.
-			break
+			uri_parts, _ := strings.split(req_header.uri, "?", alloc)
+			req_header.path = uri_parts[0]
+			if len(uri_parts) > 1 {
+				req_header.query = uri_parts[1]
+			}
+			continue
 		}
 
-		line = strings.trim_right(line, "\r\n")
-		if line == "" {
-			break
-		}
-
-		colon := strings.index_byte(line, ':')
-		if colon < 0 {
+		// headers
+		cln := strings.index_byte(line, ':') // colon
+		if cln < 0 {
 			fmt.eprintfln("malformed header line, ignoring")
 			continue
 		}
-		label := strings.trim_space(line[:colon])
-		value := strings.trim_space(line[colon + 1:])
-		Req.headers[label] = value
+
+		label := strings.trim_space(line[:cln])
+		value := strings.trim_space(line[cln + 1:])
 
 		if strings.equal_fold(label, "Content-Length") {
 			n, _ := strconv.parse_int(value)
-			Req.known_headers.content_length = n
+			req_header.known_headers.content_length = n
 		}
 		if strings.equal_fold(label, "Accept") {
-			Req.known_headers.accept = parse_accept(value)
+			req_header.known_headers.accept = parse_accept(value)
 		}
 		if strings.equal_fold(label, "Hx-Request") {
-			Req.known_headers.hx_request = value == "true"
+			req_header.known_headers.hx_request = value == "true"
 		}
+
+		req_header.headers[label] = value
 	}
 
-	return Req.method != "" && Req.path != ""
+	return req_header.method != "" && req_header.path != ""
 }
+
 
 parse_accept :: proc(val: string) -> (accept: Accept) {
 	it := val
