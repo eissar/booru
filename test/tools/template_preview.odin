@@ -11,9 +11,10 @@ package main
 // markup.
 //
 // Nothing here is a second renderer. Every case calls the same
-// src/template procs the test harness calls, so what you preview is exactly what
-// test/html-fixture-tdd/fixture_harness_test.ts asserts on. The fixtures stay
-// read-only baselines: this tool never writes into test/html-fixture-tdd/fixture.
+// src/template procs the tests call, so what you preview is what gets compared
+// against the *.expected.html baselines in test/html-fixture-tdd/fixture. Input
+// data comes from the synthetic library in test/fixture. Both stay read-only:
+// this tool never writes into either directory.
 //
 // Modes:
 //   template_preview                 -> serve the preview on 0.0.0.0:8971
@@ -1397,7 +1398,7 @@ usage :: proc() {
 	fmt.eprintln("")
 	fmt.eprintln("  --serve   serve the preview over HTTP (default)")
 	fmt.eprintln(
-		"  --cases   print <<<CASE>>> blocks, matching test/html-fixture-tdd/fixture_harness.odin",
+		"  --cases   print <<<CASE>>> blocks, for comparing with test/html-fixture-tdd/fixture/*.expected.html",
 	)
 	fmt.eprintln("  --check   alias for --cases")
 	fmt.eprintln("")
