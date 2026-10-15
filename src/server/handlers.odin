@@ -284,6 +284,19 @@ handle_mipmap :: proc(
 	res.status = .OK
 }
 
+//region: ingest
+
+// handle_ingest serves POST /ingest -- one multipart file into the library.
+// Responds with a toast fragment for #toasts-log.
+handle_ingest :: proc(s: library.State, res: ^http.Response, req: http.Req, body: []u8) {
+	if req.header.method != "POST" {
+		http.res_html(template.render_toast("Method not allowed", .Error), res, .MethodNotAllowed)
+		return
+	}
+
+	http.res_html(template.render_toast("not implemented", .Error), res, .NotImplemented)
+}
+
 
 mime_from_leaf :: proc(name: string) -> http.Content_Type {
 	switch {

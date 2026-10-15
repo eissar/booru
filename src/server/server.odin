@@ -84,6 +84,8 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			handle_fragment_gallery_content(s, &res, req)
 		case req.path == "/fragment/items":
 			handle_fragment_items(s, &res, req)
+		case req.path == "/ingest":
+			handle_ingest(s, &res, {req, context.temp_allocator, rec_time}, body)
 		case strings.starts_with(req.path, "/fragment/inspect/"):
 			handle_fragment_inspect(s, &res, req)
 		case strings.starts_with(req.path, "/mipmap/"):
