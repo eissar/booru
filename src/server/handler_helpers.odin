@@ -142,15 +142,21 @@ less_img :: proc(a, b: library.Image, sort: string) -> bool {
 	return a.id > b.id
 }
 
+// slop: fix
 // sort_gallery sorts the slice in place by the named sort parameter.
 sort_gallery :: proc(images: []library.Image, sort: string) {
-	for i := 1; i < len(images); i += 1 {
-		j := i
-		for j > 0 && less_img(images[j], images[j - 1], sort) {
-			images[j], images[j - 1] = images[j - 1], images[j]
-			j -= 1
-		}
+	sortProc: proc(a, b: library.Image) -> bool
+	switch sort {
+	case "idAsc":
+		sortProc = proc(a, b: library.Image) -> bool {return a.id < b.id}
+	case "addedAtAsc":
+		sortProc = proc(a, b: library.Image) -> bool {return a.added_at < b.added_at}
+	case "addedAtDesc":
+		sortProc = proc(a, b: library.Image) -> bool {return a.added_at > b.added_at}
+	case:
+		sortProc = proc(a, b: library.Image) -> bool {return a.id > b.id}
 	}
+	slice.stable_sort_by(images, sortProc)
 }
 
 // page_slice slices images[offset:offset+limit] and reports whether more
