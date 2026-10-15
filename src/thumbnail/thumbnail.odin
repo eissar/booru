@@ -145,10 +145,6 @@ thumbnail_prefix :: proc(prefix: ^Webp_Extended_Prefix, riff_size: u32le) {
 	// ENDREGION: ANIM
 }
 
-// TODO: use a prebuffered
-// THUMBNAIL_MISSING / UNSUPPORTED_TYPE
-// thumbnail
-//
 // creates multiple []u8 using provided allocator and returns a slice to them
 Thumbnail_MipMap :: proc(streams: []Thumb, alloc: runtime.Allocator) -> [][]u8 {
 	vec := make([][]u8, 3 + 9 * len(streams), alloc)

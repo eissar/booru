@@ -130,3 +130,45 @@ extension :: proc(format: Format) -> string {
 	}
 	return ""
 }
+
+// mime returns the MIME type for format, or "" for .Unknown (callers such as
+// the image handler omit Content-Type when it is empty).
+mime :: proc(format: Format) -> string {
+	switch format {
+	case .Unknown:
+		return ""
+	case .PNG:
+		return "image/png"
+	case .JPEG:
+		return "image/jpeg"
+	case .GIF:
+		return "image/gif"
+	case .WebP:
+		return "image/webp"
+	case .AVI:
+		return "video/x-msvideo"
+	case .FLV:
+		return "video/x-flv"
+	case .OGV:
+		return "video/ogg"
+	case .MPG, .MPV:
+		return "video/mpeg"
+	case .WMV:
+		return "video/x-ms-wmv"
+	case .AVIF:
+		return "image/avif"
+	case .MOV:
+		return "video/quicktime"
+	case .ThreeGP:
+		return "video/3gpp"
+	case .M4V:
+		return "video/x-m4v"
+	case .MP4:
+		return "video/mp4"
+	case .WebM:
+		return "video/webm"
+	case .MKV:
+		return "video/x-matroska"
+	}
+	return ""
+}
