@@ -750,6 +750,34 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
     background-color: var(--bg-surface-hover);
 }
 
+#thumbnail-background {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* The canvas sits behind the cards; the <img> paints over its preview as the
+   original streams in, so the card surfaces and image placeholder are clear. */
+.gallery-previews-active #gallery-main {
+    position: relative;
+    z-index: 1;
+}
+
+.gallery-previews-active .gallery-card {
+    background-color: transparent;
+}
+
+.gallery-previews-active .gallery-card-meta {
+    background-color: var(--bg-surface);
+}
+
+.gallery-previews-active .gallery-card-image {
+    background-color: transparent;
+}
+
 /* Refresh button → show a spinning indicator during the htmx request.
    The img stays in the layout via visibility: hidden so the button never
    resizes; the spinner is absolutely positioned over it. */

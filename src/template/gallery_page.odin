@@ -117,7 +117,10 @@ render_gallery_page :: proc(
 	)
 	wr(&b, render_gallery_content(filter, images, has_more))
 	write_inspector_shell(&b)
-	wr(&b, "</main><div id=\"toasts-log\"></div></body></html>")
+	wr(
+		&b,
+		"</main><canvas id=\"thumbnail-background\" aria-hidden=\"true\"></canvas><div id=\"toasts-log\"></div></body></html>",
+	)
 
 	return strings.to_string(b)
 }
