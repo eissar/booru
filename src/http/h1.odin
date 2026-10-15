@@ -2,15 +2,20 @@ package http
 
 import "base:runtime"
 import "core:fmt"
+import "core:io"
 import "core:net"
 import "core:strings"
 import "core:testing"
 
 // TODO: When reusing request buffers, reset them only after response sending completes.
 Response :: struct {
-	headers: map[string]string,
-	body:    []u8,
-	status:  STATUS,
+	headers:            map[string]string,
+	body:               []u8,
+	status:             STATUS,
+	// Optional streaming body; body remains empty when this is set.
+	body_stream:        proc(conn: ^net.TCP_Socket, data: rawptr) -> io.Error,
+	body_stream_data:   rawptr,
+	body_stream_length: int,
 }
 
 // Serializes an HTTP/1.1 response. The caller owns the returned string.
@@ -32,8 +37,11 @@ marshal :: proc(res: Response, alloc: runtime.Allocator) -> string {
 		assert(len(res.body) == 0)
 		strings.write_string(&builder, "\r\n")
 	} else {
-		fmt.sbprintf(&builder, "Content-Length: %d\r\n\r\n", len(res.body))
-		strings.write_bytes(&builder, res.body)
+		length := res.body_stream != nil ? res.body_stream_length : len(res.body)
+		fmt.sbprintf(&builder, "Content-Length: %d\r\n\r\n", length)
+		if res.body_stream == nil {
+			strings.write_bytes(&builder, res.body)
+		}
 	}
 	return strings.to_string(builder)
 }
@@ -52,6 +60,12 @@ marshal_and_send :: proc(
 		if err != nil {return err}
 		if sent == 0 {return .Connection_Closed}
 		remaining = remaining[sent:]
+	}
+	if res.body_stream != nil {
+		conn := sock
+		if err := res.body_stream(&conn, res.body_stream_data); err != nil {
+			return .Connection_Closed
+		}
 	}
 	return nil
 }

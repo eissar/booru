@@ -1,6 +1,8 @@
 package server
 
 import "core:fmt"
+import "core:io"
+import "core:net"
 import "core:os"
 import "core:slice"
 import "core:strconv"
@@ -197,6 +199,16 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 	http.res_error("", res, .NotFound)
 }
 
+Mipmap_Stream :: struct {
+	files:  []thumbnail.Thumb,
+	prefix: thumbnail.Webp_Extended_Prefix,
+}
+
+send_mipmap_stream :: proc(conn: ^net.TCP_Socket, raw: rawptr) -> io.Error {
+	data := cast(^Mipmap_Stream)raw
+	return thumbnail.Webp_X(data.files, &data.prefix, conn)
+}
+
 handle_mipmap :: proc(
 	s: library.State,
 	res: ^http.Response,
@@ -272,15 +284,17 @@ handle_mipmap :: proc(
 		http.res_error("", res, status = .NotFound)
 		return
 	}
-	parts := thumbnail.Thumbnail_MipMap(thumbnails[:idx], req.alloc)
-	length := 0
-	for part in parts {length += len(part)}
-
-	res.body = make([]u8, length, req.alloc)
-	offset := 0
-	for part in parts {
-		offset += copy(res.body[offset:], part)
-	}
+	prefix: thumbnail.Webp_Extended_Prefix
+	length := thumbnail.Prepare_Webp_X(thumbnails[:idx], &prefix)
+	// Retain the frames in the request allocator until the response is sent.
+	data := new(Mipmap_Stream, req.alloc)
+	data.files = make([]thumbnail.Thumb, idx, req.alloc)
+	copy(data.files, thumbnails[:idx])
+	data.prefix = prefix
+	res.body = nil
+	res.body_stream = send_mipmap_stream
+	res.body_stream_data = data
+	res.body_stream_length = length
 
 
 	res.headers["Server-Timing"] = fmt.aprintf(

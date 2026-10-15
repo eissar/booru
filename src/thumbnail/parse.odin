@@ -1,11 +1,6 @@
 package thumbnail
 
 import "core:encoding/endian"
-import "core:fmt"
-import "core:mem"
-import "core:os"
-
-import "../library"
 
 // vp8 stores dims as u14
 U14_MASK: u32le = (1 << 14) - 1 // 0011 1111 1111 1111 ; 0x3fff
@@ -24,6 +19,8 @@ parse_fourcc :: proc "contextless" (b: []u8) -> FourCC {
 		return .VP8X
 	case {'V', 'P', '8', 'L'}:
 		return .VP8L
+	case {'A', 'L', 'P', 'H'}:
+		return .ALPH
 	case {'A', 'N', 'I', 'M'}:
 		return .ANIM
 	case {'A', 'N', 'M', 'F'}:
@@ -32,14 +29,35 @@ parse_fourcc :: proc "contextless" (b: []u8) -> FourCC {
 	return .Unknown
 }
 
+parse_chunk_header :: proc "contextless" (b: []u8) -> (f: FourCC, size: u32, ok: bool) {
+	f = parse_fourcc(b)
+	if len(b) < 8 {return}
+	size, ok = endian.get_u32(b[4:8], .Little)
+	return
+}
+
 // accepts a riff chunk without the prelude
-parse_chunk :: proc "contextless" (b: []u8, v: ^Chunk) {
-	v.fourcc = parse_fourcc(b)
-	sz, ok := endian.get_u32(b[4:8], .Little)
+parse_chunk :: proc "contextless" (b: []u8, v: ^Chunk) -> (ok: bool) {
+	f, l := parse_chunk_header(b) or_return
 	// if !ok { /* buffer too short */}
-	v.size = sz
+	v.fourcc = f
+	v.size = l
 	v.size_plus_24 = u32le(v.size + 24)
+
 	// If Chunk Size is odd, a single padding byte -- which MUST be 0 to conform with RIFF [RIFF-spec] -- is added.
 	// we add %2 so we don't have to pad later
 	v.payload = b[8:]
+	return true
+}
+
+is_bitstream :: proc(cc: FourCC) -> bool {
+	#partial switch cc {
+	case .VP8:
+		return true
+	case .VP8X:
+		return true
+	case .VP8L:
+		return true
+	}
+	return false
 }
