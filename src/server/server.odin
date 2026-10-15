@@ -61,6 +61,7 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		if !ok {
 			http.res_error("", &res, .BadRequest)
 			http.marshal_and_send(conn, res, alloc)
+			net.close(conn)
 			continue
 		}
 
@@ -121,6 +122,7 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			handle_static(&res, req)
 		// 404 cases
 		case req_header.known_headers.hx_request:
+			context.allocator = req.alloc
 			res.headers["Vary"] = "Hx-Request"
 			http.res_html(template.render_toast("Not Found", .Error), &res, .NotFound)
 		case:

@@ -24,14 +24,17 @@ sorting_filtered_images_preserves_library_order :: proc(t: ^testing.T) {
 
 @(test)
 image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
-	root, err := os.make_directory_temp("", "booru-image-*", context.allocator)
+	alloc := context.temp_allocator
+	defer {
+		err := free_all(context.temp_allocator)
+		assert(err == nil)
+	}
+
+	root, err := os.make_directory_temp("", "booru-image-*", alloc)
 	if !testing.expect(t, err == nil) {return}
-	defer delete(root)
 	defer os.remove_all(root)
-	source, read_err := os.read_entire_file(
-		"test/fixture/library/images/1.png",
-		context.temp_allocator,
-	)
+
+	source, read_err := os.read_entire_file("test/fixture/library/images/1.png", alloc)
 	if !testing.expect(t, read_err == nil) {return}
 	if !testing.expect(
 		t,
@@ -52,14 +55,15 @@ image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 	}
 	defer delete(res.headers)
 
-	handle_image(state, &res, {{path = "/image/" + oid}, context.allocator, time.Time{}})
+	handle_image(state, &res, {{path = "/image/" + oid}, alloc, time.Time{}})
 	testing.expect(t, res.status == .OK)
 	testing.expect(t, res.headers["Content-Type"] == "image/png")
 	testing.expect(t, bytes.equal(res.body, source), "serve ID-named original")
 	for path in ([]string{"/image/deadbeef", "/image/../1.png"}) {
-		handle_image(state, &res, {{path = path}, context.allocator, time.Time{}})
+		handle_image(state, &res, {{path = path}, alloc, time.Time{}})
 		testing.expect(t, res.status == .NotFound)
 	}
+
 }
 
 @(test)

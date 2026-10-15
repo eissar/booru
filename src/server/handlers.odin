@@ -17,6 +17,7 @@ import "../thumbnail"
 
 // handle_gallery serves "/" (alias) and "/gallery" -- the full page.
 handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	context.allocator = req.alloc
 	q, ok := parse_gallery_query(req.header.query)
 	if !ok {
 		http.res_error("", res, .BadRequest); return
@@ -41,6 +42,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 
 // handle_fragment_gallery_content serves /fragment/gallery-content.
 handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	context.allocator = req.alloc
 	q, ok := parse_gallery_query(req.header.query)
 	if !ok {
 		http.res_html(template.render_toast("invalid offset", .Error), res, .BadRequest)
@@ -67,6 +69,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 
 // handle_fragment_items serves /fragment/items -- the load-more card grid.
 handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	context.allocator = req.alloc
 	q, ok := parse_gallery_query(req.header.query)
 	if !ok {
 		http.res_html(template.render_toast("invalid offset", .Error), res)
@@ -86,6 +89,7 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 
 // handle_fragment_inspect serves /fragment/inspect/:id.
 handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	context.allocator = req.alloc
 	id_str := req.header.path[len("/fragment/inspect/"):]
 	id, ok := strconv.parse_int(id_str)
 	if !ok {
@@ -107,6 +111,7 @@ handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http
 //region: binary handlers
 
 handle_static :: proc(res: ^http.Response, req: http.Req) {
+	context.allocator = req.alloc
 	resp: string
 	rp := strings.split(req.header.path, "/")
 	leaf := rp[len(rp) - 1]
@@ -121,7 +126,7 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 	}
 
 	local_fp := strings.join({"./static/", leaf}, "")
-	data, err := os.read_entire_file(local_fp, context.temp_allocator)
+	data, err := os.read_entire_file(local_fp, req.alloc)
 	if err != nil {
 		if err == os.General_Error.Not_Exist {
 			http.res_html("", res, .NotFound)
@@ -138,6 +143,7 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 
 // handle_image serves /image/:oid -- thumbnails first, then originals by library ID.
 handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	context.allocator = req.alloc
 	oid := req.header.path[len("/image/"):]
 
 	if !oid_path_safe(oid) {
@@ -145,19 +151,24 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		return
 	}
 
-	thumb_fp := fmt.tprintf("%s/thumbnails/%s.webp", s.library_path, oid)
-	data, err := os.read_entire_file(thumb_fp, context.temp_allocator)
+	thumb_buf: [4096]u8
+	thumb_fp :=
+		len(s.library_path) + len(oid) + len("/thumbnails/.webp") <= len(thumb_buf) ? fmt.bprintf(thumb_buf[:], "%s/thumbnails/%s.webp", s.library_path, oid) : fmt.aprintf("%s/thumbnails/%s.webp", s.library_path, oid, allocator = req.alloc)
+	data, err := os.read_entire_file(thumb_fp, req.alloc)
 	if err == nil {
 		http.res_blob(data, res, .Webp)
 		return
 	}
 	for img in s.library_images {
 		if img.oid != oid {continue}
-		dir := fmt.tprintf("%s/images", s.library_path)
+		dir_buf: [4096]u8
+		dir :=
+			len(s.library_path) + len("/images") <= len(dir_buf) ? fmt.bprintf(dir_buf[:], "%s/images", s.library_path) : fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
+		path_buf: [4096]u8
 		if img.ext != "" {
 			data, err = os.read_entire_file(
-				fmt.tprintf("%s/%d.%s", dir, img.id, img.ext),
-				context.temp_allocator,
+				len(dir) + len(img.ext) + 22 <= len(path_buf) ? fmt.bprintf(path_buf[:], "%s/%d.%s", dir, img.id, img.ext) : fmt.aprintf("%s/%d.%s", dir, img.id, img.ext, allocator = req.alloc),
+				req.alloc,
 			)
 			if err == nil {
 				http.res_blob(data, res)
@@ -165,15 +176,17 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 				return
 			}
 		}
-		entries, dir_err := os.read_directory_by_path(dir, -1, context.temp_allocator)
+		entries, dir_err := os.read_directory_by_path(dir, -1, req.alloc)
 		if dir_err != nil {break}
-		defer os.file_info_slice_delete(entries, context.temp_allocator)
-		prefix := fmt.tprintf("%d.", img.id)
+		defer os.file_info_slice_delete(entries, req.alloc)
+		// A signed 64-bit integer needs at most 20 bytes, plus the dot.
+		prefix_buf: [21]u8
+		prefix := fmt.bprintf(prefix_buf[:], "%d.", img.id)
 		for entry in entries {
 			if entry.type != .Regular || !strings.has_prefix(entry.name, prefix) {continue}
 			data, err = os.read_entire_file(
-				fmt.tprintf("%s/%s", dir, entry.name),
-				context.temp_allocator,
+				len(dir) + len(entry.name) + 1 <= len(path_buf) ? fmt.bprintf(path_buf[:], "%s/%s", dir, entry.name) : fmt.aprintf("%s/%s", dir, entry.name, allocator = req.alloc),
+				req.alloc,
 			)
 			if err != nil {continue}
 			http.res_blob(data, res)
@@ -240,13 +253,9 @@ handle_mipmap :: proc(
 			continue
 		}
 
-		p := fmt.aprintf(
-			"%s/thumbnails/%s/%v.webp",
-			s.library_path,
-			raw_resolution,
-			oid,
-			allocator = req.alloc,
-		)
+		path_buf: [4096]u8
+		p :=
+			len(s.library_path) + len(raw_resolution) + len(oid) + len("/thumbnails//.webp") <= len(path_buf) ? fmt.bprintf(path_buf[:], "%s/thumbnails/%s/%s.webp", s.library_path, raw_resolution, oid) : fmt.aprintf("%s/thumbnails/%s/%s.webp", s.library_path, raw_resolution, oid, allocator = req.alloc)
 		t_bytes, err := os.read_entire_file(p, req.alloc)
 		if err != nil {
 			// fmt.eprintfln("thumbnail id=%v read failed path=%s err=%v", id, p, err)
@@ -289,6 +298,7 @@ handle_mipmap :: proc(
 // handle_ingest serves POST /ingest -- one multipart file into the library.
 // Responds with a toast fragment for #toasts-log.
 handle_ingest :: proc(s: library.State, res: ^http.Response, req: http.Req, body: []u8) {
+	context.allocator = req.alloc
 	if req.header.method != "POST" {
 		http.res_html(template.render_toast("Method not allowed", .Error), res, .MethodNotAllowed)
 		return
