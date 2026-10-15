@@ -42,3 +42,57 @@
 
 - [ ] Add `import_begin` and `import_end` events around each full-library import, where `import_begin` records the run ID, source path, and expected item count and `import_end` records the added, skipped, and failed counts, and tag every `add` from that run with the run ID. At load time, treat an `import_begin` with no matching `import_end` as an interrupted import, log how many of its `add` events exist against the expected count, and let the user resume by re-running the import. Take an exclusive non-blocking `flock` on `<library>/.import.lock` for the whole import so two runs can't append to the log at once, and keep the file handle open until the import finishes so the OS releases the lock on exit or crash.
 - [ ] Make `eagle_import_test` idempotent: reset the scratch library at `/tmp/booru_eagle_import_test` before each run (it currently panics with `Exist` on re-run). Deferred to the importer refactor.
+
+# JXL Support
+
+Estimates, using about 85 KB in thumbnails per image:
+~ 80 KB for LOD 0.
+~ 4 KB for LOD 1.
+~ 1 KB for LOD 2.
+
+1,000 images
+- LOD 0: ~80 MB
+- LOD 1: ~4 MB
+- LOD 2: ~1 MB
+- Total: ~85 MB (range 43–158 MB)
+
+10,000 images
+- LOD 0: ~800 MB
+- LOD 1: ~40 MB
+- LOD 2: ~10 MB
+- Total: ~850 MB (range 0.4–1.6 GB)
+
+100,000 images
+- LOD 0: ~8 GB
+- LOD 1: ~400 MB
+- LOD 2: ~100 MB
+- Total: ~8.5 GB (range 4.3–16 GB)
+
+1,000,000 images
+- LOD 0: ~80 GB
+- LOD 1: ~4 GB
+- LOD 2: ~1 GB
+- Total: ~85 GB (range 43–160 GB)
+
+I hadn't considered this, but storing a bunch of small files is bad.
+most file systems have smallest block size of 4kb, meaning
+LOD 1 + 2 take up 8 kb instead of 5.
+
+an idea was to store thumbnails in a DB, which makes even more sense with
+that in mind. The file layout to the user still stays stupid simple,
+with LOD 0 stored in the /thumbnails dir, like my original first instinct
+was while making the project
+
+we can add JXL support in-place.
+if user sends Accept: image/jxl
+we can skip the mipmap stuff and just send the user the JXL
+and let progressive decode handle everything
+
+6kb/item is negligible, especially as a sane default.
+we can raise alerts to users with less reasonable library sizes
+
+===
+JXL//
+toast:
+> slow network connection ; not loading high res images
+|open settings| |dismiss|

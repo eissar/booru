@@ -75,7 +75,7 @@ Event :: struct {
 	contentType: string,
 }
 
-FIXTURES_DIR :: "test/html-fixture-tdd/fixture"
+FIXTURES_DIR :: "test/fixture"
 
 // load_images reads the synthetic library event shard and returns the images
 // in file order, matching the test harness exactly.
@@ -1303,7 +1303,7 @@ serve_file :: proc(conn: net.TCP_Socket, path: string) {
 
 // handle_conn routes one request. Anything that is not the preview page or an
 // asset is answered with a harmless 204, so the browser never navigates away.
-handle_conn :: proc(srv: Server, conn: net.TCP_Socket) -> http.Response {
+handle_conn :: proc(srv: Server, conn: net.TCP_Socket) {
 	buf: [16 * 1024]byte
 	n, err := net.recv_tcp(conn, buf[:])
 	if err != nil || n <= 0 {
