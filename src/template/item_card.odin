@@ -47,6 +47,16 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	b := strings.builder_make()
 
+	// 14 + 1 for / ; 20 bytes for each digit
+	aspect_ratio_buf: [55]u8
+	aspect_ratio := fmt.bprintf(
+		aspect_ratio_buf[:],
+		"aspect-ratio: %d/%d",
+		image.width,
+		image.height,
+	)
+
+
 	thumb_src := image.oid
 
 	wr(&b, "<article class=\"masonry-item group\"")
@@ -58,7 +68,7 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 		&b,
 		"><div class=\"gallery-card relative overflow-hidden flex flex-col rounded-lg hover-card\"><div class=\"gallery-card-meta block p-4 w-full peer order-2\"",
 	)
-	attr(&b, "hx-get", fmt.tprintf("/fragment/inspect/%d", image.id))
+	attrf(&b, "hx-get", "/fragment/inspect/%d", image.id)
 	wr(
 		&b,
 		" hx-target=\"#inspector-content\" hx-target-error=\"#toasts-log\" hx-swap=\"innerHTML\" data-hx-on-click=\"booruToggleInspector(true)\"><span class=\"font-medium truncate\">",
@@ -67,7 +77,7 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	wr(&b, "</span><div class=\"flex flex-wrap gap-2 text-xs mt-2\">")
 	write_tag_badges(&b, image.tags, "image-card-tags")
 	wr(&b, "</div></div><img")
-	attr(&b, "src", fmt.tprintf("/image/%s", thumb_src))
+	attrf(&b, "src", "/image/%s", thumb_src)
 	wr(&b, " loading=\"lazy\"")
 	wr(
 		&b,
@@ -75,7 +85,7 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	)
 	ia(&b, "width", image.width)
 	ia(&b, "height", image.height)
-	attr(&b, "style", aspect_style(image.width, image.height))
+	attr(&b, "style", aspect_ratio)
 	wr(
 		&b,
 		" class=\"gallery-card-image transition-transform duration-300 peer-hover:scale-105 order-1\"/></div></article>",

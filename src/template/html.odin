@@ -46,7 +46,7 @@ wr :: proc(b: ^strings.Builder, s: string) {
 
 // wrf writes a formatted literal.
 wrf :: proc(b: ^strings.Builder, format: string, args: ..any) {
-	strings.write_string(b, fmt.tprintf(format, ..args))
+	fmt.sbprintf(b, format, ..args)
 }
 
 // attr writes `name="value"` with value escaped.
@@ -56,17 +56,21 @@ attr :: proc(b: ^strings.Builder, name, value: string) {
 	wr(b, "\"")
 }
 
+// attrf formats and escapes an attribute value, then frees the intermediate string.
+attrf :: proc(b: ^strings.Builder, name: string, format: string, args: ..any) {
+	value := fmt.aprintf(format, ..args)
+	defer delete(value)
+	attr(b, name, value)
+}
+
+// textf is the escaped-text counterpart of attrf.
+textf :: proc(b: ^strings.Builder, format: string, args: ..any) {
+	value := fmt.aprintf(format, ..args)
+	defer delete(value)
+	escape_text(b, value)
+}
+
 // ia writes `name="<int>"`.
 ia :: proc(b: ^strings.Builder, name: string, value: int) {
 	wrf(b, " %s=\"%d\"", name, value)
-}
-
-// itoa formats an integer without allocating via fmt.
-itoa :: proc(value: int) -> string {
-	return fmt.tprintf("%d", value)
-}
-
-// aspect_style formats the CSS aspect-ratio style string.
-aspect_style :: proc(width, height: int) -> string {
-	return fmt.tprintf("aspect-ratio: %d/%d", width, height)
 }

@@ -1,5 +1,6 @@
 package template
 
+import "core:fmt"
 import "core:strings"
 
 import "../library"
@@ -8,6 +9,10 @@ import "../library"
 // offset is the count displayed so far; has_more controls the control markup.
 render_photo_grid :: proc(images: []library.Image, offset: int, has_more: bool) -> string {
 	b := strings.builder_make()
+
+	offset_buf: [20]u8
+	offset_str := fmt.bprintf(offset_buf[:], "%d", offset)
+
 
 	wr(&b, "<div id=\"photo-grid\" class=\"masonry-grid\">")
 	// offset is the count shown including this page, so this batch starts at
@@ -23,21 +28,21 @@ render_photo_grid :: proc(images: []library.Image, offset: int, has_more: bool) 
 		&b,
 		"<div id=\"pagination-controls\" class=\"px-1 pb-1\"><input type=\"hidden\" name=\"offset\"",
 	)
-	attr(&b, "value", itoa(offset))
+	attr(&b, "value", offset_str)
 	wr(&b, "/>")
 	if has_more {
 		wr(
 			&b,
 			"<button type=\"button\" hx-get=\"/fragment/items\" hx-target=\"#pagination-controls\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\" hx-select=\"#photo-grid > *\" hx-include=\"#filter-bar,#pagination-controls\" class=\"mt-6 w-full py-2 px-4 rounded-md bg-indigo-600 text-white font-medium hover:bg-indigo-700 focus-ring\">Load more <span class=\"text-sm opacity-80\">(showing ",
 		)
-		escape_text(&b, itoa(offset))
+		escape_text(&b, offset_str)
 		wr(&b, ")</span></button>")
 	} else {
 		wr(
 			&b,
 			"<div role=\"status\" class=\"gallery-status gallery-pagination-status\">No more to show <span class=\"ml-1 text-sm opacity-80\">(showing ",
 		)
-		escape_text(&b, itoa(offset))
+		escape_text(&b, offset_str)
 		wr(&b, ")</span></div>")
 	}
 	wr(&b, "</div></div>")

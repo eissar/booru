@@ -28,18 +28,24 @@ Filter_Chip :: struct {
 // the removable filter chips.
 render_filter_bar :: proc(f: Gallery_Filter) -> string {
 	b := strings.builder_make()
+
+	limit_buf: [20]u8
+	limit := fmt.bprintf(limit_buf[:], "%d", f.limit)
+
+
 	wr(&b, "<div id=\"filter-bar\"><input type=\"hidden\" name=\"limit\"")
-	attr(&b, "value", itoa(f.limit))
+	attr(&b, "value", limit)
 	wr(&b, "/>")
 	if f.sort != "" {
-		write_filter_chip(
-			&b,
-			"sort",
-			f.sort,
-			fmt.tprintf("sort: %s", f.sort),
-			f.gallery_url,
-			f.fragment_url,
-		)
+		label_buf: [512]u8
+		label: string
+		if len("sort: ") + len(f.sort) <= len(label_buf) {
+			label = fmt.bprintf(label_buf[:], "sort: %s", f.sort)
+		} else {
+			label = fmt.aprintf("sort: %s", f.sort)
+			defer delete(label)
+		}
+		write_filter_chip(&b, "sort", f.sort, label, f.gallery_url, f.fragment_url)
 	}
 	for chip in f.extra_chips {
 		write_filter_chip(
