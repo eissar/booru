@@ -374,11 +374,9 @@
   }
 
   async function loadBatch(current, ids) {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: ids.join(","),
-      cache: "no-store",
+    // Same URL as the <link rel="preload"> in the page head, so the first
+    // batch reuses that request. Keep the request mode and cache defaults.
+    const response = await fetch(endpoint + "?ids=" + ids.join(","), {
       priority: "high",
       signal: current.abort.signal,
     });

@@ -105,9 +105,20 @@ render_gallery_page :: proc(
 		"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>",
 	)
 	escape_text(&b, title)
+	wr(&b, "</title>")
+	// Starts the first mipmap batch before the body's <img> requests; the URL
+	// must match the one gallery.js fetches.
+	if len(images) > 0 {
+		wr(&b, "<link rel=\"preload\" as=\"fetch\" href=\"/mipmap/64?ids=")
+		for image, i in images {
+			if i > 0 {wr(&b, ",")}
+			wr(&b, fmt.tprint(image.id))
+		}
+		wr(&b, "\" fetchpriority=\"high\" crossorigin=\"anonymous\"/>")
+	}
 	wr(
 		&b,
-		"</title><script src=\"https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js\"></script><script src=\"https://cdn.jsdelivr.net/npm/htmx-ext-response-targets@2.0.4\"></script><script src=\"https://cdn.tailwindcss.com\"></script><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"/><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin=\"anonymous\"/><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap\" rel=\"stylesheet\"/><link href=\"/static/gallery.css\" rel=\"stylesheet\"/><script src=\"/static/gallery.js\"></script></head><body",
+		"<script src=\"https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js\"></script><script src=\"https://cdn.jsdelivr.net/npm/htmx-ext-response-targets@2.0.4\"></script><script src=\"https://cdn.tailwindcss.com\"></script><link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"/><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin=\"anonymous\"/><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap\" rel=\"stylesheet\"/><link href=\"/static/gallery.css\" rel=\"stylesheet\"/><script src=\"/static/gallery.js\"></script></head><body",
 	)
 	wr(&b, " class=\"antialiased\" hx-ext=\"response-targets\">")
 	write_toolbar(&b, filter)

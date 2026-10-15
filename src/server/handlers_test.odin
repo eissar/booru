@@ -130,6 +130,24 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 		"each requested ID retains a frame, including missing thumbnails",
 	)
 	testing.expect(t, bytes.contains(res.body, source[12:]), "batch retains the valid thumbnail")
+
+	// GET with ?ids= returns the same batch as the POST body.
+	post_body := res.body
+	get_res := http.Response {
+		headers = make(map[string]string),
+	}
+	defer delete(get_res.headers)
+	handle_mipmap(
+		s,
+		&get_res,
+		http.Req {
+			{path = "/mipmap/64", query = "ids=2%2C1,3,4"},
+			context.temp_allocator,
+			time.now(),
+		},
+	)
+	testing.expect(t, get_res.status == .OK, "GET with ids returns 200")
+	testing.expect(t, bytes.equal(get_res.body, post_body), "GET body matches POST body")
 }
 
 @(test)

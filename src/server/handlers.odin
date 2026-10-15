@@ -207,12 +207,17 @@ handle_mipmap :: proc(
 		return
 	}
 
-	if len(raw_req_body) == 0 {
-		http.res_error("", res, status = .BadRequest)
-		return
-	}
-
+	// IDs come from the POST body, or from "?ids=1,2,3" so that the same batch
+	// can be fetched with a GET (e.g. <link rel="preload" as="fetch">).
 	img_ids_raw := transmute(string)raw_req_body
+	if len(raw_req_body) == 0 {
+		query := req.header.query
+		if !strings.has_prefix(query, "ids=") {
+			http.res_error("", res, status = .BadRequest)
+			return
+		}
+		img_ids_raw, _ = strings.replace_all(query[len("ids="):], "%2C", ",", req.alloc)
+	}
 	requested_count := strings.count(img_ids_raw, ",") + 1
 
 	thumbnails := make([dynamic]thumbnail.Thumb, requested_count, req.alloc)
@@ -244,7 +249,7 @@ handle_mipmap :: proc(
 		)
 		t_bytes, err := os.read_entire_file(p, req.alloc)
 		if err != nil {
-			fmt.eprintfln("thumbnail id=%v lookup failed err=%v", id, err)
+			// fmt.eprintfln("thumbnail id=%v read failed path=%s err=%v", id, p, err)
 			thumbnails[slot] = thumbnail.new_not_found_thumb(req_resolution)
 			continue
 		}
