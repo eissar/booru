@@ -2,6 +2,7 @@ package server
 
 import "core:bytes"
 import "core:log"
+import "core:mem"
 import "core:net"
 import "core:strings"
 import "core:time"
@@ -13,11 +14,25 @@ import "../template"
 // Serve handles requests on an already-listening socket until accept fails.
 // The caller owns the socket and must initialize library_path and library_images.
 Serve :: proc(s: library.State, sock: net.TCP_Socket) {
+
+	backing, err := make([]u8, 1 * mem.Megabyte, context.allocator)
+	assert(err != nil)
+	defer delete(backing, allocator = context.allocator)
+
+	arena: mem.Arena
+	// request scoped arena, we free_all explicitly before each conn
+	mem.arena_init(&arena, backing)
+	alloc := mem.arena_allocator(&arena)
 	// loop new client conns
-	for conn, src, err := net.accept_tcp(sock); err == nil; conn, src, err = net.accept_tcp(sock) {
+	for conn, src, err := net.accept_tcp(sock, net.DEFAULT_TCP_OPTIONS);
+	    err == nil;
+	    conn, src, err = net.accept_tcp(sock, net.DEFAULT_TCP_OPTIONS) {
+
+		free_all(alloc)
 
 		// just read into a 16 kb slice
 		raw: [16 * 1024]byte
+
 
 		rec_time := time.now()
 		bytes_read, err := net.recv_tcp(conn, raw[:])
@@ -32,13 +47,17 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		bytes.buffer_init(&ib, raw[:bytes_read])
 
 		res := http.Response {
-			headers = make(map[string]string, context.temp_allocator),
+			headers = make(map[string]string, alloc),
 		}
 
-		req, ok := http.read_header(conn, &ib)
+
+		req: http.Header
+		req.headers = make(map[string]string, alloc)
+
+		ok := http.read_header(conn, &ib, &req, alloc)
 		if !ok {
 			http.res_error("", &res, .BadRequest)
-			http.marshal_and_send(conn, res, context.allocator)
+			http.marshal_and_send(conn, res, alloc)
 			continue
 		}
 
@@ -47,21 +66,22 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			log.error("read body:", "invalid content-length from req of:", length)
 
 			http.res_error("Bad Request", &res, status = .BadRequest)
-			if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {
+			if err := http.marshal_and_send(conn, res, alloc); err != nil {
 				log.error("send response:", err)
 			}
 			net.close(conn)
 			continue
 		}
 
-		body := make([]u8, length, context.temp_allocator)
-		defer delete(body, context.temp_allocator)
+		body := make([]u8, length, alloc)
+		// defer delete(body, alloc)
+
 		n := copy(body, ib.buf[ib.off:])
 		received := http.read_body_sync(conn, body[n:])
 		if received < 0 {
 			log.error("read body:", "failed to receive request body")
 			http.res_error("Bad Request", &res, status = .BadRequest)
-			if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {
+			if err := http.marshal_and_send(conn, res, alloc); err != nil {
 				log.error("send response:", err)
 			}
 			net.close(conn)
@@ -70,7 +90,7 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		if received != length - n {
 			log.error("read body:", "connection closed before request body was complete")
 			http.res_error("Bad Request", &res, status = .BadRequest)
-			if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {
+			if err := http.marshal_and_send(conn, res, alloc); err != nil {
 				log.error("send response:", err)
 			}
 			net.close(conn)
@@ -85,11 +105,11 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		case req.path == "/fragment/items":
 			handle_fragment_items(s, &res, req)
 		case req.path == "/ingest":
-			handle_ingest(s, &res, {req, context.temp_allocator, rec_time}, body)
+			handle_ingest(s, &res, {req, alloc, rec_time}, body)
 		case strings.starts_with(req.path, "/fragment/inspect/"):
 			handle_fragment_inspect(s, &res, req)
 		case strings.starts_with(req.path, "/mipmap/"):
-			handle_mipmap(s, &res, {req, context.temp_allocator, rec_time}, body)
+			handle_mipmap(s, &res, {req, alloc, rec_time}, body)
 		case strings.starts_with(req.path, "/image/"):
 			handle_image(s, &res, req)
 		case strings.starts_with(req.path, "/static/"):
@@ -102,9 +122,10 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			res.headers["Vary"] = "Hx-Request"
 			http.res_text("Not Found", &res, .NotFound)
 		}
-		if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {
+		if err := http.marshal_and_send(conn, res, alloc); err != nil {
 			log.error("send response:", err)
 		}
+
 		net.close(conn)
 	}
 }

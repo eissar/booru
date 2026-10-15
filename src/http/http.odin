@@ -1,5 +1,6 @@
 package http
 
+import "base:runtime"
 import "core:bytes"
 import "core:fmt"
 import "core:mem"
@@ -44,36 +45,40 @@ Req :: struct {
 	rec_time: time.Time,
 }
 
-read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header, ok: bool) {
-	header.headers = make(map[string]string)
-
-	{ 	// first line
-
-		fl, ib_err := bytes.buffer_read_string(buf, '\n')
-		if ib_err != nil {
-			fmt.eprintfln("%v", ib_err)
-			return header, false
-		}
-
-		fl = strings.trim_right(fl, "\r\n")
-
-		// GET /path?query HTTP/1.1
-		first_line, split_err := strings.split(fl, " ")
-		if split_err != nil || len(first_line) < 2 {
-			fmt.eprintfln("passed invalid header")
-			return header, false
-		}
-		header.method = strings.trim_space(first_line[0])
-		header.uri = strings.trim_space(first_line[1])
-
-		uri_parts, _ := strings.split(header.uri, "?")
-		header.path = uri_parts[0]
-		if len(uri_parts) > 1 {
-			header.query = uri_parts[1]
-		}
+read_header :: proc(
+	sock: net.TCP_Socket,
+	buf: ^bytes.Buffer,
+	Req: ^Header,
+	alloc: runtime.Allocator,
+) -> (
+	ok: bool,
+) {
+	fl, ib_err := bytes.buffer_read_string(buf, '\n')
+	if ib_err != nil {
+		fmt.eprintfln("%v", ib_err)
+		return false
 	}
 
-	for { 	// other headers
+	fl = strings.trim_right(fl, "\r\n")
+
+	// GET /path?query HTTP/1.1
+	first_line, split_err := strings.split(fl, " ", alloc)
+	if split_err != nil || len(first_line) < 2 {
+		fmt.eprintfln("passed invalid header")
+		return false
+	}
+
+	Req.method = strings.trim_space(first_line[0])
+	Req.uri = strings.trim_space(first_line[1])
+
+	uri_parts, _ := strings.split(Req.uri, "?", alloc)
+	Req.path = uri_parts[0]
+	if len(uri_parts) > 1 {
+		Req.query = uri_parts[1]
+	}
+
+	// TODO: this is ugly
+	for {
 		line, ib_err := bytes.buffer_read_string(buf, '\n')
 		if ib_err != nil {
 			// EOF without the terminating blank line: tolerate it if we
@@ -93,22 +98,21 @@ read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header
 		}
 		label := strings.trim_space(line[:colon])
 		value := strings.trim_space(line[colon + 1:])
-		header.headers[label] = value
+		Req.headers[label] = value
 
 		if strings.equal_fold(label, "Content-Length") {
 			n, _ := strconv.parse_int(value)
-			header.known_headers.content_length = n
+			Req.known_headers.content_length = n
 		}
 		if strings.equal_fold(label, "Accept") {
-			header.known_headers.accept = parse_accept(value)
+			Req.known_headers.accept = parse_accept(value)
 		}
 		if strings.equal_fold(label, "Hx-Request") {
-			header.known_headers.hx_request = value == "true"
+			Req.known_headers.hx_request = value == "true"
 		}
 	}
 
-	ok = header.method != "" && header.path != ""
-	return header, ok
+	return Req.method != "" && Req.path != ""
 }
 
 parse_accept :: proc(val: string) -> (accept: Accept) {
