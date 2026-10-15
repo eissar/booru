@@ -1,7 +1,5 @@
 package thumbnail
 
-import "base:runtime"
-import "core:mem"
 // An extended format file consists of:
 //
 // A 'VP8X' Chunk with information about features used in the file.
@@ -47,77 +45,4 @@ Webp_Extended_Prefix :: struct {
 	WEBP: [12]u8,
 	VP8X: [18]u8,
 	ANIM: [14]u8,
-}
-
-@(private = "file")
-vec_push :: proc "contextless" (vec: [][]u8, idx: ^int, data: []u8) {
-	context = runtime.default_context()
-	vec[idx^] = data
-	idx^ += 1
-}
-
-
-compute_extended_riff_size :: proc "contextless" (
-	base_file_size, frame_count, image_chunks_size: int,
-) -> u32le {
-	base_payload_size := base_file_size - 8
-	frame_headers_size := 24 * frame_count
-	riff_size := base_payload_size + frame_headers_size + image_chunks_size
-	return u32le(riff_size)
-}
-
-
-// semantically , v=vectorized
-// for use with writev later
-Vectorized_Webp_Extended :: proc "contextless" (
-	streams: []Chunk,
-	v: ^[][]u8,
-	p: ^Webp_Extended_Prefix,
-	dims: ^[2][]u8, // 0=w,1=h
-	alloc: runtime.Allocator,
-) {
-	context = runtime.default_context()
-	vec_idx := 0
-
-	vec_push(v[:], &vec_idx, p.WEBP[:])
-	vec_push(v[:], &vec_idx, p.VP8X[:])
-	vec_push(v[:], &vec_idx, p.ANIM[:])
-
-	for &chunk in streams {
-		// bitstream means
-		// vp8 without the prelude
-
-		if chunk.fourcc == .VP8L {continue}
-		if chunk.fourcc != .VP8 {continue}
-
-		// these are ANMF - animation frames
-		// in our project 1 frame=1 thumb
-		vec_push(v[:], &vec_idx, ANMF_CC[:])
-		vec_push(v[:], &vec_idx, mem.any_to_bytes(chunk.size_plus_24))
-
-		// frame x(u24)/y(u24) (6 byte)
-		offset := make([]u8, 6, alloc)
-		vec_push(v[:], &vec_idx, offset)
-
-		vec_push(v[:], &vec_idx, dims[0][:])
-		vec_push(v[:], &vec_idx, dims[1][:])
-
-		// duration in ms
-		ANMF_Flags_Byte := transmute(u8)bit_set[ANMF_Flags;u8] {
-			.blend_method, // Set means no blending: replace pixels with this independent thumbnail.
-			.disposal_method, // Clear this frame's rectangle to the background before the next frame.
-		}
-		duration_flags := new([4]u8, alloc)
-		duration_flags^ = {
-			30,
-			0,
-			0, // Duration in ms, little-endian u24.
-			ANMF_Flags_Byte,
-		}
-		vec_push(v[:], &vec_idx, duration_flags[:])
-
-		vec_push(v[:], &vec_idx, VP8_CC[:])
-		vec_push(v[:], &vec_idx, mem.any_to_bytes(chunk.size))
-		vec_push(v[:], &vec_idx, chunk.payload)
-	}
 }
