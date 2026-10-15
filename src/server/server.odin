@@ -8,6 +8,7 @@ import "core:time"
 
 import "../http"
 import "../library"
+import "../template"
 
 // Serve handles requests on an already-listening socket until accept fails.
 // The caller owns the socket and must initialize library_path and library_images.
@@ -91,7 +92,12 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 			handle_image(s, &res, req)
 		case strings.starts_with(req.path, "/static/"):
 			handle_static(&res, req)
+		// 404 cases
+		case req.known_headers.hx_request:
+			res.headers["Vary"] = "Hx-Request"
+			http.res_html(template.render_toast("Not Found", .Error), &res, .NotFound)
 		case:
+			res.headers["Vary"] = "Hx-Request"
 			http.res_text("Not Found", &res, .NotFound)
 		}
 		if err := http.marshal_and_send(conn, res, context.temp_allocator); err != nil {

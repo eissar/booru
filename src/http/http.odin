@@ -25,6 +25,7 @@ Accept :: bit_set[Accept_Type]
 Known_Headers :: struct {
 	content_length: int,
 	accept:         Accept,
+	hx_request:     bool,
 }
 
 // bikeshed: store byte offsets/ lazy read somehow?
@@ -100,6 +101,9 @@ read_header :: proc(sock: net.TCP_Socket, buf: ^bytes.Buffer) -> (header: Header
 		}
 		if strings.equal_fold(label, "Accept") {
 			header.known_headers.accept = parse_accept(value)
+		}
+		if strings.equal_fold(label, "Hx-Request") {
+			header.known_headers.hx_request = value == "true"
 		}
 	}
 
