@@ -11,13 +11,15 @@ import "../http"
 import "../library"
 import "../template"
 
+REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte + http.MAX_BODY_SIZE
+
 // Serve handles requests on an already-listening socket until accept fails.
 // The caller owns the socket and must initialize library_path and library_images.
 Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 
-	backing, err := make([]u8, 1 * mem.Megabyte, context.allocator)
+	backing, err := make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
 	assert(err != nil)
-	defer delete(backing, allocator = context.allocator)
+	defer delete(backing, context.allocator)
 
 	arena: mem.Arena
 	// request scoped arena, we free_all explicitly before each conn
@@ -53,6 +55,7 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 
 		req: http.Header
 		req.headers = make(map[string]string, alloc)
+
 
 		ok := http.read_header(conn, &ib, &req, alloc)
 		if !ok {
