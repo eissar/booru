@@ -16,8 +16,8 @@ import "../thumbnail"
 //region: page + fragment handlers
 
 // handle_gallery serves "/" (alias) and "/gallery" -- the full page.
-handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Header) {
-	q, ok := parse_gallery_query(req.query)
+handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	q, ok := parse_gallery_query(req.header.query)
 	if !ok {
 		http.res_error("", res, .BadRequest); return
 	}
@@ -40,8 +40,8 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Header) 
 }
 
 // handle_fragment_gallery_content serves /fragment/gallery-content.
-handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, req: http.Header) {
-	q, ok := parse_gallery_query(req.query)
+handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	q, ok := parse_gallery_query(req.header.query)
 	if !ok {
 		http.res_html(template.render_toast("invalid offset", .Error), res, .BadRequest)
 		return
@@ -66,8 +66,8 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 }
 
 // handle_fragment_items serves /fragment/items -- the load-more card grid.
-handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.Header) {
-	q, ok := parse_gallery_query(req.query)
+handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	q, ok := parse_gallery_query(req.header.query)
 	if !ok {
 		http.res_html(template.render_toast("invalid offset", .Error), res)
 		return
@@ -85,8 +85,8 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.H
 }
 
 // handle_fragment_inspect serves /fragment/inspect/:id.
-handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http.Header) {
-	id_str := req.path[len("/fragment/inspect/"):]
+handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	id_str := req.header.path[len("/fragment/inspect/"):]
 	id, ok := strconv.parse_int(id_str)
 	if !ok {
 		http.res_html(template.render_toast("Missing image id", .Error), res, .BadRequest)
@@ -106,9 +106,9 @@ handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http
 
 //region: binary handlers
 
-handle_static :: proc(res: ^http.Response, req: http.Header) {
+handle_static :: proc(res: ^http.Response, req: http.Req) {
 	resp: string
-	rp := strings.split(req.path, "/")
+	rp := strings.split(req.header.path, "/")
 	leaf := rp[len(rp) - 1]
 
 	// TODO spread these conditions out more
@@ -137,8 +137,8 @@ handle_static :: proc(res: ^http.Response, req: http.Header) {
 }
 
 // handle_image serves /image/:oid -- thumbnails first, then originals by library ID.
-handle_image :: proc(s: library.State, res: ^http.Response, req: http.Header) {
-	oid := req.path[len("/image/"):]
+handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	oid := req.header.path[len("/image/"):]
 
 	if !oid_path_safe(oid) {
 		http.res_error("", res, .NotFound)

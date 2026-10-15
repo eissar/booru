@@ -18,7 +18,7 @@ REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte + http.MAX_BODY_SIZE
 Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 
 	backing, err := make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
-	assert(err != nil)
+	assert(err == nil)
 	defer delete(backing, context.allocator)
 
 	arena: mem.Arena
@@ -53,18 +53,20 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		}
 
 
-		req: http.Header
-		req.headers = make(map[string]string, alloc)
+		// todo rename
+		req_header: http.Header
+		req_header.headers = make(map[string]string, alloc)
+		ok := http.read_header(conn, &ib, &req_header, alloc)
 
-
-		ok := http.read_header(conn, &ib, &req, alloc)
 		if !ok {
 			http.res_error("", &res, .BadRequest)
 			http.marshal_and_send(conn, res, alloc)
 			continue
 		}
 
-		length := req.known_headers.content_length
+		req: http.Req = {req_header, alloc, rec_time}
+
+		length := req_header.known_headers.content_length
 		if length < 0 || length > http.MAX_BODY_SIZE {
 			log.error("read body:", "invalid content-length from req of:", length)
 
@@ -101,24 +103,24 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 		}
 
 		switch {
-		case req.path == "/" || req.path == "/gallery":
+		case req_header.path == "/" || req_header.path == "/gallery":
 			handle_gallery(s, &res, req)
-		case req.path == "/fragment/gallery-content":
+		case req_header.path == "/fragment/gallery-content":
 			handle_fragment_gallery_content(s, &res, req)
-		case req.path == "/fragment/items":
+		case req_header.path == "/fragment/items":
 			handle_fragment_items(s, &res, req)
-		case req.path == "/ingest":
-			handle_ingest(s, &res, {req, alloc, rec_time}, body)
-		case strings.starts_with(req.path, "/fragment/inspect/"):
+		case req_header.path == "/ingest":
+			handle_ingest(s, &res, {req_header, alloc, rec_time}, body)
+		case strings.starts_with(req_header.path, "/fragment/inspect/"):
 			handle_fragment_inspect(s, &res, req)
-		case strings.starts_with(req.path, "/mipmap/"):
-			handle_mipmap(s, &res, {req, alloc, rec_time}, body)
-		case strings.starts_with(req.path, "/image/"):
+		case strings.starts_with(req_header.path, "/mipmap/"):
+			handle_mipmap(s, &res, {req_header, alloc, rec_time}, body)
+		case strings.starts_with(req_header.path, "/image/"):
 			handle_image(s, &res, req)
-		case strings.starts_with(req.path, "/static/"):
+		case strings.starts_with(req_header.path, "/static/"):
 			handle_static(&res, req)
 		// 404 cases
-		case req.known_headers.hx_request:
+		case req_header.known_headers.hx_request:
 			res.headers["Vary"] = "Hx-Request"
 			http.res_html(template.render_toast("Not Found", .Error), &res, .NotFound)
 		case:

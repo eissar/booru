@@ -51,12 +51,13 @@ image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 		headers = make(map[string]string),
 	}
 	defer delete(res.headers)
-	handle_image(state, &res, http.Header{path = "/image/" + oid})
+
+	handle_image(state, &res, {{path = "/image/" + oid}, context.allocator, time.Time{}})
 	testing.expect(t, res.status == .OK)
 	testing.expect(t, res.headers["Content-Type"] == "image/png")
 	testing.expect(t, bytes.equal(res.body, source), "serve ID-named original")
 	for path in ([]string{"/image/deadbeef", "/image/../1.png"}) {
-		handle_image(state, &res, http.Header{path = path})
+		handle_image(state, &res, {{path = path}, context.allocator, time.Time{}})
 		testing.expect(t, res.status == .NotFound)
 	}
 }
