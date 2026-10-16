@@ -27,6 +27,20 @@ tasks:
       - 'echo "githooks are not installed (or are stale); run: task hooks:install" >&2'
       - 'false'
 
+  build:
+    desc: Build the optimized server
+    deps: [hooks:check]
+    method: checksum
+    sources:
+      - src/*.odin
+      - src/**/*.odin
+      - Taskfile.yml
+    generates:
+      - '{{.BIN_DIR}}/booru'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - odin build src -o:speed -out:{{.BIN_DIR}}/booru
+
   build:bench:all:
     desc: Build the optimized benchmark suite
     method: checksum
