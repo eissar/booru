@@ -38,6 +38,7 @@ main :: proc() {
 
 	images := make([dynamic]library.Image, alloc)
 	library.load_library(cfg.library, &images, alloc)
+	library.seed_ids_from_library(images[:])
 	defer free_all(alloc)
 
 	state := library.State {
@@ -68,5 +69,5 @@ main :: proc() {
 	log.infof("server listening on %v", net.endpoint_to_string(ep))
 
 	defer net.close(sock)
-	server.Serve(state, sock) // this should take an allocator
+	server.Serve(&state, sock) // this should take an allocator
 }

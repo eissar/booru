@@ -35,7 +35,7 @@ server_get_mipmap_with_image_ids :: proc(t: ^testing.T) {
 			sock: net.TCP_Socket,
 			lib:  library.State,
 		})raw
-		server.Serve(data.lib, data.sock)
+		server.Serve(&data.lib, data.sock)
 	})
 	defer {
 		// Shutdown wakes the blocking accept so Serve can return before join.

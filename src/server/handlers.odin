@@ -1,5 +1,7 @@
 package server
 
+import "core:crypto/sha2"
+import "core:encoding/hex"
 import "core:fmt"
 import "core:io"
 import "core:net"
@@ -11,6 +13,7 @@ import "core:time"
 
 import "../http"
 import "../library"
+import "../media"
 import "../template"
 import "../thumbnail"
 
@@ -311,14 +314,174 @@ handle_mipmap :: proc(
 
 // handle_ingest serves POST /ingest -- one multipart file into the library.
 // Responds with a toast fragment for #toasts-log.
-handle_ingest :: proc(s: library.State, res: ^http.Response, req: http.Req, body: []u8) {
+handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
+	//HACK retain uploaded metadata outside the request arena; ownership is unresolved.
+	state_alloc := context.allocator
 	context.allocator = req.alloc
 	if req.header.method != "POST" {
+		res.headers["Allow"] = "POST"
 		http.res_html(template.render_toast("Method not allowed", .Error), res, .MethodNotAllowed)
 		return
 	}
 
-	http.res_html(template.render_toast("not implemented", .Error), res, .NotImplemented)
+	// Default response for malformed multipart input.
+	http.res_html(template.render_toast("Invalid upload", .Error), res, .BadRequest)
+
+	content_type := ""
+	for name, value in req.header.headers {
+		if strings.equal_fold(name, "Content-Type") {
+			content_type = value
+			break
+		}
+	}
+	params := strings.split(content_type, ";")
+	if len(params) != 2 ||
+	   !strings.equal_fold(strings.trim_space(params[0]), "multipart/form-data") {
+		return
+	}
+	param := strings.trim_space(params[1])
+	eq := strings.index_byte(param, '=')
+	if eq < 0 || !strings.equal_fold(strings.trim_space(param[:eq]), "boundary") {
+		return
+	}
+	boundary := strings.trim_space(param[eq + 1:])
+	if len(boundary) >= 2 && boundary[0] == '"' && boundary[len(boundary) - 1] == '"' {
+		boundary = boundary[1:len(boundary) - 1]
+	}
+	if len(boundary) == 0 || len(boundary) > 70 || strings.contains_any(boundary, "\r\n") {
+		return
+	}
+
+	raw := transmute(string)body
+	opening := fmt.aprintf("--%s\r\n", boundary)
+	if !strings.has_prefix(raw, opening) {return}
+	raw = raw[len(opening):]
+	header_end := strings.index(raw, "\r\n\r\n")
+	if header_end < 0 {return}
+
+	is_image := false
+	filename := ""
+	for line in strings.split(raw[:header_end], "\r\n") {
+		colon := strings.index_byte(line, ':')
+		if colon < 0 {return}
+		if !strings.equal_fold(strings.trim_space(line[:colon]), "Content-Disposition") {
+			continue
+		}
+		disposition := strings.split(line[colon + 1:], ";")
+		if !strings.equal_fold(strings.trim_space(disposition[0]), "form-data") {
+			return
+		}
+		for attribute in disposition[1:] {
+			attribute := strings.trim_space(attribute)
+			if attribute == "name=\"image\"" {
+				is_image = true
+			}
+			if len(attribute) >= len("filename=\"\"") &&
+			   strings.has_prefix(attribute, "filename=\"") &&
+			   strings.has_suffix(attribute, "\"") {
+				filename = attribute[len("filename=\""):len(attribute) - 1]
+			}
+		}
+	}
+	if !is_image {return}
+
+	raw = raw[header_end + 4:]
+	delimiter := fmt.aprintf("\r\n--%s", boundary)
+	end := -1
+	for offset := 0; offset < len(raw); {
+		i := strings.index(raw[offset:], delimiter)
+		if i < 0 {break}
+		i += offset
+		tail := raw[i + len(delimiter):]
+		if tail == "--" || tail == "--\r\n" {
+			end = i
+			break
+		}
+		// Another part, or a closing delimiter with unexpected trailing data.
+		if strings.has_prefix(tail, "\r\n") || strings.has_prefix(tail, "--") {
+			return
+		}
+		offset = i + len(delimiter)
+	}
+	if end <= 0 {return}
+	data := transmute([]u8)raw[:end]
+
+	format := media.detect_format(data)
+	if format == .Unknown {
+		http.res_html(
+			template.render_toast("Unsupported file type", .Error),
+			res,
+			.UnsupportedMediaType,
+		)
+		return
+	}
+
+	// Seeded from loaded images at startup; exclusive creation still protects
+	// originals without event-log entries from being overwritten after restart.
+	ev: library.Event
+	library.new_add_event(&ev)
+	id := ev.id
+	path := fmt.aprintf("%s/images/%d.%s", s.library_path, id, media.extension(format))
+	file, err := os.open(path, {.Write, .Create, .Excl}, os.Permissions_Default_File)
+	if err != nil {
+		fmt.eprintfln("ingest: open %s: %v", path, err)
+		http.res_html(
+			template.render_toast("Could not create original", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
+
+	_, write_err := os.write(file, data)
+	close_err := os.close(file)
+	if write_err != nil || close_err != nil {
+		fmt.eprintfln("ingest: write %s: %v; close: %v", path, write_err, close_err)
+		os.remove(path)
+		http.res_html(
+			template.render_toast("Could not write original", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
+	hash: sha2.Context_256
+	sha2.init_256(&hash)
+	sha2.update(&hash, data)
+	digest: [sha2.DIGEST_SIZE_256]u8
+	sha2.final(&hash, digest[:], finalize_clone = false)
+
+	ev.oid = string(hex.encode(digest[:], state_alloc))
+	ev.path = strings.clone(path, state_alloc)
+	leaf := filename
+	for c, i in filename {
+		if c == '/' || c == '\\' {leaf = filename[i + 1:]}
+	}
+	if dot := strings.index_byte(leaf, '.'); dot >= 0 {leaf = leaf[:dot]}
+	ev.name = strings.clone(leaf, state_alloc)
+	ev.ext = media.extension(format)
+	ev.contentType = media.mime(format)
+	// TODO: Read the media dimensions; width and height should not remain zero.
+
+	//HACK copy the slice and retain its old backing allocation.
+	images := make([]library.Image, len(s.library_images) + 1, state_alloc)
+	copy(images, s.library_images)
+	images[len(images) - 1] = library.Image {
+		id           = ev.id,
+		oid          = ev.oid,
+		path         = ev.path,
+		ext          = ev.ext,
+		tags         = ev.tags,
+		width        = ev.width,
+		height       = ev.height,
+		name         = ev.name,
+		mtime        = ev.mtime,
+		added_at     = ev.addedAt,
+		content_type = ev.contentType,
+	}
+	s.library_images = images
+
+	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
 }
 
 

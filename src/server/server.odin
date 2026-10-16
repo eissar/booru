@@ -14,7 +14,7 @@ REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte + http.MAX_BODY_SIZE
 
 // Serve handles requests on an already-listening socket until accept fails.
 // The caller owns the socket and must initialize library_path and library_images.
-Serve :: proc(s: library.State, sock: net.TCP_Socket) {
+Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 
 	backing, err := make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
 	assert(err == nil)
@@ -119,19 +119,19 @@ Serve :: proc(s: library.State, sock: net.TCP_Socket) {
 
 		switch {
 		case req_header.path == "/" || req_header.path == "/gallery":
-			handle_gallery(s, &res, req)
+			handle_gallery(s^, &res, req)
 		case req_header.path == "/fragment/gallery-content":
-			handle_fragment_gallery_content(s, &res, req)
+			handle_fragment_gallery_content(s^, &res, req)
 		case req_header.path == "/fragment/items":
-			handle_fragment_items(s, &res, req)
+			handle_fragment_items(s^, &res, req)
 		case req_header.path == "/ingest":
 			handle_ingest(s, &res, {req_header, alloc, rec_time}, body)
 		case strings.starts_with(req_header.path, "/fragment/inspect/"):
-			handle_fragment_inspect(s, &res, req)
+			handle_fragment_inspect(s^, &res, req)
 		case strings.starts_with(req_header.path, "/mipmap/"):
-			handle_mipmap(s, &res, {req_header, alloc, rec_time}, body)
+			handle_mipmap(s^, &res, {req_header, alloc, rec_time}, body)
 		case strings.starts_with(req_header.path, "/image/"):
-			handle_image(s, &res, req)
+			handle_image(s^, &res, req)
 		case strings.starts_with(req_header.path, "/static/"):
 			handle_static(&res, req)
 		// 404 cases
