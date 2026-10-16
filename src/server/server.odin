@@ -50,6 +50,9 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 		res := http.Response {
 			headers = make(map[string]string, alloc),
 		}
+		// set this for all requests until we implement
+		// keep alive support
+		res.headers["Connection"] = "close"
 
 		request_bytes := raw[:bytes_read]
 
