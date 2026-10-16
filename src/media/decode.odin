@@ -21,23 +21,29 @@ Decoded_Dav1d_YUV :: struct {
 	picture:       dav1d.Dav1dPicture,
 }
 
-// Takes extracted AV1 bytes, not an AVIF container. Assumes 8-bit YUV420.
+Decode_Error :: enum {
+	None,
+	Failed,
+	Unsupported,
+}
+
+// Takes extracted AV1 bytes, not an AVIF container. Accepts only 8-bit YUV420.
 // Input is borrowed for this call; the returned picture owns its planes.
-decode_yuv_dav1d :: proc(data: []u8) -> (img: Decoded_Dav1d_YUV) {
-	if len(data) == 0 {return}
+decode_yuv_dav1d :: proc(data: []u8) -> (img: Decoded_Dav1d_YUV, err: Decode_Error) {
+	if len(data) == 0 {return {}, .Failed}
 
 	settings: dav1d.Dav1dSettings
 	dav1d.dav1d_default_settings(&settings)
 	// TODO: Set a thumbnail source pixel-count limit via settings.frame_size_limit.
 
 	decoder: ^dav1d.Dav1dContext
-	if dav1d.dav1d_open(&decoder, &settings) < 0 {return}
+	if dav1d.dav1d_open(&decoder, &settings) < 0 {return {}, .Failed}
 	defer dav1d.dav1d_close(&decoder)
 
 	packet: dav1d.Dav1dData
 	p, n := raw_data(data), c.size_t(len(data))
 	if dav1d.dav1d_data_wrap(&packet, p, n, proc "c" (_: [^]u8, _: rawptr) {}, nil) < 0 {
-		return
+		return {}, .Failed
 	}
 	defer dav1d.dav1d_data_unref(&packet)
 
@@ -45,29 +51,35 @@ decode_yuv_dav1d :: proc(data: []u8) -> (img: Decoded_Dav1d_YUV) {
 	for {
 		if packet.sz > 0 {
 			err := dav1d.dav1d_send_data(decoder, &packet)
-			if err < 0 && err != -posix.EAGAIN {return}
+			if err < 0 && err != -posix.EAGAIN {return {}, .Failed}
 		}
 
 		err := dav1d.dav1d_get_picture(decoder, &pic)
 		if err == 0 {break}
-		if err != -posix.EAGAIN {return}
+		if err != -posix.EAGAIN {return {}, .Failed}
 		if packet.sz == 0 {
 			// Input is consumed; the next call drains frame-threaded output.
-			if dav1d.dav1d_get_picture(decoder, &pic) != 0 {return}
+			if dav1d.dav1d_get_picture(decoder, &pic) != 0 {return {}, .Failed}
 			break
 		}
 	}
 
-	return Decoded_Dav1d_YUV {
-		y = ([^]u8)(pic.data[0]),
-		u = ([^]u8)(pic.data[1]),
-		v = ([^]u8)(pic.data[2]),
-		y_stride = int(pic.stride[0]),
-		uv_stride = int(pic.stride[1]),
-		width = pic.p.w,
-		height = pic.p.h,
-		picture = pic,
+	if pic.p.bpc != 8 || pic.p.layout != .I420 {
+		dav1d.dav1d_picture_unref(&pic)
+		return {}, .Unsupported
 	}
+
+	return Decoded_Dav1d_YUV {
+			y = ([^]u8)(pic.data[0]),
+			u = ([^]u8)(pic.data[1]),
+			v = ([^]u8)(pic.data[2]),
+			y_stride = int(pic.stride[0]),
+			uv_stride = int(pic.stride[1]),
+			width = pic.p.w,
+			height = pic.p.h,
+			picture = pic,
+		},
+		.None
 }
 
 free_decoded_dav1d :: proc(img: ^Decoded_Dav1d_YUV) {

@@ -48,7 +48,7 @@ parse_avif_box_header :: proc(data: []u8) -> (cc: AVIF_Box_Type, size, header_sz
 //
 // Returns the primary item's file-relative byte range. Assumes a directly
 // coded AV1 image; accepts one file-relative extent with no external reference.
-// TODO: Return .Unsupported for non-8-bit/I420 images rather than treating them as supported thumbnail input.
+// The decoder returns .Unsupported for non-8-bit/I420 images.
 Parse_AVIF :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 	pitm, iloc: []u8
 	for at := 0; at < len(data); {

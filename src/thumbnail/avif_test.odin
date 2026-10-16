@@ -15,8 +15,8 @@ avif_thumbnail_fixture :: proc(t: ^testing.T) {
 	defer delete(data)
 	offset, length, ok := media.Parse_AVIF(data)
 	if !testing.expect(t, ok, "extract primary AV1 item") {return}
-	img := media.decode_yuv_dav1d(data[offset:offset + length])
-	if !testing.expect(t, img.y != nil, "decode AVIF fixture") {return}
+	img, decode_err := media.decode_yuv_dav1d(data[offset:offset + length])
+	if !testing.expect(t, decode_err == .None, "decode AVIF fixture") {return}
 	defer media.free_decoded_dav1d(&img)
 
 	root, temp_err := os.make_directory_temp("", "booru-avif-*", context.allocator)
