@@ -81,17 +81,33 @@ generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	defer delete(data)
-	#partial switch media.detect_format(data) {
+	format := media.detect_format(data)
+	decoded: media.Decoded
+	yuv: media.Decoded_Dav1d_YUV
+	#partial switch format {
+	case .AVIF:
+		offset, length, ok := media.Parse_AVIF(data)
+		if !ok {
+			fmt.eprintfln("thumbnail: cannot extract AVIF primary item: %s", oid)
+			return 0, card(sizes)
+		}
+		decode_err: media.Decode_Error
+		yuv, decode_err = media.decode_yuv_dav1d(data[offset:offset + length])
+		if decode_err != .None {
+			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
+			return 0, card(sizes)
+		}
 	case .PNG, .JPEG, .GIF, .WebP:
+		decoded = media.decode_rgba(data)
+		if decoded.pixels == nil {
+			fmt.eprintfln("thumbnail: cannot decode %s", oid)
+			return 0, card(sizes)
+		}
 	case:
 		return 0, 0
 	}
-	decoded := media.decode_rgba(data)
-	if decoded.pixels == nil {
-		fmt.eprintfln("thumbnail: cannot decode %s", oid)
-		return 0, card(sizes)
-	}
 	defer media.free_decoded(decoded)
+	defer media.free_decoded_dav1d(&yuv)
 	for size in sizes {
 		edge: c.int
 		#partial switch size {
@@ -102,7 +118,13 @@ generate_image_thumbnails :: proc(
 		case:
 			continue
 		}
-		if write_missing_thumbnail(s.library_path, oid, edge, decoded) {
+		ok: bool
+		if format == .AVIF {
+			ok = write_missing_thumbnail(s.library_path, oid, edge, yuv)
+		} else {
+			ok = write_missing_thumbnail(s.library_path, oid, edge, decoded)
+		}
+		if ok {
 			generated += 1
 		} else {
 			failed += 1
