@@ -223,6 +223,23 @@ LOD_RESOLUTION :: enum {
 	x64   = 4,
 }
 
+resolution_pixels :: proc(size: LOD_RESOLUTION) -> int {
+	// Enum order: x1024, x512, x256, x128, x64.
+	return 1024 >> uint(size)
+}
+
+// Returns the largest resolution; ok is false for an empty set.
+largest_resolution :: proc(sizes: bit_set[LOD_RESOLUTION]) -> (largest: LOD_RESOLUTION, ok: bool) {
+	for size in sizes {
+		// Smaller enum values represent larger resolutions.
+		if !ok || size < largest {
+			largest = size
+			ok = true
+		}
+	}
+	return
+}
+
 find_missing_thumbnails :: proc(s: library.State, missing: ^map[string]bit_set[LOD_RESOLUTION]) {
 	resolutions := make(map[string]LOD_RESOLUTION, allocator = context.temp_allocator)
 	defer delete(resolutions)
