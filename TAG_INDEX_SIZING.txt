@@ -1,0 +1,30 @@
+Roaring bitmap tag index size estimate
+
+Formula:
+size ≈ associations × 2 bytes (worst case) + per-tag overhead
+associations = images × average tags per image
+
+Dense chunks (more than 4096 IDs per 65,536-ID chunk) use an 8 KB bitset, which is cheaper than 2 bytes per ID. Clustered IDs compress further with run containers. So 2 bytes per association is an upper bound.
+
+Per-tag overhead is about 50–100 bytes. It is negligible at ~50k tags and dominant at billions of tags.
+
+Examples:
+
+2M images × 25 tags = 50M associations
+50M × 2 B = ~100 MB worst case
+Realistic: 60–150 MB
+
+50M images × 40 tags = 2B associations
+2B × 2 B = ~4 GB worst case
+Realistic: 2–4 GB
+
+500M associations × 2 B = ~1 GB
+
+2 billion distinct tags
+2B × ~50–100 B overhead = 100–200 GB or more before any data
+Unrealistic vocabulary. Real boorus have tens to hundreds of thousands of tags.
+
+Assumptions:
+- 25 and 40 tags per image are guesses. Replace them with your real average.
+- Size scales with total associations, not with image count or tag count alone.
+- These are estimates. Nothing has been benchmarked.

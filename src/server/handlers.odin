@@ -505,10 +505,12 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
 }
 
-// must also take a 'render order'
-// should show toast?
 handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http.Req) {
 	context.allocator = req.alloc
+
+	res.headers["HX-Reswap"] = "beforeend"
+	http.res_html(template.render_toast("not implemented", .Error), res, .NotImplemented)
+	when true {return}
 
 	id, order := parse_regen_thumbnail_query(req.header.query)
 	if id < 0 || order < 0 {
@@ -556,6 +558,37 @@ handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http
 	http.res_html(template.render_item_card(item, order), res, .OK)
 	return
 }
+
+handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
+	body := transmute(string)body
+
+	res.headers["HX-Reswap"] = "beforeend"
+	http.res_html(template.render_toast("not implemented", .Error), res, .NotImplemented)
+	when true {return}
+
+	// id=9
+	raw_id := strings.split(body, "=", req.alloc)[1]
+
+	id, ok := strconv.parse_int(raw_id)
+	if !ok || id < 1 { 	// ids start from 1
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("bad id", .Error), res, .BadRequest)
+		return
+	}
+
+	// just delete the original from state
+	for img in s.library_images {
+		if img.id != id {continue}
+
+
+	}
+
+	// not found
+	res.headers["HX-Reswap"] = "beforeend"
+	http.res_html(template.render_toast("no match for ID", .Error), res, .NotFound)
+	return
+}
+
 
 mime_from_leaf :: proc(name: string) -> http.Content_Type {
 	switch {
