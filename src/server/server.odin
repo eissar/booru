@@ -127,6 +127,8 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 			handle_fragment_gallery_content(s^, &res, req)
 		case req_header.path == "/fragment/items":
 			handle_fragment_items(s^, &res, req)
+		case req_header.path == "/regen-thumbnail":
+			handle_regen_thumbnail(s, &res, req)
 		case req_header.path == "/ingest":
 			handle_ingest(s, &res, {req_header, alloc, rec_time}, body)
 		case strings.starts_with(req_header.path, "/fragment/inspect/"):
@@ -141,6 +143,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 		case req_header.known_headers.hx_request:
 			context.allocator = req.alloc
 			res.headers["Vary"] = "Hx-Request"
+			res.headers["HX-Reswap"] = "beforeend"
 			http.res_html(template.render_toast("Not Found", .Error), &res, .NotFound)
 		case:
 			res.headers["Vary"] = "Hx-Request"

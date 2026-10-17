@@ -17,7 +17,7 @@ inspector_icon :: proc(b: ^strings.Builder, name, alt: string) {
 }
 
 // render_inspector renders the inspector details fragment for one image.
-render_inspector :: proc(image: library.Image) -> string {
+render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	b := strings.builder_make()
 
 	id_buf: [20]u8 // 64i
@@ -25,6 +25,8 @@ render_inspector :: proc(image: library.Image) -> string {
 
 	wr(&b, "<section class=\"space-y-4\"><input type=\"hidden\" name=\"id\"")
 	attr(&b, "value", id)
+	wr(&b, "/><input type=\"hidden\" name=\"order\"")
+	ia(&b, "value", order)
 	wr(&b, "/><img")
 	attrf(&b, "src", "/image/%s", image.oid)
 	attr(&b, "alt", image.name)
@@ -38,12 +40,12 @@ render_inspector :: proc(image: library.Image) -> string {
 	// refresh button
 	wr(
 		&b,
-		"<button type=\"button\" id=\"inspector-header-refresh\" hx-get=\"/regen-thumbnail\" hx-include=\"#inspector-content input[name=id]\"",
+		"<button type=\"button\" id=\"inspector-header-refresh\" hx-get=\"/regen-thumbnail\" hx-include=\"#inspector-content > section > input\"",
 	)
 	attrf(&b, "hx-target", "article[data-image-id=\"%s\"]", id)
 	wr(
 		&b,
-		" hx-swap=\"outerHTML\" hx-indicator=\"#inspector-header-refresh\" class=\"rounded p-1 hover-surface\">",
+		" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\" hx-indicator=\"#inspector-header-refresh\" class=\"rounded p-1 hover-surface\">",
 	)
 	inspector_icon(&b, "arrow-path", "Refresh")
 	wr(&b, "</button>")
@@ -51,7 +53,7 @@ render_inspector :: proc(image: library.Image) -> string {
 	// delete button
 	wr(
 		&b,
-		"<button type=\"button\" id=\"inspector-header-delete\" hx-post=\"/delete\" hx-include=\"#inspector-content input[name=id]\"",
+		"<button type=\"button\" id=\"inspector-header-delete\" hx-post=\"/delete\" hx-include=\"#inspector-content > section > input[name=id]\"",
 	)
 	attrf(&b, "hx-target", "article[data-image-id=\"%s\"]", id)
 	wr(

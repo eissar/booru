@@ -50,6 +50,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 	context.allocator = req.alloc
 	q, ok := parse_gallery_query(req.header.query)
 	if !ok {
+		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(template.render_toast("invalid offset", .Error), res, .BadRequest)
 		return
 	}
@@ -77,7 +78,8 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 	context.allocator = req.alloc
 	q, ok := parse_gallery_query(req.header.query)
 	if !ok {
-		http.res_html(template.render_toast("invalid offset", .Error), res)
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("invalid offset", .Error), res, .BadRequest)
 		return
 	}
 
@@ -98,16 +100,26 @@ handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http
 	id_str := req.header.path[len("/fragment/inspect/"):]
 	id, ok := strconv.parse_int(id_str)
 	if !ok {
+		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(template.render_toast("Missing image id", .Error), res, .BadRequest)
+		return
+	}
+	params := parse_query_params(req.header.query)
+	raw_order := params["order"]
+	order, valid_order := parse_int_param(raw_order[:])
+	if !valid_order {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("Invalid render order", .Error), res, .BadRequest)
 		return
 	}
 	for img in s.library_images {
 		if img.id == id {
-			http.res_html(template.render_inspector(img), res)
+			http.res_html(template.render_inspector(img, order), res)
 			return
 		}
 	}
 	// not found
+	res.headers["HX-Reswap"] = "beforeend"
 	http.res_html(template.render_toast("Could not find image", .Error), res, .NotFound)
 }
 
@@ -324,11 +336,13 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	context.allocator = req.alloc
 	if req.header.method != "POST" {
 		res.headers["Allow"] = "POST"
+		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(template.render_toast("Method not allowed", .Error), res, .MethodNotAllowed)
 		return
 	}
 
 	// Default response for malformed multipart input.
+	res.headers["HX-Reswap"] = "beforeend"
 	http.res_html(template.render_toast("Invalid upload", .Error), res, .BadRequest)
 
 	content_type := ""
@@ -412,6 +426,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 
 	format := media.detect_format(data)
 	if format == .Unknown {
+		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
 			template.render_toast("Unsupported file type", .Error),
 			res,
@@ -429,6 +444,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	file, err := os.open(path, {.Write, .Create, .Excl}, os.Permissions_Default_File)
 	if err != nil {
 		fmt.eprintfln("ingest: open %s: %v", path, err)
+		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
 			template.render_toast("Could not create original", .Error),
 			res,
@@ -442,6 +458,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	if write_err != nil || close_err != nil {
 		fmt.eprintfln("ingest: write %s: %v; close: %v", path, write_err, close_err)
 		os.remove(path)
+		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
 			template.render_toast("Could not write original", .Error),
 			res,
@@ -488,6 +505,57 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
 }
 
+// must also take a 'render order'
+// should show toast?
+handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http.Req) {
+	context.allocator = req.alloc
+
+	id, order := parse_regen_thumbnail_query(req.header.query)
+	if id < 0 || order < 0 {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("bad id or order query parameter", .Error),
+			res,
+			.BadRequest,
+		)
+		return
+	}
+
+	item: library.Image
+	found := false
+	for li in s.library_images {
+		if li.id == id {
+			item = li
+			found = true
+			break
+		}
+	}
+	if !found {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("could not find image with that id", .Error),
+			res,
+			.NotFound,
+		)
+		return
+	}
+
+	set := bit_set[thumbnail.LOD_RESOLUTION]{.x128, .x64}
+	thumbnail.generate_image_thumbnails(s^, item, set)
+	r, _ := thumbnail.largest_resolution(set)
+	res_px := thumbnail.resolution_pixels(r)
+
+	best_res_path := fmt.aprintf(
+		"%s/thumbnails/%d/%s.webp",
+		s.library_path,
+		res_px,
+		item.oid,
+		allocator = req.alloc,
+	)
+
+	http.res_html(template.render_item_card(item, order), res, .OK)
+	return
+}
 
 mime_from_leaf :: proc(name: string) -> http.Content_Type {
 	switch {

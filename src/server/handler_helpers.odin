@@ -20,6 +20,19 @@ VALID_SORTS := [4]string{"idAsc", "idDesc", "addedAtAsc", "addedAtDesc"}
 
 //region: query parsing
 
+// Returns (-1, -1) for missing, invalid, or negative id/order parameters.
+parse_regen_thumbnail_query :: proc(query: string) -> (id: int, order: int) {
+	params := parse_query_params(query)
+	raw_id, has_id := params["id"]
+	raw_order, has_order := params["order"]
+	if !has_id || !has_order {return -1, -1}
+
+	parsed_id, id_ok := parse_int_param(raw_id[:])
+	parsed_order, order_ok := parse_int_param(raw_order[:])
+	if !id_ok || !order_ok || parsed_id < 0 || parsed_order < 0 {return -1, -1}
+	return parsed_id, parsed_order
+}
+
 Gallery_Query :: struct {
 	limit:  int,
 	offset: int,
