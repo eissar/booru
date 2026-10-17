@@ -268,9 +268,13 @@ handle_mipmap :: proc(
 			continue
 		}
 
-		path_buf: [4096]u8
-		p :=
-			len(s.library_path) + len(raw_resolution) + len(oid) + len("/thumbnails//.webp") <= len(path_buf) ? fmt.bprintf(path_buf[:], "%s/thumbnails/%s/%s.webp", s.library_path, raw_resolution, oid) : fmt.aprintf("%s/thumbnails/%s/%s.webp", s.library_path, raw_resolution, oid, allocator = req.alloc)
+		p := fmt.aprintf(
+			"%s/thumbnails/%s/%s.webp",
+			s.library_path,
+			raw_resolution,
+			oid,
+			allocator = req.alloc,
+		)
 		t_bytes, err := os.read_entire_file(p, req.alloc)
 		if err != nil {
 			// fmt.eprintfln("thumbnail id=%v read failed path=%s err=%v", id, p, err)

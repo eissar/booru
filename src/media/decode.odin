@@ -5,7 +5,7 @@ import "core:c"
 import "core:sys/posix"
 import stbi "vendor:stb/image"
 
-Decoded :: struct {
+Decoded_ARGB :: struct {
 	pixels:        [^]u8,
 	width, height: c.int,
 	free_pixels:   proc "c" (_: rawptr),
@@ -82,25 +82,34 @@ decode_yuv_dav1d :: proc(data: []u8) -> (img: Decoded_Dav1d_YUV, err: Decode_Err
 		.None
 }
 
+
+decode_rgba :: proc(data: []u8) -> (img: Decoded_ARGB, err: Decode_Error) {
+	if len(data) == 0 || len(data) > int(max(c.int)) {return {}, .Failed}
+	format := detect_format(data)
+	p, n, w, h := raw_data(data), len(data), &img.width, &img.height
+	#partial switch format {
+	case .WebP:
+		img.free_pixels = libwebp.WebPFree
+		img.pixels = libwebp.WebPDecodeRGBA(p, c.size_t(n), w, h)
+	case .PNG, .JPEG, .GIF:
+		img.free_pixels = stbi.image_free
+		img.pixels = stbi.load_from_memory(p, c.int(n), w, h, nil, 4)
+	case:
+		return {}, .Unsupported
+	}
+	if img.pixels == nil {return {}, .Failed}
+	return img, .None
+}
+
+free_decoded_rgba :: proc(img: Decoded_ARGB) {
+	if img.pixels != nil {img.free_pixels(img.pixels)}
+}
+
 free_decoded_dav1d :: proc(img: ^Decoded_Dav1d_YUV) {
 	dav1d.dav1d_picture_unref(&img.picture)
 	img^ = {}
 }
-
-decode_rgba :: proc(data: []u8) -> (img: Decoded) {
-	if len(data) == 0 || len(data) > int(max(c.int)) {return}
-	format := detect_format(data)
-	p, n, w, h := raw_data(data), len(data), &img.width, &img.height
-	if format == .WebP {
-		img.free_pixels = libwebp.WebPFree
-		img.pixels = libwebp.WebPDecodeRGBA(p, c.size_t(n), w, h)
-	} else if format == .PNG || format == .JPEG || format == .GIF {
-		img.free_pixels = stbi.image_free
-		img.pixels = stbi.load_from_memory(p, c.int(n), w, h, nil, 4)
-	}
-	return
-}
-
-free_decoded :: proc(img: Decoded) {
-	if img.pixels != nil {img.free_pixels(img.pixels)}
+free_decoded :: proc {
+	free_decoded_rgba,
+	free_decoded_dav1d,
 }

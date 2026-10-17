@@ -10,7 +10,12 @@ import "../library"
 import "../media"
 import libwebp "../vendor/libwebp"
 
-write_missing_thumbnail :: proc(root, oid: string, edge: c.int, img: $T) -> bool {
+generate_thumbnail :: proc {
+	generate_thumbnail_argb,
+	generate_thumbnail_yuv,
+}
+
+generate_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded_ARGB) -> bool {
 	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
 		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
@@ -29,16 +34,44 @@ write_missing_thumbnail :: proc(root, oid: string, edge: c.int, img: $T) -> bool
 	defer libwebp.WebPPictureFree(&pic)
 	pic.width, pic.height = img.width, img.height
 	ok := initialized
-	when T == media.Decoded {
-		pic.use_argb = 1
-		ok = ok && libwebp.WebPPictureImportRGBA(&pic, img.pixels, img.width * 4) != 0
-	} else when T == media.Decoded_Dav1d_YUV {
-		pic.y, pic.u, pic.v = img.y, img.u, img.v
-		pic.y_stride = c.int(img.y_stride)
-		pic.uv_stride = c.int(img.uv_stride)
-	} else {
-		#panic("unsupported thumbnail input type")
+	pic.use_argb = 1
+	ok = ok && libwebp.WebPPictureImportRGBA(&pic, img.pixels, img.width * 4) != 0
+	if ok {ok = libwebp.rescale(&pic, file, edge)}
+	close_err := os.close(file)
+	if !ok || close_err != nil {
+		os.remove(path)
+		fmt.eprintfln("thumbnail: encode/write failed: %s", path)
+		return false
 	}
+	return true
+}
+
+generate_thumbnail_yuv :: proc(
+	root, oid: string,
+	edge: c.int,
+	img: media.Decoded_Dav1d_YUV,
+) -> bool {
+	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
+	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
+		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
+		return false
+	}
+	path := fmt.tprintf("%s/%s.webp", dir, oid)
+	// Exclusive creation also protects a thumbnail created since the scan.
+	file, err := os.open(path, {.Write, .Create, .Excl}, os.Permissions_Default_File)
+	if err == .Exist {return true}
+	if err != nil {
+		fmt.eprintfln("thumbnail: open %s: %v", path, err)
+		return false
+	}
+	pic: libwebp.WebPPicture
+	initialized := libwebp.WebPPictureInitInternal(&pic, 0x0210) != 0
+	defer libwebp.WebPPictureFree(&pic)
+	pic.width, pic.height = img.width, img.height
+	ok := initialized
+	pic.y, pic.u, pic.v = img.y, img.u, img.v
+	pic.y_stride = c.int(img.y_stride)
+	pic.uv_stride = c.int(img.uv_stride)
 	if ok {ok = libwebp.rescale(&pic, file, edge)}
 	close_err := os.close(file)
 	if !ok || close_err != nil {
@@ -82,7 +115,7 @@ generate_image_thumbnails :: proc(
 	}
 	defer delete(data)
 	format := media.detect_format(data)
-	decoded: media.Decoded
+	decoded: media.Decoded_ARGB
 	yuv: media.Decoded_Dav1d_YUV
 	#partial switch format {
 	case .AVIF:
@@ -98,7 +131,7 @@ generate_image_thumbnails :: proc(
 			return 0, card(sizes)
 		}
 	case .PNG, .JPEG, .GIF, .WebP:
-		decoded = media.decode_rgba(data)
+		decoded, _ = media.decode_rgba(data)
 		if decoded.pixels == nil {
 			fmt.eprintfln("thumbnail: cannot decode %s", oid)
 			return 0, card(sizes)
@@ -120,9 +153,9 @@ generate_image_thumbnails :: proc(
 		}
 		ok: bool
 		if format == .AVIF {
-			ok = write_missing_thumbnail(s.library_path, oid, edge, yuv)
+			ok = generate_thumbnail(s.library_path, oid, edge, yuv)
 		} else {
-			ok = write_missing_thumbnail(s.library_path, oid, edge, decoded)
+			ok = generate_thumbnail(s.library_path, oid, edge, decoded)
 		}
 		if ok {
 			generated += 1
