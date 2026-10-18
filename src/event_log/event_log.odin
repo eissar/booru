@@ -27,6 +27,13 @@ Cursor :: struct {
 	offset: i64,
 }
 
+Op :: enum {
+	Add,
+	Patch,
+	Delete,
+	Regen_Thumbnail,
+}
+
 // One writer owns the filesystem log. SQLite owns derived replay progress.
 EventLog :: struct {
 	root: string,
@@ -34,18 +41,18 @@ EventLog :: struct {
 }
 
 Event :: struct {
-	added_at:     string,
-	content_type: string,
-	ext:          string,
-	height:       int,
-	id:           int,
-	mtime:        string,
-	name:         string,
-	oid:          string,
-	op:           string,
-	path:         string,
-	tags:         []string,
-	width:        int,
+	added_at:     string `json:"added_at,omitempty"`,
+	content_type: string `json:"content_type,omitempty"`,
+	ext:          string `json:"ext,omitempty"`,
+	height:       int `json:"height,omitempty"`,
+	id:           int `json:"id"`,
+	mtime:        string `json:"mtime,omitempty"`,
+	name:         string `json:"name,omitempty"`,
+	oid:          string `json:"oid,omitempty"`,
+	op:           string `json:"op,omitempty"`,
+	path:         string `json:"path,omitempty"`,
+	tags:         []string `json:"tags,omitempty"`,
+	width:        int `json:"width,omitempty"`,
 }
 
 
