@@ -17,6 +17,8 @@ import "../media"
 import "../template"
 import "../thumbnail"
 
+import elog "../event_log"
+
 
 //region: page + fragment handlers
 
@@ -437,7 +439,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 
 	// Seeded from loaded images at startup; exclusive creation still protects
 	// originals without event-log entries from being overwritten after restart.
-	ev: library.Event
+	ev: elog.Event
 	library.new_add_event(&ev)
 	id := ev.id
 	path := fmt.aprintf("%s/images/%d.%s", s.library_path, id, media.extension(format))

@@ -8,8 +8,6 @@ import "core:os"
 import "core:sync"
 import "core:time"
 
-import "../library"
-
 // TODO: (V1)
 // make this larger to support
 // events of a larger size.
@@ -30,12 +28,28 @@ EventLog :: struct {
 	root: string,
 }
 
+Event :: struct {
+	added_at:     string,
+	content_type: string,
+	ext:          string,
+	height:       int,
+	id:           int,
+	mtime:        string,
+	name:         string,
+	oid:          string,
+	op:           string,
+	path:         string,
+	tags:         []string,
+	width:        int,
+}
+
+
 // we could also be
 // using the Cursor to track
 // byte offsets of the
 // eventlogs, for faster parsing
 // returns empty string on no err
-event_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
+event_append :: proc(log: ^EventLog, e: ^Event) -> (err: string) {
 	shard := get_current_event_shard(context.temp_allocator)
 
 	path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
@@ -66,7 +80,7 @@ event_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
 	return ""
 }
 
-events_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
+events_append :: proc(log: ^EventLog, e: ^Event) -> (err: string) {
 	shard := get_current_event_shard(context.temp_allocator)
 
 	path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)

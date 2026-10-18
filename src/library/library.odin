@@ -10,6 +10,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
+import elog "../event_log"
 import "../vendor/sqlite"
 
 State :: struct {
@@ -30,21 +31,6 @@ Image :: struct {
 	mtime:        string,
 	added_at:     string,
 	content_type: string,
-}
-
-Event :: struct {
-	added_at:     string,
-	content_type: string,
-	ext:          string,
-	height:       int,
-	id:           int,
-	mtime:        string,
-	name:         string,
-	oid:          string,
-	op:           string,
-	path:         string,
-	tags:         []string,
-	width:        int,
 }
 
 
@@ -83,7 +69,7 @@ load_ndjson :: proc(images: ^[dynamic]Image, data: string, alloc: mem.Allocator)
 
 	for line in lines {
 		if strings.trim_space(line) == "" {continue}
-		ev: Event
+		ev: elog.Event
 
 		if err := json.unmarshal(transmute([]u8)line, &ev, json.DEFAULT_SPECIFICATION, alloc);
 		   err != nil {

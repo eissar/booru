@@ -180,7 +180,7 @@ eagle_import :: proc(
 
 			// this is usually unsafe but fine because
 			// @(test) eagle_item_transmutable_into_event
-			ev := cast(^library.Event)&item
+			ev := cast(^elog.Event)&item
 			library.new_add_event(ev)
 
 			// we reuse the buffer so

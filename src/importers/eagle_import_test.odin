@@ -3,7 +3,7 @@ package importers
 import "core:reflect"
 import "core:testing"
 
-import "../library"
+import elog "../event_log"
 
 // EagleItem_Event is transmuted into Event, so both must have the same
 // field names in the same order, at the same offsets, with the same sizes.
@@ -11,7 +11,7 @@ import "../library"
 @(test)
 eagle_item_transmutable_into_event :: proc(t: ^testing.T) {
 	src := reflect.struct_fields_zipped(EagleItem_Event)
-	dst := reflect.struct_fields_zipped(library.Event)
+	dst := reflect.struct_fields_zipped(elog.Event)
 
 	if !testing.expectf(t, len(src) == len(dst), "field count: %d != %d", len(src), len(dst)) {
 		return
