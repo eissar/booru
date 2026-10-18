@@ -63,17 +63,17 @@ CASE_TITLES := map[string]string {
 
 // Event mirrors one NDJSON add-event from the fixture shard.
 Event :: struct {
-	op:          string,
-	id:          int,
-	oid:         string,
-	path:        string,
-	tags:        []string,
-	width:       int,
-	height:      int,
-	name:        string,
-	mtime:       string,
-	addedAt:     string,
-	contentType: string,
+	op:           string,
+	id:           int,
+	oid:          string,
+	path:         string,
+	tags:         []string,
+	width:        int,
+	height:       int,
+	name:         string,
+	mtime:        string,
+	added_at:     string,
+	content_type: string,
 }
 
 FIXTURES_DIR :: "test/fixture"
@@ -111,8 +111,8 @@ load_images :: proc(path: string) -> []library.Image {
 				height = ev.height,
 				name = ev.name,
 				mtime = ev.mtime,
-				added_at = ev.addedAt,
-				content_type = ev.contentType,
+				added_at = ev.added_at,
+				content_type = ev.content_type,
 			},
 		)
 	}
@@ -706,7 +706,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
     b += '<section class="space-y-4"><input type="hidden" name="id"' + attr("value", id) + "/><img";
     b += attr("src", thumbSrc(image)) + attr("alt", image.name);
     b += ' class="aspect-square w-full rounded-lg object-cover"/><div class="flex"><p class="text-xs text-muted w-full">';
-    b += escText((image.width | 0) + " × " + (image.height | 0) + "\t|\t" + image.contentType);
+    b += escText((image.width | 0) + " × " + (image.height | 0) + "\t|\t" + image.content_type);
     b += "</p>";
 
     b += '<button type="button" id="inspector-header-refresh" hx-get="/regen-thumbnail" hx-include="#inspector-content input[name=id]"';
@@ -755,7 +755,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
 
     b += detailRow("OID", image.oid, true);
     b += detailRow("Path", image.path, true);
-    b += detailRow("Added", image.addedAt, false);
+    b += detailRow("Added", image.added_at, false);
     b += detailRow("Modified", image.mtime, false);
 
     b += "</ul></form></section>";
@@ -1197,9 +1197,9 @@ images_json :: proc(images: []library.Image) -> string {
 		json_string(&b, img.name)
 		strings.write_string(&b, ",\"mtime\":")
 		json_string(&b, img.mtime)
-		strings.write_string(&b, ",\"addedAt\":")
+		strings.write_string(&b, ",\"added_at\":")
 		json_string(&b, img.added_at)
-		strings.write_string(&b, ",\"contentType\":")
+		strings.write_string(&b, ",\"content_type\":")
 		json_string(&b, img.content_type)
 		strings.write_string(&b, "}")
 	}

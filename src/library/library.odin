@@ -31,18 +31,18 @@ Image :: struct {
 }
 
 Event :: struct {
-	addedAt:     string,
-	contentType: string,
-	ext:         string,
-	height:      int,
-	id:          int,
-	mtime:       string,
-	name:        string,
-	oid:         string,
-	op:          string,
-	path:        string,
-	tags:        []string,
-	width:       int,
+	added_at:     string,
+	content_type: string,
+	ext:          string,
+	height:       int,
+	id:           int,
+	mtime:        string,
+	name:         string,
+	oid:          string,
+	op:           string,
+	path:         string,
+	tags:         []string,
+	width:        int,
 }
 
 
@@ -102,8 +102,8 @@ load_ndjson :: proc(images: ^[dynamic]Image, data: string, alloc: mem.Allocator)
 				height = ev.height,
 				name = ev.name,
 				mtime = ev.mtime,
-				added_at = ev.addedAt,
-				content_type = ev.contentType,
+				added_at = ev.added_at,
+				content_type = ev.content_type,
 			},
 		)
 	}

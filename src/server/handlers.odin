@@ -481,7 +481,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	if dot := strings.index_byte(leaf, '.'); dot >= 0 {leaf = leaf[:dot]}
 	ev.name = strings.clone(leaf, state_alloc)
 	ev.ext = media.extension(format)
-	ev.contentType = media.mime(format)
+	ev.content_type = media.mime(format)
 	// TODO: Read the media dimensions; width and height should not remain zero.
 
 	//HACK copy the slice and retain its old backing allocation.
@@ -497,8 +497,8 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		height       = ev.height,
 		name         = ev.name,
 		mtime        = ev.mtime,
-		added_at     = ev.addedAt,
-		content_type = ev.contentType,
+		added_at     = ev.added_at,
+		content_type = ev.content_type,
 	}
 	s.library_images = images
 

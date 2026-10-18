@@ -61,18 +61,18 @@ EagleItem :: struct {
 
 // transmutable into Event
 EagleItem_Event :: struct {
-	addedAt:     Iso_Time `json:"btime"`,
-	contentType: string `json:"-"`,
-	ext:         string, // Eagle's "ext" key matches, no tag needed
-	height:      int,
-	id:          int `json:"-"`,
-	mtime:       Iso_Time,
-	name:        string,
-	oid:         string `json:"-"`,
-	op:          string `json:"-"`,
-	path:        string `json:"-"`,
-	tags:        []string,
-	width:       int,
+	added_at:     Iso_Time `json:"btime"`,
+	content_type: string `json:"-"`,
+	ext:          string, // Eagle's "ext" key matches, no tag needed
+	height:       int,
+	id:           int `json:"-"`,
+	mtime:        Iso_Time,
+	name:         string,
+	oid:          string `json:"-"`,
+	op:           string `json:"-"`,
+	path:         string `json:"-"`,
+	tags:         []string,
+	width:        int,
 }
 
 // WIP
@@ -216,7 +216,7 @@ eagle_import :: proc(
 				continue
 			}
 			ev.oid = oid
-			ev.contentType = media.mime(format)
+			ev.content_type = media.mime(format)
 
 			if err := json.marshal_to_writer(buffered_stream, ev^, &opt); err != nil {
 				ctx.read_errors += 1

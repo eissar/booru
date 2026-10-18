@@ -11,17 +11,17 @@ import "../library"
 import "core:testing"
 
 Event :: struct {
-	op:          string,
-	id:          int,
-	oid:         string,
-	path:        string,
-	tags:        []string,
-	width:       int,
-	height:      int,
-	name:        string,
-	mtime:       string,
-	addedAt:     string,
-	contentType: string,
+	op:           string,
+	id:           int,
+	oid:          string,
+	path:         string,
+	tags:         []string,
+	width:        int,
+	height:       int,
+	name:         string,
+	mtime:        string,
+	added_at:     string,
+	content_type: string,
 }
 
 load_images :: proc(path: string) -> []library.Image {
@@ -52,8 +52,8 @@ load_images :: proc(path: string) -> []library.Image {
 				height = ev.height,
 				name = ev.name,
 				mtime = ev.mtime,
-				added_at = ev.addedAt,
-				content_type = ev.contentType,
+				added_at = ev.added_at,
+				content_type = ev.content_type,
 			},
 		)
 	}

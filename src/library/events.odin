@@ -4,7 +4,7 @@ new_add_event :: proc(e: ^Event) {
 	// these get set later:
 	// e.oid
 	// e.path
-	// e.contentType
+	// e.content_type
 	//
 	// we also explicitly validate
 	// those are !nil
