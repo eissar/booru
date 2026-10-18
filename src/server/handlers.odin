@@ -16,6 +16,7 @@ import "../library"
 import "../media"
 import "../template"
 import "../thumbnail"
+import "../util"
 
 import elog "../event_log"
 
@@ -450,9 +451,8 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		media.extension(format),
 		allocator = req.alloc,
 	)
-	file, err := os.open(path, {.Write, .Create, .Excl}, os.Permissions_Default_File)
-	if err != nil {
-		fmt.eprintfln("ingest: open %s: %v", path, err)
+	if err := util.atomic_write(path, data, replace_existing = false); err != nil {
+		fmt.eprintfln("ingest: atomic write %s: %v", path, err)
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
 			template.render_toast("Could not create original", .Error),
@@ -462,19 +462,6 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		return
 	}
 
-	_, write_err := os.write(file, data)
-	close_err := os.close(file)
-	if write_err != nil || close_err != nil {
-		fmt.eprintfln("ingest: write %s: %v; close: %v", path, write_err, close_err)
-		os.remove(path)
-		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(
-			template.render_toast("Could not write original", .Error),
-			res,
-			.InternalServerError,
-		)
-		return
-	}
 	hash: sha2.Context_256
 	sha2.init_256(&hash)
 	sha2.update(&hash, data)
@@ -505,6 +492,21 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 			.InternalServerError,
 		)
 		return
+	}
+
+	// Sync the published original exactly once, after appending its event.
+	file, file_err := os.open(path, {.Write}, os.Permissions_Default)
+	if file_err != nil {fmt.panicf("ingest: open original for syncing: %v", file_err)}
+	defer os.close(file)
+	if err := os.sync(file); err != nil {
+		fmt.panicf("ingest: sync original %s: %v", path, err)
+	}
+	images_dir := fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
+	dir, dir_err := os.open(images_dir, {.Read}, os.Permissions_Default)
+	if dir_err != nil {fmt.panicf("ingest: open images directory for syncing: %v", dir_err)}
+	defer os.close(dir)
+	if err := os.sync(dir); err != nil {
+		fmt.panicf("ingest: sync images directory: %v", err)
 	}
 
 	//HACK copy the slice and retain its old backing allocation.
