@@ -72,15 +72,25 @@ event_append :: proc(log: ^EventLog, e: ^Event) -> (err: string) {
 	if marshal_err != nil {return "could not marshal event"}
 	defer delete(data, context.temp_allocator)
 	if len(data) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
-	os.write(ev_handle, data)
+	written, write_err := os.write(ev_handle, data)
+	if write_err != nil || written != len(data) {return "could not write event payload"}
 	if io.write_byte(os.to_writer(ev_handle), '\n') != nil {
 		return "could not write event newline"
 	}
+	if os.sync(ev_handle) != nil {
+		return "could not sync event log"
+	}
 
+	dir, dir_err := os.open(fmt.tprintf("%s/events", log.root), {.Read}, os.Permissions_Default)
+	if dir_err != nil {return "could not open events directory for syncing"}
+	defer os.close(dir)
+	if os.sync(dir) != nil {return "could not sync events directory"}
 	return ""
 }
 
-events_append :: proc(log: ^EventLog, e: ^Event) -> (err: string) {
+// Appends one batch, flushing and syncing once.
+events_append :: proc(log: ^EventLog, events: []Event) -> (err: string) {
+	if len(events) == 0 {return ""}
 	shard := get_current_event_shard(context.temp_allocator)
 
 	path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
@@ -103,24 +113,34 @@ events_append :: proc(log: ^EventLog, e: ^Event) -> (err: string) {
 	input_stream := os.to_writer(ev_handle)
 
 	bw: bufio.Writer
-	bufio.writer_init(&bw, input_stream, size = 1024, allocator = context.temp_allocator)
+	bufio.writer_init(&bw, input_stream, size = 1024, allocator = context.allocator)
+	defer bufio.writer_destroy(&bw)
 
 	buffered_stream := bufio.writer_to_stream(&bw)
-	data, marshal_err := json.marshal(e, opt, context.temp_allocator)
-	if marshal_err != nil {return "could not marshal event"}
-	defer delete(data, context.temp_allocator)
-	if len(data) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
-	io.write(buffered_stream, data)
-	if io.write_byte(buffered_stream, '\n') != nil {
-		return "could not write event newline"
+	for event in events {
+		data, marshal_err := json.marshal(event, opt, context.allocator)
+		if marshal_err != nil {return "could not marshal event"}
+		defer delete(data, context.allocator)
+		if len(data) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
+		written, write_err := io.write(buffered_stream, data)
+		if write_err != nil || written != len(data) {return "could not write event payload"}
+		if io.write_byte(buffered_stream, '\n') != nil {
+			return "could not write event newline"
+		}
 	}
 	if bufio.writer_flush(&bw) != nil {
 		return "could not flush event log"
 	}
+	if os.sync(ev_handle) != nil {
+		return "could not sync event log"
+	}
 
+	dir, dir_err := os.open(fmt.tprintf("%s/events", log.root), {.Read}, os.Permissions_Default)
+	if dir_err != nil {return "could not open events directory for syncing"}
+	defer os.close(dir)
+	if os.sync(dir) != nil {return "could not sync events directory"}
 	return ""
 }
-
 
 get_current_event_shard :: proc(allocator := context.allocator) -> string {
 	year, month, _ := time.date(time.now())

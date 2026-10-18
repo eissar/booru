@@ -1,9 +1,8 @@
 package importers
 
-import "core:bufio"
 import "core:encoding/hex"
 import "core:fmt"
-import "core:io"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:sys/linux"
@@ -86,32 +85,12 @@ eagle_import :: proc(
 	data := make([]u8, METADATA_MAX_BYTES, context.allocator)
 	defer delete(data, context.allocator)
 
-	// Keep one shard open for the entire import; sync it once after the final flush.
-	shard := elog.get_current_event_shard(context.temp_allocator)
-	path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
-	if join_err != nil {panic("err during import finding event shard path")}
-
-	ev_handle, ev_open_err := os.open(
-		path,
-		{.Write, .Create, .Append},
-		os.Permissions_Default_File,
-	)
-	if ev_open_err != nil {panic("could not open event log for writing")}
-	defer os.close(ev_handle)
-
-	opt := json.Marshal_Options {
-		spec   = .JSON,
-		pretty = false,
-	}
-	bw: bufio.Writer
-	bufio.writer_init(&bw, os.to_writer(ev_handle), size = 1024, allocator = context.allocator)
-	defer bufio.writer_destroy(&bw)
-	defer {
-		if err := bufio.writer_flush(&bw); err != nil {
-			fmt.panicf("import: event log flush failed: %v", err)
-		}
-	}
-	buffered_stream := bufio.writer_to_stream(&bw)
+	// Events must outlive the per-directory-batch temporary allocator resets.
+	arena: mem.Dynamic_Arena
+	mem.dynamic_arena_init(&arena)
+	defer mem.dynamic_arena_destroy(&arena)
+	event_alloc := mem.dynamic_arena_allocator(&arena)
+	events := make([dynamic]elog.Event, event_alloc)
 
 	buf: [1024 * 4]u8
 	for {
@@ -181,12 +160,7 @@ eagle_import :: proc(
 
 			// we reuse the buffer so
 			// need to bound to read bytes (i)
-			json_err := json.unmarshal(
-				data[:i],
-				&item,
-				json.DEFAULT_SPECIFICATION,
-				context.temp_allocator,
-			)
+			json_err := json.unmarshal(data[:i], &item, json.DEFAULT_SPECIFICATION, event_alloc)
 
 			if json_err != nil {
 				// no unique error tracking
@@ -212,48 +186,31 @@ eagle_import :: proc(
 				ctx.read_errors += 1
 				continue
 			}
-			ev.oid = oid
+			ev.oid = strings.clone(oid, event_alloc)
 			ev.content_type = media.mime(format)
-
-			event_data, marshal_err := json.marshal(ev^, opt, context.temp_allocator)
-			if marshal_err != nil {
-				ctx.read_errors += 1
-				continue
-			}
-			if len(event_data) >= elog.MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
-			written, write_err := io.write(buffered_stream, event_data)
-			if write_err != nil || written != len(event_data) {
-				fmt.panicf(
-					"import: event log write failed: wrote %d/%d bytes: %v",
-					written,
-					len(event_data),
-					write_err,
-				)
-			}
-			if err := io.write_byte(buffered_stream, '\n'); err != nil {
-				fmt.panicf("import: event log newline write failed: %v", err)
-			}
+			append(&events, ev^)
 
 
 			if ctx.success < 10 {fmt.println(meta_dirname)}
 			ctx.success += 1
 		}
 	}
-	if err := bufio.writer_flush(&bw); err != nil {
-		fmt.panicf("import: event log flush failed: %v", err)
+	// Originals have each been synced once. Persist their new filenames once
+	// for the completed batch before syncing the event log.
+	images_dir, images_dir_err := os.open(
+		fmt.tprintf("%s/images", dest_root),
+		{.Read},
+		os.Permissions_Default,
+	)
+	if images_dir_err != nil {fmt.panicf("import: open images directory: %v", images_dir_err)}
+	defer os.close(images_dir)
+	if err := os.sync(images_dir); err != nil {
+		fmt.panicf("import: sync images directory: %v", err)
 	}
-	if err := os.sync(ev_handle); err != nil {
-		fmt.panicf("import: event log sync failed: %v", err)
+	if err := elog.events_append(log, events[:]); err != "" {
+		fmt.panicf("import: event log append failed: %s", err)
 	}
 }
-
-// _ :: proc() {
-//
-// 	// bufio.Writer
-// 	bufio.fl
-//
-// }
-
 
 @(test) // just for convenience, ignore
 eagle_import_test :: proc(t: ^testing.T) {
@@ -380,5 +337,10 @@ copy_and_hash_and_determine_content_type :: proc(
 	sha2.final(&ctx, digest[:], finalize_clone = false)
 	hex_str := string(hex.encode(digest[:], context.temp_allocator))
 
+	if err == nil {
+		if sync_err := os.sync(dst); sync_err != nil {
+			panic("import: original sync failed")
+		}
+	}
 	return hex_str, fmt, err
 }
