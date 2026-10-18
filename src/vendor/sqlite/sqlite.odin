@@ -163,7 +163,7 @@ Tx :: struct {
 // Rollback errors do not replace the original error; if rollback fails, db may
 // still have an active transaction. This helper cannot recover from process
 // termination or a body that does not return normally.
-with_transaction :: proc(db: ^DB, body: proc(tx: ^Tx) -> c.int) -> c.int {
+with_transaction :: proc(db: ^DB, payload: $T, body: proc(tx: ^Tx, payload: T) -> c.int) -> c.int {
 	if get_autocommit(db) == 0 {
 		return MISUSE
 	}
@@ -180,7 +180,7 @@ with_transaction :: proc(db: ^DB, body: proc(tx: ^Tx) -> c.int) -> c.int {
 	tx := Tx {
 		db = db,
 	}
-	rc = body(&tx)
+	rc = body(&tx, payload)
 	if rc != OK {return rc}
 
 	if get_autocommit(db) != 0 {
