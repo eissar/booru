@@ -86,9 +86,36 @@ eagle_import :: proc(
 	data := make([]u8, METADATA_MAX_BYTES, context.allocator)
 	defer delete(data, context.allocator)
 
+	// Keep one shard open for the entire import; sync it once after the final flush.
+	shard := elog.get_current_event_shard(context.temp_allocator)
+	path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
+	if join_err != nil {panic("err during import finding event shard path")}
+
+	ev_handle, ev_open_err := os.open(
+		path,
+		{.Write, .Create, .Append},
+		os.Permissions_Default_File,
+	)
+	if ev_open_err != nil {panic("could not open event log for writing")}
+	defer os.close(ev_handle)
+
+	opt := json.Marshal_Options {
+		spec   = .JSON,
+		pretty = false,
+	}
+	bw: bufio.Writer
+	bufio.writer_init(&bw, os.to_writer(ev_handle), size = 1024, allocator = context.allocator)
+	defer bufio.writer_destroy(&bw)
+	defer {
+		if err := bufio.writer_flush(&bw); err != nil {
+			fmt.panicf("import: event log flush failed: %v", err)
+		}
+	}
+	buffered_stream := bufio.writer_to_stream(&bw)
+
 	buf: [1024 * 4]u8
 	for {
-		defer free_all(context.temp_allocator) // technically optional
+		defer free_all(context.temp_allocator)
 
 		n, err := linux.getdents(rootFd, buf[:])
 		if err != .NONE {
@@ -97,37 +124,6 @@ eagle_import :: proc(
 			return
 		}
 		if n == 0 {break}
-
-
-		shard := elog.get_current_event_shard(context.temp_allocator)
-		path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
-		if join_err != nil {
-			panic("err during import finding event shard path")
-		}
-
-
-		ev_opts := os.File_Flags{.Write, .Create, .Append}
-		ev_handle, ev_open_err := os.open(path, ev_opts, os.Permissions_Default_File)
-		if ev_open_err != nil {
-			// retryable?
-			panic("could not open event log for writing")
-		}
-		defer os.close(ev_handle)
-
-		opt := json.Marshal_Options {
-			spec   = .JSON,
-			pretty = false,
-		}
-
-		input_stream := os.to_writer(ev_handle)
-
-		bw: bufio.Writer
-		bufio.writer_init(&bw, input_stream, size = 1024, allocator = context.temp_allocator)
-		// the writer auto flushes when the buf is full, but we need to
-		// do this once to flush any remaining
-		defer bufio.writer_flush(&bw)
-
-		buffered_stream := bufio.writer_to_stream(&bw)
 
 
 		offs := 0
@@ -225,16 +221,29 @@ eagle_import :: proc(
 				continue
 			}
 			if len(event_data) >= elog.MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
-			if _, err := io.write(buffered_stream, event_data); err != nil {
-				ctx.read_errors += 1
-				continue
+			written, write_err := io.write(buffered_stream, event_data)
+			if write_err != nil || written != len(event_data) {
+				fmt.panicf(
+					"import: event log write failed: wrote %d/%d bytes: %v",
+					written,
+					len(event_data),
+					write_err,
+				)
 			}
-			io.write_byte(buffered_stream, '\n')
+			if err := io.write_byte(buffered_stream, '\n'); err != nil {
+				fmt.panicf("import: event log newline write failed: %v", err)
+			}
 
 
 			if ctx.success < 10 {fmt.println(meta_dirname)}
 			ctx.success += 1
 		}
+	}
+	if err := bufio.writer_flush(&bw); err != nil {
+		fmt.panicf("import: event log flush failed: %v", err)
+	}
+	if err := os.sync(ev_handle); err != nil {
+		fmt.panicf("import: event log sync failed: %v", err)
 	}
 }
 
