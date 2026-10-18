@@ -193,8 +193,9 @@ test_replay :: proc(t: ^testing.T) {
 }
 
 // this calls replay for each ndjson file
-initiate_replay :: proc(root: string, images: ^[dynamic]library.Image, alloc: mem.Allocator) {
-	events_dir := fmt.tprintf("%s/events", root)
+initiate_replay :: proc(s: ^library.State) {
+	alloc := context.temp_allocator
+	events_dir := fmt.tprintf("%s/events", s.library_path)
 	dir_fi, _ := os.stat(events_dir, alloc)
 	if dir_fi.type != .Directory {fmt.eprintln("library: cannot open events dir", events_dir)}
 	os.file_info_delete(dir_fi, alloc)
@@ -218,6 +219,9 @@ initiate_replay :: proc(root: string, images: ^[dynamic]library.Image, alloc: me
 			fmt.eprintln("library: cannot read", entry.fullpath)
 			continue
 		}
-		load_ndjson(images, string(data), alloc)
+		text := string(data)
+		if replay_err := replay(s, &text, alloc); replay_err != nil {
+			fmt.panicf("replay: %s: %v", entry.fullpath, replay_err)
+		}
 	}
 }

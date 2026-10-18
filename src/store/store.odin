@@ -3,9 +3,19 @@ package store
 import "../library"
 import "../vendor/sqlite"
 import "core:c"
+import "core:fmt"
+import "core:os"
 
 // Init assigns data_store only on success. Close an existing connection first.
 Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
+	// TODO: (v1) incremental replay not implemented
+	if path != ":memory:" {
+		clear_error := os.remove(string(path))
+		if clear_error != nil && clear_error != .Not_Exist {
+			fmt.panicf("err=%v", clear_error)
+		}
+	}
+
 	db, open_rc := sqlite.open(path)
 	if open_rc != sqlite.OK {
 		return open_rc
