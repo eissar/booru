@@ -16,6 +16,9 @@ import "../library"
 import "../media"
 import "../template"
 import "../thumbnail"
+import "../util"
+
+import elog "../event_log"
 
 
 //region: page + fragment handlers
@@ -352,7 +355,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 			break
 		}
 	}
-	params := strings.split(content_type, ";")
+	params := strings.split(content_type, ";", req.alloc)
 	if len(params) != 2 ||
 	   !strings.equal_fold(strings.trim_space(params[0]), "multipart/form-data") {
 		return
@@ -371,7 +374,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	}
 
 	raw := transmute(string)body
-	opening := fmt.aprintf("--%s\r\n", boundary)
+	opening := fmt.aprintf("--%s\r\n", boundary, allocator = req.alloc)
 	if !strings.has_prefix(raw, opening) {return}
 	raw = raw[len(opening):]
 	header_end := strings.index(raw, "\r\n\r\n")
@@ -379,7 +382,8 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 
 	is_image := false
 	filename := ""
-	for line in strings.split(raw[:header_end], "\r\n") {
+
+	for line in strings.split(raw[:header_end], "\r\n", req.alloc) {
 		colon := strings.index_byte(line, ':')
 		if colon < 0 {return}
 		if !strings.equal_fold(strings.trim_space(line[:colon]), "Content-Disposition") {
@@ -404,7 +408,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	if !is_image {return}
 
 	raw = raw[header_end + 4:]
-	delimiter := fmt.aprintf("\r\n--%s", boundary)
+	delimiter := fmt.aprintf("\r\n--%s", boundary, allocator = req.alloc)
 	end := -1
 	for offset := 0; offset < len(raw); {
 		i := strings.index(raw[offset:], delimiter)
@@ -437,13 +441,18 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 
 	// Seeded from loaded images at startup; exclusive creation still protects
 	// originals without event-log entries from being overwritten after restart.
-	ev: library.Event
+	ev: elog.Event
 	library.new_add_event(&ev)
 	id := ev.id
-	path := fmt.aprintf("%s/images/%d.%s", s.library_path, id, media.extension(format))
-	file, err := os.open(path, {.Write, .Create, .Excl}, os.Permissions_Default_File)
-	if err != nil {
-		fmt.eprintfln("ingest: open %s: %v", path, err)
+	path := fmt.aprintf(
+		"%s/images/%d.%s",
+		s.library_path,
+		id,
+		media.extension(format),
+		allocator = req.alloc,
+	)
+	if err := util.atomic_write(path, data, replace_existing = false); err != nil {
+		fmt.eprintfln("ingest: atomic write %s: %v", path, err)
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
 			template.render_toast("Could not create original", .Error),
@@ -453,19 +462,6 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		return
 	}
 
-	_, write_err := os.write(file, data)
-	close_err := os.close(file)
-	if write_err != nil || close_err != nil {
-		fmt.eprintfln("ingest: write %s: %v; close: %v", path, write_err, close_err)
-		os.remove(path)
-		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(
-			template.render_toast("Could not write original", .Error),
-			res,
-			.InternalServerError,
-		)
-		return
-	}
 	hash: sha2.Context_256
 	sha2.init_256(&hash)
 	sha2.update(&hash, data)
@@ -484,9 +480,39 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	ev.content_type = media.mime(format)
 	// TODO: Read the media dimensions; width and height should not remain zero.
 
+	// update the event log
+	append_err := elog.event_append(s.event_log, ev)
+	if append_err != "" {
+		// TODO: delete any uploaded files
+
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("Could not write original", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
+
+	// Sync the published original exactly once, after appending its event.
+	file, file_err := os.open(path, {.Write}, os.Permissions_Default)
+	if file_err != nil {fmt.panicf("ingest: open original for syncing: %v", file_err)}
+	defer os.close(file)
+	if err := os.sync(file); err != nil {
+		fmt.panicf("ingest: sync original %s: %v", path, err)
+	}
+	images_dir := fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
+	dir, dir_err := os.open(images_dir, {.Read}, os.Permissions_Default)
+	if dir_err != nil {fmt.panicf("ingest: open images directory for syncing: %v", dir_err)}
+	defer os.close(dir)
+	if err := os.sync(dir); err != nil {
+		fmt.panicf("ingest: sync images directory: %v", err)
+	}
+
 	//HACK copy the slice and retain its old backing allocation.
 	images := make([]library.Image, len(s.library_images) + 1, state_alloc)
 	copy(images, s.library_images)
+
 	images[len(images) - 1] = library.Image {
 		id           = ev.id,
 		oid          = ev.oid,
@@ -501,6 +527,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		content_type = ev.content_type,
 	}
 	s.library_images = images
+
 
 	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
 }

@@ -1,6 +1,8 @@
 package library
 
-new_add_event :: proc(e: ^Event) {
+import elog "../event_log"
+
+new_add_event :: proc(e: ^elog.Event) {
 	// these get set later:
 	// e.oid
 	// e.path

@@ -1,15 +1,22 @@
 package main
 
+import "core:fmt"
 import "core:log"
 import "core:mem"
 import "core:net"
 import "core:os"
+import "core:strings"
 import "core:time"
 
 import "cli"
+import "core:c"
+import elog "event_log"
 import "library"
+import "replay"
 import "server"
+import "store"
 import "thumbnail"
+import "vendor/sqlite"
 
 // Loaded once at startup from the NDJSON event log; no DB for this prototype.
 // library_images: [dynamic]library.Image
@@ -37,13 +44,17 @@ main :: proc() {
 	alloc := mem.arena_allocator(&arena)
 
 	images := make([dynamic]library.Image, alloc)
-	library.load_library(cfg.library, &images, alloc)
+	replay.load_library(cfg.library, &images, alloc)
 	library.seed_ids_from_library(images[:])
 	defer free_all(alloc)
 
+	event_log := elog.EventLog {
+		root = cfg.library,
+	}
 	state := library.State {
 		library_images = images[:],
 		library_path   = cfg.library,
+		event_log      = &event_log,
 	}
 
 	log.infof(
@@ -69,5 +80,29 @@ main :: proc() {
 	log.infof("server listening on %v", net.endpoint_to_string(ep))
 
 	defer net.close(sock)
+
+
+	db_c := fmt.aprintf(
+		"%v/%v",
+		state.library_path,
+		"store.sqlite",
+		allocator = context.temp_allocator,
+	)
+	db_c_str := strings.clone_to_cstring(db_c, context.temp_allocator)
+
+	rc := store.Init(&state, db_c_str)
+	if rc != 0 {
+		log.fatal("datastore type=sqlite open: failed w/ error code:", rc)
+		os.exit(1)
+	}
+	defer store.Close(&state)
+
+	// replay events from the event log
+	replay.initiate_replay(&state)
+
+	// TODO : stop reading from s.library_images everywhere
+	// so we can free this without defer
+	defer free_all(context.temp_allocator)
+
 	server.Serve(&state, sock) // this should take an allocator
 }

@@ -28,3 +28,13 @@ Assumptions:
 - 25 and 40 tags per image are guesses. Replace them with your real average.
 - Size scales with total associations, not with image count or tag count alone.
 - These are estimates. Nothing has been benchmarked.
+
+Slug-style tags
+
+Slug-style tagging keeps a strict identifier separate from a free-form display name. The identifier, such as blue-eyes, uses only lowercase letters, digits and hyphens, and it is unique. Search, URLs and the index all use it, so tag lookup is an exact match on an indexed column, with no case-insensitive scans. Search syntax stays simple because identifiers never need quoting or escaping, and characters outside the slug set, like / for folders or : for namespaces, are free to act as operators without colliding with tag names. The display name, such as "Blue eyes" or "AC/DC", can hold any text and is never parsed, so you can rename or localize it without touching tag assignments, links or saved searches. Aliases are alternative display names that resolve to one canonical slug. Distinct meanings require separate tags with distinct slugs.
+
+Rule: ^[a-z0-9]+(-[a-z0-9]+)*$
+No leading, trailing or doubled hyphens.
+
+is there a valid use case where a user sorts by an alias but only that alias not the canonical slug - where a distinct slug is worse for the user and not just more convenient?
+

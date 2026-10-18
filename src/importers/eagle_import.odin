@@ -1,9 +1,8 @@
 package importers
 
-import "core:bufio"
 import "core:encoding/hex"
 import "core:fmt"
-import "core:io"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:sys/linux"
@@ -86,9 +85,16 @@ eagle_import :: proc(
 	data := make([]u8, METADATA_MAX_BYTES, context.allocator)
 	defer delete(data, context.allocator)
 
+	// Events must outlive the per-directory-batch temporary allocator resets.
+	arena: mem.Dynamic_Arena
+	mem.dynamic_arena_init(&arena)
+	defer mem.dynamic_arena_destroy(&arena)
+	event_alloc := mem.dynamic_arena_allocator(&arena)
+	events := make([dynamic]elog.Event, event_alloc)
+
 	buf: [1024 * 4]u8
 	for {
-		defer free_all(context.temp_allocator) // technically optional
+		defer free_all(context.temp_allocator)
 
 		n, err := linux.getdents(rootFd, buf[:])
 		if err != .NONE {
@@ -97,36 +103,6 @@ eagle_import :: proc(
 			return
 		}
 		if n == 0 {break}
-
-
-		shard := elog.get_current_event_shard(context.temp_allocator)
-		path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
-		if join_err != nil {
-			panic("err during import finding event shard path")
-		}
-
-
-		ev_opts := os.File_Flags{.Write, .Create, .Append}
-		ev_handle, ev_open_err := os.open(path, ev_opts, os.Permissions_Default_File)
-		if ev_open_err != nil {
-			// retryable?
-			panic("could not open event log for writing")
-		}
-
-		opt := json.Marshal_Options {
-			spec   = .JSON,
-			pretty = false,
-		}
-
-		input_stream := os.to_writer(ev_handle)
-
-		bw: bufio.Writer
-		bufio.writer_init(&bw, input_stream, size = 1024, allocator = context.temp_allocator)
-		// the writer auto flushes when the buf is full, but we need to
-		// do this once to flush any remaining
-		defer bufio.writer_flush(&bw)
-
-		buffered_stream := bufio.writer_to_stream(&bw)
 
 
 		offs := 0
@@ -179,17 +155,12 @@ eagle_import :: proc(
 
 			// this is usually unsafe but fine because
 			// @(test) eagle_item_transmutable_into_event
-			ev := cast(^library.Event)&item
+			ev := cast(^elog.Event)&item
 			library.new_add_event(ev)
 
 			// we reuse the buffer so
 			// need to bound to read bytes (i)
-			json_err := json.unmarshal(
-				data[:i],
-				&item,
-				json.DEFAULT_SPECIFICATION,
-				context.temp_allocator,
-			)
+			json_err := json.unmarshal(data[:i], &item, json.DEFAULT_SPECIFICATION, event_alloc)
 
 			if json_err != nil {
 				// no unique error tracking
@@ -215,29 +186,31 @@ eagle_import :: proc(
 				ctx.read_errors += 1
 				continue
 			}
-			ev.oid = oid
+			ev.oid = strings.clone(oid, event_alloc)
 			ev.content_type = media.mime(format)
-
-			if err := json.marshal_to_writer(buffered_stream, ev^, &opt); err != nil {
-				ctx.read_errors += 1
-				continue
-			}
-			io.write_byte(buffered_stream, '\n')
+			append(&events, ev^)
 
 
 			if ctx.success < 10 {fmt.println(meta_dirname)}
 			ctx.success += 1
 		}
 	}
+	// Originals have each been synced once. Persist their new filenames once
+	// for the completed batch before syncing the event log.
+	images_dir, images_dir_err := os.open(
+		fmt.tprintf("%s/images", dest_root),
+		{.Read},
+		os.Permissions_Default,
+	)
+	if images_dir_err != nil {fmt.panicf("import: open images directory: %v", images_dir_err)}
+	defer os.close(images_dir)
+	if err := os.sync(images_dir); err != nil {
+		fmt.panicf("import: sync images directory: %v", err)
+	}
+	if err := elog.events_append(log, events[:]); err != "" {
+		fmt.panicf("import: event log append failed: %s", err)
+	}
 }
-
-// _ :: proc() {
-//
-// 	// bufio.Writer
-// 	bufio.fl
-//
-// }
-
 
 @(test) // just for convenience, ignore
 eagle_import_test :: proc(t: ^testing.T) {
@@ -255,6 +228,7 @@ eagle_import_test :: proc(t: ^testing.T) {
 	if err != nil {
 		fmt.panicf("error opening lib dir %v ; err=%v", root, err)
 	}
+	defer os.close(fd)
 
 	// never write into the source library; import into a scratch library
 	dest_root := "/tmp/booru_eagle_import_test"
@@ -363,5 +337,10 @@ copy_and_hash_and_determine_content_type :: proc(
 	sha2.final(&ctx, digest[:], finalize_clone = false)
 	hex_str := string(hex.encode(digest[:], context.temp_allocator))
 
+	if err == nil {
+		if sync_err := os.sync(dst); sync_err != nil {
+			panic("import: original sync failed")
+		}
+	}
 	return hex_str, fmt, err
 }
