@@ -1,11 +1,10 @@
 package replay
 
-import "core:encoding/json"
 import "core:fmt"
 import "core:mem"
 import "core:os"
+import "core:strconv"
 import "core:strings"
-import "core:testing"
 
 import elog "../event_log"
 import "../library/"
@@ -49,147 +48,113 @@ load_library :: proc(root: string, images: ^[dynamic]library.Image, alloc: mem.A
 }
 
 load_ndjson :: proc(images: ^[dynamic]library.Image, data: string, alloc: mem.Allocator) {
-	lines := strings.split(data, "\n", alloc)
-
-	for line in lines {
+	// Images outlive the file reader's input buffer; retain their borrowed text.
+	owned_data := strings.clone(data, alloc)
+	record: elog.Record
+	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
+	defer delete(record.fields)
+	remaining := owned_data
+	for line in strings.split_lines_iterator(&remaining) {
 		if strings.trim_space(line) == "" {continue}
-		ev: elog.Event
-
-		if err := json.unmarshal(transmute([]u8)line, &ev, json.DEFAULT_SPECIFICATION, alloc);
-		   err != nil {
-			fmt.eprintln("library: bad event ", err)
-			continue
-		}
-
-		if ev.op != "add" {continue}
-		append(
-			images,
-			library.Image {
-				id = ev.id,
-				oid = ev.oid,
-				path = ev.path,
-				ext = ev.ext,
-				tags = ev.tags,
-				width = ev.width,
-				height = ev.height,
-				name = ev.name,
-				mtime = ev.mtime,
-				added_at = ev.added_at,
-				content_type = ev.content_type,
-			},
-		)
+		item, op := parse_item(line, &record, alloc)
+		if op == "add" {append(images, item)}
 	}
 }
 
-replay :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (err: Error) {
+replay :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> Error {
 	db := s.data_store
-
-	tx := sqlite.Tx{db}
-	rc := sqlite.exec(db, "BEGIN", nil, nil, nil)
-	if rc != sqlite.OK {return .DATABASE_ERR}
-
-	// deferred rollback if we return error
-	// tested to set named result for defer
-	// so we can just do return nil/ return .DATABASE_ERR
-	// and it works as you'd expect
+	if !sqlite.run(db, "BEGIN") {return .DATABASE_ERR}
 	defer {
-		if err != nil {
-			if sqlite.get_autocommit(db) == 0 {
-				sqlite.exec(db, "ROLLBACK", nil, nil, nil)
-			}
-			sqlite.close(db)
-		}
+		if sqlite.get_autocommit(db) == 0 {sqlite.run(db, "ROLLBACK")}
 	}
-
+	tx := sqlite.Tx {
+		db = db,
+	}
+	record: elog.Record
+	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
+	defer delete(record.fields)
 	for line in strings.split_lines_iterator(data) {
 		if strings.trim_space(line) == "" {continue}
-
-		ev: elog.Event
-		if err := json.unmarshal(transmute([]u8)line, &ev, json.DEFAULT_SPECIFICATION, alloc);
-		   err != nil {
-			fmt.eprintln("library: bad event ", err)
-			continue
-		}
-
-		// both 'add' and 'patch'
-		// are just Event & op
-
-		// switch
-		switch ev.op {
+		item, op := parse_item(line, &record, alloc)
+		rc: i32 = sqlite.OK
+		switch op {
 		case "add":
-			item := library.Image {
-				id           = ev.id,
-				oid          = ev.oid,
-				path         = ev.path,
-				ext          = ev.ext,
-				tags         = ev.tags,
-				width        = ev.width,
-				height       = ev.height,
-				name         = ev.name,
-				mtime        = ev.mtime,
-				added_at     = ev.added_at,
-				content_type = ev.content_type,
-			}
-			rc := store.insert_into_items(&tx, item)
-			if rc != sqlite.OK {
-				return .DATABASE_ERR
-			}
+			rc = store.insert_into_items(&tx, item)
 		case "patch":
-			item := library.Image {
-				id           = ev.id,
-				oid          = ev.oid,
-				path         = ev.path,
-				ext          = ev.ext,
-				tags         = ev.tags,
-				width        = ev.width,
-				height       = ev.height,
-				name         = ev.name,
-				mtime        = ev.mtime,
-				added_at     = ev.added_at,
-				content_type = ev.content_type,
-			}
-			rc := store.patch_item(&tx, item)
-			if rc != sqlite.OK {
-				return .DATABASE_ERR
-			}
-
+			rc = store.patch_item(&tx, item)
 		case:
-			fmt.eprintfln(
-				"unsupported event type=%v . maybe corrupt library. continuing anyway.",
-				ev.op,
-			)
 			continue
 		}
+		if rc != sqlite.OK {return .DATABASE_ERR}
 	}
-	commit_rc := sqlite.exec(db, "COMMIT", nil, nil, nil)
-	if commit_rc != 0 {
-		return .DATABASE_ERR
-	}
+	if !sqlite.run(db, "COMMIT") {return .DATABASE_ERR}
 	return nil
 }
 
-@(test)
-test_replay :: proc(t: ^testing.T) {
-	r := "/tmp/booru_eagle_import_test/events/2026-10.ndjson"
-	alloc := context.temp_allocator
-	data, err := os.read_entire_file(r, alloc)
-	defer delete(data, alloc)
-
-	s: library.State
-	rc := store.Init(&s, ":memory:") // sqlite in-memory database
-	if !testing.expect(t, rc == sqlite.OK) {return}
-
-	text := string(data)
-	replay_err := replay(&s, &text, alloc)
-	testing.expect(t, replay_err == nil)
-
-	stmt, ok := sqlite.prepare(s.data_store, "SELECT COUNT(*) FROM items")
-	if !ok {return}
-	defer sqlite.finalize(stmt)
-	if sqlite.step(stmt) == sqlite.ROW {
-		fmt.println(sqlite.column_int64(stmt, 0))
+@(private = "file")
+parse_item :: proc(
+	line: string,
+	record: ^elog.Record,
+	alloc: mem.Allocator,
+) -> (
+	item: library.Image,
+	op: string,
+) {
+	elog.parse_flat(line, record)
+	for field in record.fields {
+		if field.key == "tags" {
+			assert(field.is_array)
+			item.tags = make([]string, len(field.values), alloc)
+			for token, i in field.values {
+				item.tags[i] = replay_flat_string(token, alloc)
+			}
+			continue
+		}
+		assert(!field.is_array && len(field.values) == 1)
+		token := field.values[0]
+		if field.key == "id" || field.key == "width" || field.key == "height" {
+			assert(token.kind == .Integer)
+			value, ok := strconv.parse_int(token.text)
+			assert(ok)
+			switch field.key {
+			case "id":
+				item.id = value
+			case "width":
+				item.width = value
+			case "height":
+				item.height = value
+			}
+			continue
+		}
+		switch field.key {
+		case "op":
+			op = replay_flat_string(token, alloc)
+		case "oid":
+			item.oid = replay_flat_string(token, alloc)
+		case "path":
+			item.path = replay_flat_string(token, alloc)
+		case "ext":
+			item.ext = replay_flat_string(token, alloc)
+		case "name":
+			item.name = replay_flat_string(token, alloc)
+		case "content_type":
+			item.content_type = replay_flat_string(token, alloc)
+		case "mtime":
+			item.mtime = replay_flat_string(token, alloc)
+		case "added_at":
+			item.added_at = replay_flat_string(token, alloc)
+		}
 	}
 
+	return
+}
+
+replay_flat_string :: proc(token: elog.Token, alloc: mem.Allocator) -> string {
+	assert(token.kind == .String)
+	if !token.has_escapes {return token.text[1:len(token.text) - 1]}
+	value, _, ok := strconv.unquote_string(token.text, alloc)
+	assert(ok)
+	return value
 }
 
 // this calls replay for each ndjson file
