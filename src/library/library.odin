@@ -17,6 +17,7 @@ State :: struct {
 	library_path:   string,
 	library_images: []Image,
 	data_store:     ^sqlite.DB,
+	event_log:      ^elog.EventLog,
 }
 
 Image :: struct {

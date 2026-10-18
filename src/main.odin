@@ -7,6 +7,7 @@ import "core:os"
 import "core:time"
 
 import "cli"
+import elog "event_log"
 import "library"
 import "server"
 import "thumbnail"
@@ -41,9 +42,13 @@ main :: proc() {
 	library.seed_ids_from_library(images[:])
 	defer free_all(alloc)
 
+	event_log := elog.EventLog {
+		root = cfg.library,
+	}
 	state := library.State {
 		library_images = images[:],
 		library_path   = cfg.library,
+		event_log      = &event_log,
 	}
 
 	log.infof(

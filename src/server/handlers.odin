@@ -354,7 +354,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 			break
 		}
 	}
-	params := strings.split(content_type, ";")
+	params := strings.split(content_type, ";", req.alloc)
 	if len(params) != 2 ||
 	   !strings.equal_fold(strings.trim_space(params[0]), "multipart/form-data") {
 		return
@@ -373,7 +373,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	}
 
 	raw := transmute(string)body
-	opening := fmt.aprintf("--%s\r\n", boundary)
+	opening := fmt.aprintf("--%s\r\n", boundary, allocator = req.alloc)
 	if !strings.has_prefix(raw, opening) {return}
 	raw = raw[len(opening):]
 	header_end := strings.index(raw, "\r\n\r\n")
@@ -381,7 +381,8 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 
 	is_image := false
 	filename := ""
-	for line in strings.split(raw[:header_end], "\r\n") {
+
+	for line in strings.split(raw[:header_end], "\r\n", req.alloc) {
 		colon := strings.index_byte(line, ':')
 		if colon < 0 {return}
 		if !strings.equal_fold(strings.trim_space(line[:colon]), "Content-Disposition") {
@@ -406,7 +407,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	if !is_image {return}
 
 	raw = raw[header_end + 4:]
-	delimiter := fmt.aprintf("\r\n--%s", boundary)
+	delimiter := fmt.aprintf("\r\n--%s", boundary, allocator = req.alloc)
 	end := -1
 	for offset := 0; offset < len(raw); {
 		i := strings.index(raw[offset:], delimiter)
@@ -442,7 +443,13 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	ev: elog.Event
 	library.new_add_event(&ev)
 	id := ev.id
-	path := fmt.aprintf("%s/images/%d.%s", s.library_path, id, media.extension(format))
+	path := fmt.aprintf(
+		"%s/images/%d.%s",
+		s.library_path,
+		id,
+		media.extension(format),
+		allocator = req.alloc,
+	)
 	file, err := os.open(path, {.Write, .Create, .Excl}, os.Permissions_Default_File)
 	if err != nil {
 		fmt.eprintfln("ingest: open %s: %v", path, err)
@@ -486,9 +493,24 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	ev.content_type = media.mime(format)
 	// TODO: Read the media dimensions; width and height should not remain zero.
 
+	// update the event log
+	append_err := elog.event_append(s.event_log, &ev)
+	if append_err != "" {
+		// TODO: delete any uploaded files
+
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("Could not write original", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
+
 	//HACK copy the slice and retain its old backing allocation.
 	images := make([]library.Image, len(s.library_images) + 1, state_alloc)
 	copy(images, s.library_images)
+
 	images[len(images) - 1] = library.Image {
 		id           = ev.id,
 		oid          = ev.oid,
@@ -503,6 +525,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		content_type = ev.content_type,
 	}
 	s.library_images = images
+
 
 	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
 }
