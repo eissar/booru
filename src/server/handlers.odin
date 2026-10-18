@@ -365,8 +365,6 @@ handle_mipmap :: proc(
 // handle_ingest serves POST /ingest -- one multipart file into the library.
 // Responds with a toast fragment for #toasts-log.
 handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
-	//HACK retain uploaded metadata outside the request arena; ownership is unresolved.
-	state_alloc := context.allocator
 	context.allocator = req.alloc
 	if req.header.method != "POST" {
 		res.headers["Allow"] = "POST"
@@ -499,14 +497,14 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	digest: [sha2.DIGEST_SIZE_256]u8
 	sha2.final(&hash, digest[:], finalize_clone = false)
 
-	ev.oid = string(hex.encode(digest[:], state_alloc))
-	ev.path = strings.clone(path, state_alloc)
+	ev.oid = string(hex.encode(digest[:], req.alloc))
+	ev.path = strings.clone(path, req.alloc)
 	leaf := filename
 	for c, i in filename {
 		if c == '/' || c == '\\' {leaf = filename[i + 1:]}
 	}
 	if dot := strings.index_byte(leaf, '.'); dot >= 0 {leaf = leaf[:dot]}
-	ev.name = strings.clone(leaf, state_alloc)
+	ev.name = strings.clone(leaf, req.alloc)
 	ev.ext = media.extension(format)
 	ev.content_type = media.mime(format)
 	// TODO: Read the media dimensions; width and height should not remain zero.
