@@ -111,28 +111,55 @@ replay :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (err: 
 			continue
 		}
 
+		// both 'add' and 'patch'
+		// are just Event & op
+
 		// switch
-		if ev.op != "add" {continue}
+		switch ev.op {
+		case "add":
+			item := library.Image {
+				id           = ev.id,
+				oid          = ev.oid,
+				path         = ev.path,
+				ext          = ev.ext,
+				tags         = ev.tags,
+				width        = ev.width,
+				height       = ev.height,
+				name         = ev.name,
+				mtime        = ev.mtime,
+				added_at     = ev.added_at,
+				content_type = ev.content_type,
+			}
+			rc := store.insert_into_items(&tx, item)
+			if rc != sqlite.OK {
+				return .DATABASE_ERR
+			}
+		case "patch":
+			item := library.Image {
+				id           = ev.id,
+				oid          = ev.oid,
+				path         = ev.path,
+				ext          = ev.ext,
+				tags         = ev.tags,
+				width        = ev.width,
+				height       = ev.height,
+				name         = ev.name,
+				mtime        = ev.mtime,
+				added_at     = ev.added_at,
+				content_type = ev.content_type,
+			}
+			rc := store.patch_item(&tx, item)
+			if rc != sqlite.OK {
+				return .DATABASE_ERR
+			}
 
-		item := library.Image {
-			id           = ev.id,
-			oid          = ev.oid,
-			path         = ev.path,
-			ext          = ev.ext,
-			tags         = ev.tags,
-			width        = ev.width,
-			height       = ev.height,
-			name         = ev.name,
-			mtime        = ev.mtime,
-			added_at     = ev.added_at,
-			content_type = ev.content_type,
+		case:
+			fmt.eprintfln(
+				"unsupported event type=%v . maybe corrupt library. continuing anyway.",
+				ev.op,
+			)
+			continue
 		}
-
-		rc := store.insert_into_items(&tx, item)
-		if rc != sqlite.OK {
-			return .DATABASE_ERR
-		}
-
 	}
 	commit_rc := sqlite.exec(db, "COMMIT", nil, nil, nil)
 	if commit_rc != 0 {

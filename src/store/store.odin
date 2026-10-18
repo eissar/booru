@@ -90,6 +90,78 @@ MAX_SUPPORTED_EVENT_VERSION :: 0
 
 // probe_compatibility_check :: proc() {}
 
+// Uses the caller's transaction. Empty/zero fields leave existing values alone;
+// tags are added, never removed.
+patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+	stmt: ^sqlite.Stmt
+	rc := sqlite.prepare_v2(
+		tx.db,
+		`UPDATE items SET
+			oid = COALESCE(NULLIF(?, ''), oid),
+			path = COALESCE(NULLIF(?, ''), path),
+			ext = COALESCE(NULLIF(?, ''), ext),
+			name = COALESCE(NULLIF(?, ''), name),
+			content_type = COALESCE(NULLIF(?, ''), content_type),
+			mtime = COALESCE(NULLIF(?, ''), mtime),
+			added_at = COALESCE(NULLIF(?, ''), added_at),
+			width = COALESCE(NULLIF(?, 0), width),
+			height = COALESCE(NULLIF(?, 0), height)
+		WHERE id = ?`,
+		-1,
+		&stmt,
+		nil,
+	)
+	defer {
+		if stmt != nil {sqlite.finalize(stmt)}
+	}
+	if rc != sqlite.OK {return rc}
+
+	values := [7]string {
+		item.oid,
+		item.path,
+		item.ext,
+		item.name,
+		item.content_type,
+		item.mtime,
+		item.added_at,
+	}
+	for value, i in values {
+		if !sqlite.bind_string(stmt, i + 1, value) {return 1} 	// SQLITE_ERROR
+	}
+	rc = sqlite.bind_int64(stmt, 8, i64(item.width))
+	if rc != sqlite.OK {return rc}
+	rc = sqlite.bind_int64(stmt, 9, i64(item.height))
+	if rc != sqlite.OK {return rc}
+	rc = sqlite.bind_int64(stmt, 10, i64(item.id))
+	if rc != sqlite.OK {return rc}
+	rc = sqlite.step(stmt)
+	if rc != sqlite.DONE {return rc}
+
+	tag_stmt: ^sqlite.Stmt
+	rc = sqlite.prepare_v2(
+		tx.db,
+		"INSERT OR IGNORE INTO item_tags (item_id, tag) VALUES (?, ?)",
+		-1,
+		&tag_stmt,
+		nil,
+	)
+	defer {
+		if tag_stmt != nil {sqlite.finalize(tag_stmt)}
+	}
+	if rc != sqlite.OK {return rc}
+
+	for tag in item.tags {
+		rc = sqlite.bind_int64(tag_stmt, 1, i64(item.id))
+		if rc != sqlite.OK {return rc}
+		if !sqlite.bind_string(tag_stmt, 2, tag) {return 1} 	// SQLITE_ERROR
+		rc = sqlite.step(tag_stmt)
+		if rc != sqlite.DONE {return rc}
+		rc = sqlite.reset(tag_stmt)
+		if rc != sqlite.OK {return rc}
+	}
+	return sqlite.OK
+}
+
 // Inserts item metadata; tags are stored separately in item_tags.
 insert_into_items :: proc {
 	insert_item,
