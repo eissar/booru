@@ -83,7 +83,7 @@ replay :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> Error 
 		case "patch":
 			rc = store.patch_item(&tx, item)
 		case "delete":
-			panic("not implemented")
+			rc = store.delete_item(&tx, item.id)
 		case "regen_thumbnail":
 			// basic event replay - validating derived artifact integrity is out of scope.
 			continue

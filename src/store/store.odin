@@ -100,6 +100,21 @@ MAX_SUPPORTED_EVENT_VERSION :: 0
 
 // probe_compatibility_check :: proc() {}
 
+// Uses the caller's transaction. Foreign-key cascade removes item_tags.
+delete_item :: proc(tx: ^sqlite.Tx, id: int) -> c.int {
+	stmt: ^sqlite.Stmt
+	rc := sqlite.prepare_v2(tx.db, "DELETE FROM items WHERE id == ?", -1, &stmt, nil)
+	defer {
+		if stmt != nil {sqlite.finalize(stmt)}
+	}
+	if rc != sqlite.OK {return rc}
+	rc = sqlite.bind_int64(stmt, 1, i64(id))
+	if rc != sqlite.OK {return rc}
+	rc = sqlite.step(stmt)
+	if rc != sqlite.DONE {return rc}
+	return sqlite.OK
+}
+
 // Uses the caller's transaction. Empty/zero fields leave existing values alone;
 // tags are added, never removed.
 patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
