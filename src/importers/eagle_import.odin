@@ -112,6 +112,7 @@ eagle_import :: proc(
 			// retryable?
 			panic("could not open event log for writing")
 		}
+		defer os.close(ev_handle)
 
 		opt := json.Marshal_Options {
 			spec   = .JSON,
@@ -261,6 +262,7 @@ eagle_import_test :: proc(t: ^testing.T) {
 	if err != nil {
 		fmt.panicf("error opening lib dir %v ; err=%v", root, err)
 	}
+	defer os.close(fd)
 
 	// never write into the source library; import into a scratch library
 	dest_root := "/tmp/booru_eagle_import_test"

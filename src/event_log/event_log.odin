@@ -48,6 +48,7 @@ event_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
 	if ev_open_err != nil {
 		return "could not open event log for writing" // retryable?
 	}
+	defer os.close(ev_handle)
 
 	opt := json.Marshal_Options {
 		spec   = .JSON,
@@ -78,6 +79,7 @@ events_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
 	if ev_open_err != nil {
 		return "could not open event log for writing" // retryable?
 	}
+	defer os.close(ev_handle)
 
 	opt := json.Marshal_Options {
 		spec   = .JSON,
