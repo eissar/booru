@@ -9,6 +9,7 @@ import "core:time"
 import "cli"
 import elog "event_log"
 import "library"
+import "replay"
 import "server"
 import "thumbnail"
 
@@ -38,7 +39,7 @@ main :: proc() {
 	alloc := mem.arena_allocator(&arena)
 
 	images := make([dynamic]library.Image, alloc)
-	library.load_library(cfg.library, &images, alloc)
+	replay.load_library(cfg.library, &images, alloc)
 	library.seed_ids_from_library(images[:])
 	defer free_all(alloc)
 
