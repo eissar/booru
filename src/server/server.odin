@@ -13,7 +13,7 @@ import "../template"
 REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte + http.MAX_BODY_SIZE
 
 // Serve handles requests on an already-listening socket until accept fails.
-// The caller owns the socket and must initialize library_path and library_images.
+// The caller owns the socket.
 Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 	backing, err := make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
 	assert(err == nil)

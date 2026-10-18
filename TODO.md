@@ -1,5 +1,24 @@
+high level tasks
+
+Harden flat parser: validation, boundaries, tests/fuzzing.
+Add event types: implement remaining operations.
+Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
+lfs-booru parity achieved
+
+ Not quite: startup still builds state.library_images through an add-only loader. SQLite replay applies patches/deletes, but the server serves the unchanged image slice. Deleted items remain visible; patched metadata stays stale.
+
+# Store Write Path TODO
+
+- [ ] Add `store.apply(tx, event)` as the only public store write proc; make `insert_*`, `patch_item`, `delete_item` in `src/store/store.odin` `@(private = "package")`. Move the op `switch` out of `replay.replay` (`src/replay/replay.odin`) so replay just loops `apply`. Unknown ops should error, not `continue`.
+- [ ] Runtime handlers apply events to SQLite: after `elog.event_append` succeeds in upload/delete (`src/server/handlers.odin`), open a tx and call `store.apply`. Order: log first, then apply (a failed apply is recovered by replay). Currently the gallery reads from the store but uploads/deletes only mutate `s.library_images`, so changes don't show until restart. Drop the `library_images` mutation once done.
+- [ ] `apply` advances the per-shard replay cursor in the same SQLite tx as the state change, so store and cursor can't drift (lfs-booru: `applyEvent(event, nextCursor)` in `src/index_store.ts`).
+- [ ] Serialize runtime applies (and `add` id allocation) if handlers run concurrently (lfs-booru: `this.mu` + `nextIdMutex`).
+- [ ] Keep a batch path: replay/import open one tx and `apply` every line (lfs-booru: `applyEventsFromFile`).
+- [ ] Optional: CI/pre-commit check that nothing outside `store` writes to the DB directly.
+
 - [ ] In `generate_image_thumbnails`, try `images/<id>.<ext>` directly using `img.ext`.
   Fall back to scanning for the `<id>.` prefix only when the extension is missing or the direct read fails.
+
 
 ## RESEARCH
 sccache - Mozilla's compiler cache - compiler artifacts can live in different remote storage backends
@@ -103,3 +122,36 @@ toast:
 > slow network connection ; not loading high res images
 |open settings| |dismiss|
 
+
+# Template TODO
+
+- [ ] Evaluate `core:fmt` for templates: Python-style `{n:v}` argument indices, plus user formatters (`fmt.register_user_formatter`) on distinct types such as `Html_Text` and `Html_Attr` that escape automatically. Watch for these:
+  - `{` is a directive, so HTML, CSS and JSON braces must be written as `{{`.
+  - Format errors render silently into the output as `%!(...)`.
+  - The format string is parsed at runtime on every call.
+  - User formatters are global (`set_user_formatters` can only be called once).
+  - Compare against the current `strings.Builder` and `escape_*` approach in the fixture tests.
+
+atproto integration ? ~/Public/booru-atproto.md
+
+## orphan ids
+issue: when original file is deleted or
+filebytes change, we leave behind dead thumbnail files.
+like /thumbnails/64/<oid>.webp
+
+solution after increment_id if lib.id % 5 -> detect_orphan_oid
+
+INVARIANT:
+Rebuild incompatible databases; never migrate them.
+The derived-store compatibility check and rebuild lifecycle aren’t implemented.
+Incremental indexing, including Roaring bitmap tag indexes.
+Neither the bitmap index nor incremental projection updates are implemented.
+
+Proxied libraries referencing originals outside the library.
+External-original resolution isn’t implemented; current operations assume managed originals.
+
+A human-readable portability warning for proxied libraries.
+The root warning file isn’t generated. Its final name remains undecided.
+
+Implicit event version 0, with startup refusal for unsupported versions.
+Omitting version already matches your decision. MAX_SUPPORTED_VERSION = 0 and the compatibility gate don’t exist yet.
