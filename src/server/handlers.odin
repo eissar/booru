@@ -589,31 +589,57 @@ handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http
 handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
 	body := transmute(string)body
 
-	res.headers["HX-Reswap"] = "beforeend"
-	http.res_html(template.render_toast("not implemented", .Error), res, .NotImplemented)
-	when true {return}
-
-	// id=9
-	raw_id := strings.split(body, "=", req.alloc)[1]
-
+	parts, split_err := strings.split(body, "=", req.alloc)
+	if split_err != nil || len(parts) != 2 || parts[0] != "id" {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("bad id", .Error), res, .BadRequest)
+		return
+	}
+	raw_id := parts[1]
 	id, ok := strconv.parse_int(raw_id)
-	if !ok || id < 1 { 	// ids start from 1
+	if !ok || id < 1 {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(template.render_toast("bad id", .Error), res, .BadRequest)
 		return
 	}
 
-	// just delete the original from state
-	for img in s.library_images {
-		if img.id != id {continue}
-
-
+	// TODO: use db queries, don't use in-mem cache.
+	index := -1
+	for img, i in s.library_images {
+		if img.id == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("no match for ID", .Error), res, .NotFound)
+		return
 	}
 
-	// not found
-	res.headers["HX-Reswap"] = "beforeend"
-	http.res_html(template.render_toast("no match for ID", .Error), res, .NotFound)
-	return
+	append_err := elog.event_append(s.event_log, elog.Event{id = id, op = "delete"})
+	if append_err != "" {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("could not write delete event", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
+
+	img := s.library_images[index]
+	pth := fmt.aprintf("%s/images/%d.%s", s.library_path, id, img.ext, allocator = req.alloc)
+	remove_err := os.remove(pth)
+	if remove_err != nil {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("could not remove file", .Error), res, .NotFound)
+		return
+	}
+
+	copy(s.library_images[index:], s.library_images[index + 1:])
+	s.library_images = s.library_images[:len(s.library_images) - 1]
+	http.res_text("", res, .OK)
 }
 
 
