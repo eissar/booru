@@ -642,11 +642,18 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	}
 
 	pth := fmt.aprintf("%s/images/%d.%s", s.library_path, id, img.ext, allocator = req.alloc)
-	remove_err := os.remove(pth)
-	if remove_err != nil {
-		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("could not remove file", .Error), res, .NotFound)
-		return
+	// TODO: a failed original removal is logged but still returns 200. Originals
+	// may be stored on remote storage or other filesystems (proxied mode), and
+	// as long as the delete event is written to the event log, queries are
+	// eventually consistent. Remote/proxied originals aren't represented in the
+	// codebase yet but probably will be. Open question: how failures should be
+	// retried or reconciled later.
+	// TODO: maybe a different success code: 202 (accepted, not necessarily
+	// complete; htmx still swaps it) vs 200. Avoid 204: htmx skips the swap, so
+	// hx-swap="delete" would leave the card. 404/410 for already-deleted is
+	// undecided.
+	if remove_err := os.remove(pth); remove_err != nil {
+		fmt.eprintfln("ERROR delete: remove original %s: %v", pth, remove_err)
 	}
 
 	http.res_text("", res, .OK)
