@@ -5,11 +5,18 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:io"
 import "core:os"
-import "core:strings"
 import "core:sync"
 import "core:time"
 
 import "../library"
+
+// TODO: (V1)
+// make this larger to support
+// events of a larger size.
+// when you do so, we will
+// need to enforce this
+// at a database level as well.
+MAX_RECORD :: 2048
 
 Cursor :: struct {
 	i:  int,
@@ -46,8 +53,14 @@ event_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
 		spec   = .JSON,
 		pretty = false,
 	}
-	s := os.to_writer(ev_handle)
-	json.marshal_to_writer(s, e, &opt)
+	data, marshal_err := json.marshal(e, opt, context.temp_allocator)
+	if marshal_err != nil {return "could not marshal event"}
+	defer delete(data, context.temp_allocator)
+	if len(data) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
+	os.write(ev_handle, data)
+	if io.write_byte(os.to_writer(ev_handle), '\n') != nil {
+		return "could not write event newline"
+	}
 
 	return ""
 }
@@ -77,7 +90,17 @@ events_append :: proc(log: ^EventLog, e: ^library.Event) -> (err: string) {
 	bufio.writer_init(&bw, input_stream, size = 1024, allocator = context.temp_allocator)
 
 	buffered_stream := bufio.writer_to_stream(&bw)
-	json.marshal_to_writer(buffered_stream, e, &opt)
+	data, marshal_err := json.marshal(e, opt, context.temp_allocator)
+	if marshal_err != nil {return "could not marshal event"}
+	defer delete(data, context.temp_allocator)
+	if len(data) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
+	io.write(buffered_stream, data)
+	if io.write_byte(buffered_stream, '\n') != nil {
+		return "could not write event newline"
+	}
+	if bufio.writer_flush(&bw) != nil {
+		return "could not flush event log"
+	}
 
 	return ""
 }

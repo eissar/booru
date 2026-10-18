@@ -218,7 +218,13 @@ eagle_import :: proc(
 			ev.oid = oid
 			ev.content_type = media.mime(format)
 
-			if err := json.marshal_to_writer(buffered_stream, ev^, &opt); err != nil {
+			event_data, marshal_err := json.marshal(ev^, opt, context.temp_allocator)
+			if marshal_err != nil {
+				ctx.read_errors += 1
+				continue
+			}
+			if len(event_data) >= elog.MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
+			if _, err := io.write(buffered_stream, event_data); err != nil {
 				ctx.read_errors += 1
 				continue
 			}
