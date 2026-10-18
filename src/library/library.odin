@@ -10,10 +10,12 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 
+import "../vendor/sqlite"
 
 State :: struct {
 	library_path:   string,
 	library_images: []Image,
+	data_store:     ^sqlite.DB,
 }
 
 Image :: struct {
