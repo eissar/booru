@@ -14,9 +14,11 @@ import "core:time"
 import "../http"
 import "../library"
 import "../media"
+import "../store"
 import "../template"
 import "../thumbnail"
 import "../util"
+import "../vendor/sqlite"
 
 import elog "../event_log"
 
@@ -31,7 +33,12 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		http.res_error("", res, .BadRequest); return
 	}
 
-	filtered := filter_images(s.library_images[:], q.tags[:])
+	images, rc := store.read_images(s.data_store, req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
+	}
+	filtered := filter_images(images, q.tags[:])
 	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
@@ -58,7 +65,12 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		return
 	}
 
-	filtered := filter_images(s.library_images[:], q.tags[:])
+	images, rc := store.read_images(s.data_store, req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
+	}
+	filtered := filter_images(images, q.tags[:])
 	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
@@ -86,7 +98,12 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 		return
 	}
 
-	filtered := filter_images(s.library_images[:], q.tags[:])
+	images, rc := store.read_images(s.data_store, req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
+	}
+	filtered := filter_images(images, q.tags[:])
 	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
@@ -115,11 +132,14 @@ handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http
 		http.res_html(template.render_toast("Invalid render order", .Error), res, .BadRequest)
 		return
 	}
-	for img in s.library_images {
-		if img.id == id {
-			http.res_html(template.render_inspector(img, order), res)
-			return
-		}
+	img, found, rc := store.read_image_by_id(s.data_store, id, req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
+	}
+	if found {
+		http.res_html(template.render_inspector(img, order), res)
+		return
 	}
 	// not found
 	res.headers["HX-Reswap"] = "beforeend"
@@ -179,8 +199,12 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		http.res_blob(data, res, .Webp)
 		return
 	}
-	for img in s.library_images {
-		if img.oid != oid {continue}
+	img, found, rc := store.read_image_by_oid(s.data_store, oid, req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
+	}
+	if found {
 		dir_buf: [4096]u8
 		dir :=
 			len(s.library_path) + len("/images") <= len(dir_buf) ? fmt.bprintf(dir_buf[:], "%s/images", s.library_path) : fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
@@ -197,7 +221,10 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 			}
 		}
 		entries, dir_err := os.read_directory_by_path(dir, -1, req.alloc)
-		if dir_err != nil {break}
+		if dir_err != nil {
+			http.res_error("", res, .NotFound)
+			return
+		}
 		defer os.file_info_slice_delete(entries, req.alloc)
 		// A signed 64-bit integer needs at most 20 bytes, plus the dot.
 		prefix_buf: [21]u8
@@ -277,7 +304,11 @@ handle_mipmap :: proc(
 			return
 		}
 
-		oid, found := lookup_thumbnail_oid_by_id(s, id)
+		oid, found, rc := lookup_thumbnail_oid_by_id(s, id, req.alloc)
+		if rc != sqlite.OK {
+			http.res_error("", res, status = .InternalServerError)
+			return
+		}
 		if !found {
 			thumbnails[slot] = thumbnail.new_not_found_thumb(req_resolution)
 			continue
@@ -509,26 +540,6 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		fmt.panicf("ingest: sync images directory: %v", err)
 	}
 
-	//HACK copy the slice and retain its old backing allocation.
-	images := make([]library.Image, len(s.library_images) + 1, state_alloc)
-	copy(images, s.library_images)
-
-	images[len(images) - 1] = library.Image {
-		id           = ev.id,
-		oid          = ev.oid,
-		path         = ev.path,
-		ext          = ev.ext,
-		tags         = ev.tags,
-		width        = ev.width,
-		height       = ev.height,
-		name         = ev.name,
-		mtime        = ev.mtime,
-		added_at     = ev.added_at,
-		content_type = ev.content_type,
-	}
-	s.library_images = images
-
-
 	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
 }
 
@@ -550,14 +561,10 @@ handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http
 		return
 	}
 
-	item: library.Image
-	found := false
-	for li in s.library_images {
-		if li.id == id {
-			item = li
-			found = true
-			break
-		}
+	item, found, rc := store.read_image_by_id(s.data_store, id, req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
 	}
 	if !found {
 		res.headers["HX-Reswap"] = "beforeend"
@@ -603,15 +610,12 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		return
 	}
 
-	// TODO: use db queries, don't use in-mem cache.
-	index := -1
-	for img, i in s.library_images {
-		if img.id == id {
-			index = i
-			break
-		}
+	img, found, rc := store.read_image_by_id(s.data_store, id, req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
 	}
-	if index < 0 {
+	if !found {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(template.render_toast("no match for ID", .Error), res, .NotFound)
 		return
@@ -628,7 +632,17 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		return
 	}
 
-	img := s.library_images[index]
+	// Log first, then apply to the store.
+	if sqlite.with_transaction(s.data_store, id, store.delete_item) != sqlite.OK {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("could not apply delete event", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
+
 	pth := fmt.aprintf("%s/images/%d.%s", s.library_path, id, img.ext, allocator = req.alloc)
 	remove_err := os.remove(pth)
 	if remove_err != nil {
@@ -637,8 +651,6 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		return
 	}
 
-	copy(s.library_images[index:], s.library_images[index + 1:])
-	s.library_images = s.library_images[:len(s.library_images) - 1]
 	http.res_text("", res, .OK)
 }
 

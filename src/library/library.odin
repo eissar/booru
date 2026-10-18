@@ -9,10 +9,9 @@ import elog "../event_log"
 import "../vendor/sqlite"
 
 State :: struct {
-	library_path:   string,
-	library_images: []Image,
-	data_store:     ^sqlite.DB,
-	event_log:      ^elog.EventLog,
+	library_path: string,
+	data_store:   ^sqlite.DB,
+	event_log:    ^elog.EventLog,
 }
 
 Image :: struct {

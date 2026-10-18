@@ -210,6 +210,8 @@ eagle_import :: proc(
 	if err := elog.events_append(log, events[:]); err != "" {
 		fmt.panicf("import: event log append failed: %s", err)
 	}
+	// TODO: apply events to the store after events_append (play_batch: append + store.apply in one tx);
+	// currently imported items only appear after the next replay.
 }
 
 @(test) // just for convenience, ignore

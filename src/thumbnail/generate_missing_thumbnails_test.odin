@@ -6,7 +6,9 @@ import "core:os"
 import "core:testing"
 
 import "../library"
+import "../store"
 import libwebp "../vendor/libwebp"
+import "../vendor/sqlite"
 
 @(test)
 generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
@@ -28,9 +30,11 @@ generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
 	testing.expect(t, os.write_entire_file(fmt.tprintf("%s/images/2.webp", root), data) == nil)
 	images := [?]library.Image{{id = 2, oid = oid}}
 	state := library.State {
-		library_path   = root,
-		library_images = images[:],
+		library_path = root,
 	}
+	if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&state)
+	testing.expect(t, store.insert_into_items(state.data_store, images[0]) == sqlite.OK)
 	n, failed := generate_missing_thumbnails(state)
 	testing.expect(t, n == 2 && failed == 0, "generate both resolutions")
 	edges := [?]int{64, 128}

@@ -3,6 +3,8 @@ package test
 import "../src/library"
 import "../src/replay"
 import "../src/server"
+import "../src/store"
+import "../src/vendor/sqlite"
 import "base:runtime"
 import "core:fmt"
 import "core:net"
@@ -12,12 +14,12 @@ import "core:thread"
 
 @(test)
 server_get_mipmap_with_image_ids :: proc(t: ^testing.T) {
-	images := make([dynamic]library.Image, context.temp_allocator)
-	replay.load_library("test/fixture/library", &images, context.temp_allocator)
 	lib := library.State {
-		library_path   = "test/fixture/library",
-		library_images = images[:],
+		library_path = "test/fixture/library",
 	}
+	if !testing.expect(t, store.Init(&lib, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&lib)
+	replay.initiate_replay(&lib)
 	data := struct {
 		sock: net.TCP_Socket,
 		lib:  library.State,

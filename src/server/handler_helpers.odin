@@ -1,17 +1,29 @@
 package server
 
+import "core:c"
 import "core:fmt"
+import "core:mem"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
 
 import "../library"
+import "../store"
+import "../vendor/sqlite"
 
-lookup_thumbnail_oid_by_id :: proc(s: library.State, id: int) -> (oid: string, ok: bool) {
-	for img in s.library_images {
-		if img.id == id {return img.oid, true}
-	}
-	return "", false
+lookup_thumbnail_oid_by_id :: proc(
+	s: library.State,
+	id: int,
+	alloc: mem.Allocator,
+) -> (
+	oid: string,
+	found: bool,
+	rc: c.int,
+) {
+	img: library.Image
+	img, found, rc = store.read_image_by_id(s.data_store, id, alloc)
+	if rc != sqlite.OK || !found {return "", false, rc}
+	return img.oid, true, sqlite.OK
 }
 
 

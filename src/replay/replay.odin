@@ -17,50 +17,6 @@ Error :: enum {
 	DATABASE_ERR,
 }
 
-// load library at path root into v
-load_library :: proc(root: string, images: ^[dynamic]library.Image, alloc: mem.Allocator) {
-	events_dir := fmt.tprintf("%s/events", root)
-	dir_fi, _ := os.stat(events_dir, alloc)
-	if dir_fi.type != .Directory {fmt.eprintln("library: cannot open events dir", events_dir)}
-	os.file_info_delete(dir_fi, alloc)
-
-	w := os.walker_create(events_dir)
-	defer os.walker_destroy(&w)
-
-	for entry in os.walker_walk(&w) {
-		if _, err := os.walker_error(&w); err != nil {
-			continue
-		}
-
-		if !strings.has_suffix(entry.name, ".ndjson") {
-			continue
-		}
-
-		data, err := os.read_entire_file(entry.fullpath, alloc)
-		defer delete(data, alloc)
-
-		if err != nil {
-			fmt.eprintln("library: cannot read", entry.fullpath)
-			continue
-		}
-		load_ndjson(images, string(data), alloc)
-	}
-}
-
-load_ndjson :: proc(images: ^[dynamic]library.Image, data: string, alloc: mem.Allocator) {
-	// Images outlive the file reader's input buffer; retain their borrowed text.
-	owned_data := strings.clone(data, alloc)
-	record: elog.Record
-	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
-	defer delete(record.fields)
-	remaining := owned_data
-	for line in strings.split_lines_iterator(&remaining) {
-		if strings.trim_space(line) == "" {continue}
-		item, op := parse_item(line, &record, alloc)
-		if op == "add" {append(images, item)}
-	}
-}
-
 replay :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> Error {
 	db := s.data_store
 	if !sqlite.run(db, "BEGIN") {return .DATABASE_ERR}

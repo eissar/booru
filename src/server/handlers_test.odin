@@ -10,7 +10,9 @@ import "core:time"
 
 import "../http"
 import "../library"
+import "../store"
 import "../thumbnail"
+import "../vendor/sqlite"
 
 // Capture the streaming encoder solely for body assertions in unit tests.
 materialize_mipmap_for_test :: proc(t: ^testing.T, res: ^http.Response) {
@@ -69,8 +71,12 @@ image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 	oid :: "4ef24abe584d4358473279073cc0a35150802774bb97f5fea35e24d661668ce6"
 	images := [?]library.Image{{id = 1, oid = oid, content_type = "image/png"}}
 	state := library.State {
-		library_path   = root,
-		library_images = images[:],
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&state)
+	for img in images {
+		if !testing.expect(t, store.insert_into_items(state.data_store, img) == sqlite.OK) {return}
 	}
 	res := http.Response {
 		headers = make(map[string]string),
@@ -97,8 +103,12 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 	defer delete(root)
 	defer os.remove_all(root)
 	s := library.State {
-		library_path   = root,
-		library_images = images[:],
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&s)
+	for img in images {
+		if !testing.expect(t, store.insert_into_items(s.data_store, img) == sqlite.OK) {return}
 	}
 	source, err := os.read_entire_file(
 		"test/fixture/library/thumbnails/" + oid + ".webp",

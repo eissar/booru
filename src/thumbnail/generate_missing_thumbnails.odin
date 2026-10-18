@@ -8,7 +8,9 @@ import "core:sys/linux"
 
 import "../library"
 import "../media"
+import "../store"
 import libwebp "../vendor/libwebp"
+import "../vendor/sqlite"
 
 generate_thumbnail :: proc {
 	generate_thumbnail_argb,
@@ -171,7 +173,13 @@ generate_missing_thumbnails :: proc(s: library.State) -> (generated, failed: int
 	missing := make(map[string]bit_set[LOD_RESOLUTION])
 	defer delete(missing)
 	find_missing_thumbnails(s, &missing)
-	for img in s.library_images {
+	// Intentionally naive: SELECT everything and loop over the rows.
+	images, rc := store.read_images(s.data_store, context.temp_allocator)
+	if rc != sqlite.OK {
+		fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
+		return
+	}
+	for img in images {
 		sizes, exists := missing[img.oid]
 		if !exists {continue}
 		n, f := generate_image_thumbnails(s, img, sizes)
@@ -246,7 +254,12 @@ find_missing_thumbnails :: proc(s: library.State, missing: ^map[string]bit_set[L
 	resolutions["64"] = .x64
 	resolutions["128"] = .x128
 
-	for img in s.library_images {
+	images, rc := store.read_images(s.data_store, context.temp_allocator)
+	if rc != sqlite.OK {
+		fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
+		return
+	}
+	for img in images {
 		missing^[img.oid] = {.x64, .x128}
 	}
 

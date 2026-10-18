@@ -2,7 +2,6 @@ package main
 
 import "core:fmt"
 import "core:log"
-import "core:mem"
 import "core:net"
 import "core:os"
 import "core:strings"
@@ -18,10 +17,6 @@ import "store"
 import "thumbnail"
 import "vendor/sqlite"
 
-// Loaded once at startup from the NDJSON event log; no DB for this prototype.
-// library_images: [dynamic]library.Image
-// library_path: string
-
 main :: proc() {
 	load_start := time.now()
 
@@ -36,37 +31,17 @@ main :: proc() {
 
 	cfg := cli.getFlags()
 
-	backing := make([]u8, 64 * mem.Megabyte)
-	defer delete(backing)
-
-	arena: mem.Arena
-	mem.arena_init(&arena, backing)
-	alloc := mem.arena_allocator(&arena)
-
-	images := make([dynamic]library.Image, alloc)
-	replay.load_library(cfg.library, &images, alloc)
-	library.seed_ids_from_library(images[:])
-	defer free_all(alloc)
+	if err := library.init_new_library(cfg.library); err != nil {
+		log.fatal("library: initialize directory structure:", err)
+		os.exit(1)
+	}
 
 	event_log := elog.EventLog {
 		root = cfg.library,
 	}
 	state := library.State {
-		library_images = images[:],
-		library_path   = cfg.library,
-		event_log      = &event_log,
-	}
-
-	log.infof(
-		"%d images loaded in %.2f ms: %s",
-		len(state.library_images),
-		time.duration_milliseconds(time.since(load_start)),
-		cfg.library,
-	)
-
-	if cfg.scanThumbnail {
-		generated, failed := thumbnail.generate_missing_thumbnails(state)
-		log.infof("thumbnails: %d generated, %d failed", generated, failed)
+		library_path = cfg.library,
+		event_log    = &event_log,
 	}
 
 	ep := net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port})
@@ -100,8 +75,24 @@ main :: proc() {
 	// replay events from the event log
 	replay.initiate_replay(&state)
 
-	// TODO : stop reading from s.library_images everywhere
-	// so we can free this without defer
+	images, read_rc := store.read_images(state.data_store, context.temp_allocator)
+	if read_rc != sqlite.OK {
+		log.fatal("datastore type=sqlite read items: failed w/ error code:", read_rc)
+		os.exit(1)
+	}
+	library.seed_ids_from_library(images)
+	log.infof(
+		"%d images loaded in %.2f ms: %s",
+		len(images),
+		time.duration_milliseconds(time.since(load_start)),
+		cfg.library,
+	)
+
+	if cfg.scanThumbnail {
+		generated, failed := thumbnail.generate_missing_thumbnails(state)
+		log.infof("thumbnails: %d generated, %d failed", generated, failed)
+	}
+
 	defer free_all(context.temp_allocator)
 
 	server.Serve(&state, sock) // this should take an allocator
