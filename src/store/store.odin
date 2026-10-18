@@ -49,6 +49,10 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 			PRIMARY KEY (item_id, tag)
 		) WITHOUT ROWID;
 		CREATE INDEX IF NOT EXISTS item_tags_by_tag ON item_tags(tag, item_id);
+		CREATE TABLE IF NOT EXISTS replay_cursors (
+			shard TEXT PRIMARY KEY,
+			byte_offset INTEGER NOT NULL CHECK (byte_offset >= 0)
+		) WITHOUT ROWID;
 		COMMIT;
 	`,
 		nil,
@@ -58,6 +62,7 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 	if rc != sqlite.OK {return rc}
 
 	state.data_store = db
+	if state.event_log != nil {state.event_log.db = db}
 	success = true
 	return sqlite.OK
 }
@@ -65,6 +70,9 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 Close :: proc(state: ^library.State) {
 	if state.data_store != nil {
 		if sqlite.close(state.data_store) == sqlite.OK {
+			if state.event_log != nil && state.event_log.db == state.data_store {
+				state.event_log.db = nil
+			}
 			state.data_store = nil
 		}
 	}
