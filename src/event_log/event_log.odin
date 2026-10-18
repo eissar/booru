@@ -5,8 +5,11 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:io"
 import "core:os"
+import "core:strings"
 import "core:sync"
 import "core:time"
+import "core:unicode/utf16"
+import "core:unicode/utf8"
 
 // TODO: (V1)
 // make this larger to support
@@ -49,7 +52,7 @@ Event :: struct {
 // byte offsets of the
 // eventlogs, for faster parsing
 // returns empty string on no err
-event_append :: proc(log: ^EventLog, e: ^Event) -> (err: string) {
+event_append :: proc(log: ^EventLog, e: Event) -> (err: string) {
 	shard := get_current_event_shard(context.temp_allocator)
 
 	path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
@@ -71,9 +74,14 @@ event_append :: proc(log: ^EventLog, e: ^Event) -> (err: string) {
 	data, marshal_err := json.marshal(e, opt, context.temp_allocator)
 	if marshal_err != nil {return "could not marshal event"}
 	defer delete(data, context.temp_allocator)
-	if len(data) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
-	written, write_err := os.write(ev_handle, data)
-	if write_err != nil || written != len(data) {return "could not write event payload"}
+	ascii: strings.Builder
+	strings.builder_init(&ascii, context.temp_allocator)
+	defer strings.builder_destroy(&ascii)
+	encode_ascii_json(data, &ascii)
+	payload := transmute([]u8)strings.to_string(ascii)
+	if len(payload) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
+	written, write_err := os.write(ev_handle, payload)
+	if write_err != nil || written != len(payload) {return "could not write event payload"}
 	if io.write_byte(os.to_writer(ev_handle), '\n') != nil {
 		return "could not write event newline"
 	}
@@ -121,9 +129,14 @@ events_append :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 		data, marshal_err := json.marshal(event, opt, context.allocator)
 		if marshal_err != nil {return "could not marshal event"}
 		defer delete(data, context.allocator)
-		if len(data) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
-		written, write_err := io.write(buffered_stream, data)
-		if write_err != nil || written != len(data) {return "could not write event payload"}
+		ascii: strings.Builder
+		strings.builder_init(&ascii, context.allocator)
+		defer strings.builder_destroy(&ascii)
+		encode_ascii_json(data, &ascii)
+		payload := transmute([]u8)strings.to_string(ascii)
+		if len(payload) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD")}
+		written, write_err := io.write(buffered_stream, payload)
+		if write_err != nil || written != len(payload) {return "could not write event payload"}
 		if io.write_byte(buffered_stream, '\n') != nil {
 			return "could not write event newline"
 		}
@@ -140,6 +153,35 @@ events_append :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 	defer os.close(dir)
 	if os.sync(dir) != nil {return "could not sync events directory"}
 	return ""
+}
+
+// Preserve JSON syntax and existing escapes; encode only raw non-ASCII runes.
+@(private = "file")
+encode_ascii_json :: proc(data: []u8, out: ^strings.Builder) {
+	hex := "0123456789abcdef"
+	text := string(data)
+	for offset := 0; offset < len(text); {
+		r, width := utf8.decode_rune_in_string(text[offset:])
+		if r == utf8.RUNE_ERROR && width == 1 {panic("invalid UTF-8 in marshaled event")}
+		offset += width
+		if r < 128 {
+			strings.write_byte(out, u8(r))
+			continue
+		}
+		units := [2]rune{r, 0}
+		count := 1
+		if r > 0xffff {
+			units[0], units[1] = utf16.encode_surrogate_pair(r)
+			count = 2
+		}
+		shifts := [4]uint{12, 8, 4, 0}
+		for unit in units[:count] {
+			strings.write_string(out, "\\u")
+			for shift in shifts {
+				strings.write_byte(out, hex[(u32(unit) >> shift) & 15])
+			}
+		}
+	}
 }
 
 get_current_event_shard :: proc(allocator := context.allocator) -> string {

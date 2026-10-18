@@ -481,7 +481,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	// TODO: Read the media dimensions; width and height should not remain zero.
 
 	// update the event log
-	append_err := elog.event_append(s.event_log, &ev)
+	append_err := elog.event_append(s.event_log, ev)
 	if append_err != "" {
 		// TODO: delete any uploaded files
 
