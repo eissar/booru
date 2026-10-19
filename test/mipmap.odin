@@ -41,8 +41,10 @@ server_get_mipmap_with_image_ids :: proc(t: ^testing.T) {
 		server.Serve(&data.lib, data.sock)
 	})
 	defer {
-		// Shutdown wakes the blocking accept so Serve can return before join.
+		// Close before joining to wake accept on Windows; avoid a deferred double-close.
 		_ = net.shutdown(sock, .Both)
+		net.close(sock)
+		sock = {}
 		thread.join(worker)
 		thread.destroy(worker)
 	}
