@@ -40,7 +40,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		http.res_error("", res, .InternalServerError)
 		return
 	}
-	filtered := filter_images(images, q.tags[:])
+	filtered := filter_gallery_images(images, q, s.library_path)
 	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
@@ -72,7 +72,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		http.res_error("", res, .InternalServerError)
 		return
 	}
-	filtered := filter_images(images, q.tags[:])
+	filtered := filter_gallery_images(images, q, s.library_path)
 	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)
@@ -105,7 +105,7 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 		http.res_error("", res, .InternalServerError)
 		return
 	}
-	filtered := filter_images(images, q.tags[:])
+	filtered := filter_gallery_images(images, q, s.library_path)
 	defer delete(filtered)
 	sort_gallery(filtered, q.sort)
 	page, has_more := page_slice(filtered, q.offset, q.limit)

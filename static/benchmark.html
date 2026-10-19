@@ -1,195 +1,238 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<title>Streaming /mipmap/64 → WebGL2 benchmark</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gallery scroll / blank checker</title>
 <style>
-body{font:15px system-ui;background:#181818;color:#eee;max-width:1100px;margin:30px auto;padding:0 20px}button,input{font:inherit;padding:6px}canvas{display:block;width:100%;margin:20px 0;background:#333}pre{white-space:pre-wrap}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}td,th{text-align:right;padding:8px;border-bottom:1px solid #444}td:first-child,th:first-child{text-align:left}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font:14px system-ui,sans-serif}
+iframe{border:0;width:100%;height:100%;display:block}#overlay{position:fixed;inset:0;pointer-events:none;z-index:10}
+#panel{position:fixed;top:10px;left:10px;width:min(440px,calc(100vw - 20px));padding:12px;border:1px solid #ffffff45;border-radius:10px;background:#101827b8;color:#fff;pointer-events:none;font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000}
+h1{font-size:16px;margin:0 0 8px}p{font-size:12px;line-height:1.4;margin:8px 0 0;color:#d5deec}dl{display:grid;grid-template-columns:1fr auto;gap:5px 12px;margin:10px 0}dt,dd{margin:0}dd{font-weight:650}button,input,label{pointer-events:auto}button,input{font:inherit;padding:4px 7px}input{width:155px}button{cursor:pointer}#boxes{position:absolute;inset:0}.blank{position:absolute;border:2px solid #ff4f69;background:#ff284c22}.offstrip{border-color:#ffbb36;background:#ffbb3622}#status{font-weight:600}
 </style>
-<h1>Streaming /mipmap/64 → WebGL2</h1>
-<p>On startup, this page requests up to 100 items from the library. Each run posts that same comma-separated list of image IDs to <code>/mipmap/64</code> and feeds its response stream directly to ImageDecoder. Complete frames are decoded, uploaded, and drawn while the download continues. Mipmap network time is included; the initial library request is not.</p>
-<p>Texture arrays are allocated in batches as frames arrive; the client does not wait for the final frame count. The preview has 100 fixed slots in a 10×10 grid backed by a persistent GPU thumbnail cache keyed by the requested image IDs.</p>
-<label>Measured runs <input id="runs" type="number" value="5" min="1" max="30"></label>
-<button id="start" disabled>Benchmark</button>
-<p>One warmup is excluded. Each run uses a fresh high-priority fetch with cache: no-store. WebGL initialization is outside the measured runs. Decode waits include waiting for incoming bytes. The preview redraws all loaded visible slots on requestAnimationFrame when thumbnails arrive, the view resizes, or a run requests a draw. It uses the default non-preserved drawing buffer and linearly filtered cached textures. The first upload of each thumbnail is retained for the preview; subsequent runs still decode and upload fresh textures to measure cold processing, then release those temporary textures. GPU mipmap generation is measured after all frames arrive. Upload and draw timings measure CPU submission, not presentation or GPU execution. GPU-complete includes a fence after final mipmaps and drawing; polling adds latency. No gl.finish() in the measured path.</p>
-<canvas id="view" width="1000" height="1000" aria-label="100 fixed thumbnail slots in a 10 by 10 grid"></canvas>
-<pre id="status">Serve this directory over localhost; ImageDecoder requires a supported browser and secure context.</pre>
-<table><thead><tr><th>Metric (ms)</th><th>Mean</th><th>Min</th><th>Max</th></tr></thead><tbody id="results"></tbody></table>
-<pre id="raw"></pre>
-<script type="module">
-const $=s=>document.querySelector(s), canvas=$('#view');
-let gl,program;
-const endpoint='/mipmap/64';
-let imageIds=[];
-async function loadItems(){
- $('#status').textContent='Loading up to 100 library items…';
- const response=await fetch('/fragment/items?limit=100&offset=0',{cache:'no-store'});
- if(!response.ok)throw Error(`Library fetch HTTP ${response.status}`);
- const document=new DOMParser().parseFromString(await response.text(),'text/html');
- imageIds=Array.from(document.querySelectorAll('[data-image-id]'),item=>item.dataset.imageId).slice(0,100);
- if(!imageIds.length)throw Error('Library has no items');
- if(imageIds.some(id=>!/^\d+$/.test(id)))throw Error('Library returned an invalid image ID');
- $('#status').textContent=`Ready: ${imageIds.length} library items loaded.`;
- $('#start').disabled=false;
-}
-const previewColumns=10,previewRows=10,previewSlots=previewColumns*previewRows;
-// Page-owned resources, independent of benchmark runs. Response frames follow
-// the order of the requested library image IDs.
-const thumbnailCache=new Map(),cachedTextures=new Set(),visibleThumbnails=[];
-let previewDrawPending;
-function thumbnailKey(frameIndex){return `${endpoint}#image=${imageIds[frameIndex]}`;}
-function drawPreview(){
- gl.useProgram(program);gl.clearColor(.15,.15,.15,1);gl.clear(gl.COLOR_BUFFER_BIT);
- const loc=gl.getUniformLocation(program,'layer');
- for(let i=0;i<Math.min(visibleThumbnails.length,previewSlots);i++){
-  const thumbnail=thumbnailCache.get(visibleThumbnails[i]);
-  if(!thumbnail)continue;
-  gl.bindTexture(gl.TEXTURE_2D_ARRAY,thumbnail.texture);
-  const x=i%previewColumns,y=Math.floor(i/previewColumns);
-  const left=Math.floor(x*canvas.width/previewColumns),right=Math.floor((x+1)*canvas.width/previewColumns);
-  const top=Math.floor(y*canvas.height/previewRows),bottom=Math.floor((y+1)*canvas.height/previewRows);
-  gl.viewport(left+2,canvas.height-bottom+2,right-left-4,bottom-top-4);
-  gl.uniform1i(loc,thumbnail.layer);gl.drawArrays(gl.TRIANGLES,0,3);
- }
- gl.flush();
-}
-function requestPreviewDraw(){
- if(!previewDrawPending){
-  previewDrawPending=new Promise((resolve,reject)=>{
-   requestAnimationFrame(()=>{
-    previewDrawPending=undefined;
-    try{drawPreview();resolve();}catch(e){reject(e);}
-   });
-  });
- }
- return previewDrawPending;
-}
-function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
-function init(){
- gl=canvas.getContext('webgl2');
- if(!gl)throw Error('WebGL2 unavailable');
- const vs=shader(gl.VERTEX_SHADER,`#version 300 es
- out vec2 uv;
- void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);uv=vec2(p.x,1.0-p.y);gl_Position=vec4(p*2.0-1.0,0,1);}`);
- const fs=shader(gl.FRAGMENT_SHADER,`#version 300 es
- precision highp float;
- uniform highp sampler2DArray tex;uniform int layer;in vec2 uv;out vec4 color;
- void main(){color=texture(tex,vec3(uv,float(layer)));}`);
- program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);
- if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
- gl.deleteShader(vs);gl.deleteShader(fs);gl.useProgram(program);gl.uniform1i(gl.getUniformLocation(program,'tex'),0);
- gl.bindVertexArray(gl.createVertexArray());
- // CSS resizing needs a repaint, not another download or texture upload.
- new ResizeObserver(()=>{
-  requestPreviewDraw().catch(e=>{$('#status').textContent=`Preview error: ${e.message}`;console.error(e);});
- }).observe(canvas);
-}
-async function fence(){
- const sync=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);if(!sync)throw Error('Cannot create GPU fence');gl.flush();
- try {await new Promise((resolve,reject)=>{const poll=()=>{
-  const s=gl.clientWaitSync(sync,0,0);
-  if(s===gl.WAIT_FAILED)return reject(Error('GPU fence failed'));
-  if(s===gl.TIMEOUT_EXPIRED)return setTimeout(poll,0);
-  resolve();};poll();});}finally{gl.deleteSync(sync);}
-}
-async function run(){
- let decoder;
- const textures=[],abort=new AbortController();
- const t0=performance.now(),m={allocateCPU:0,decodeWait:0,uploadCPU:0};
- let frameCount=0,bytes=0,width,height,streamError,drawError;
- const batchSize=Math.min(64,gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS));
- try{
-  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'ids='+encodeURIComponent(imageIds.join(',')),cache:'no-store',priority:'high',signal:abort.signal});
-  m.headers=performance.now()-t0;
-  if(!response.ok)throw Error(`Fetch HTTP ${response.status}`);
-  if(!response.body)throw Error('Response has no stream');
-  const data=response.body.pipeThrough(new TransformStream({
-   transform(chunk,controller){bytes+=chunk.byteLength;controller.enqueue(chunk);},
-   flush(){m.downloadComplete=performance.now()-t0;}
-  }));
-  decoder=new ImageDecoder({data,type:'image/webp',preferAnimation:true});
-  // Observe completion errors now, but do not wait for EOF before decoding.
-  const completed=decoder.completed.catch(e=>{streamError=e;});
-  await decoder.tracks.ready;
-  if(!decoder.tracks.selectedTrack)throw Error('Response has no image track');
-  m.decoderReady=performance.now()-t0;
-  for(let i=0;;i++){
-   if(streamError)throw streamError;
-   if(drawError)throw drawError;
-   if(decoder.complete&&i>=decoder.tracks.selectedTrack.frameCount)break;
-   const d0=performance.now();let image,cacheAdded=false;
-   try{({image}=await decoder.decode({frameIndex:i,completeFramesOnly:true}));}
-   catch(e){
-    // An outstanding next-frame request rejects at EOF when there is no next frame.
-    if(e instanceof RangeError&&decoder.complete&&i>=decoder.tracks.selectedTrack.frameCount)break;
-    throw e;
-   }
-   m.decodeWait+=performance.now()-d0;
-   try{
-    if(i===0){
-     m.firstDecoded=performance.now()-t0;width=image.displayWidth;height=image.displayHeight;
-     if(Math.max(width,height)>gl.getParameter(gl.MAX_TEXTURE_SIZE))throw Error('Texture too large');
-    }
-    if(image.displayWidth!==width||image.displayHeight!==height)throw Error('Unequal decoded canvas sizes');
-    if(i%batchSize===0){
-     const a0=performance.now(),texture=gl.createTexture();
-     if(!texture)throw Error('Cannot allocate texture');
-     textures.push(texture);gl.bindTexture(gl.TEXTURE_2D_ARRAY,texture);
-     gl.texStorage3D(gl.TEXTURE_2D_ARRAY,1+Math.floor(Math.log2(Math.max(width,height))),gl.RGBA8,width,height,batchSize);
-     gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-     gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-     gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-     gl.texParameteri(gl.TEXTURE_2D_ARRAY,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-     m.allocateCPU+=performance.now()-a0;
-    }
-    const u0=performance.now();gl.bindTexture(gl.TEXTURE_2D_ARRAY,textures[Math.floor(i/batchSize)]);
-    gl.texSubImage3D(gl.TEXTURE_2D_ARRAY,0,0,0,i%batchSize,width,height,1,gl.RGBA,gl.UNSIGNED_BYTE,image);
-    m.uploadCPU+=performance.now()-u0;frameCount++;
-    if(i===0)m.firstUploaded=performance.now()-t0;
-    const key=thumbnailKey(i);
-    if(!thumbnailCache.has(key)){
-     const texture=textures[Math.floor(i/batchSize)];
-     thumbnailCache.set(key,{texture,layer:i%batchSize,width,height});
-     cachedTextures.add(texture);cacheAdded=true;
-     if(i<previewSlots)visibleThumbnails[i]=key;
-    }
-   }finally{image.close();}
-   if(i===0){
-    await requestPreviewDraw();m.firstDrawSubmitted=performance.now()-t0;
-   }else if(i<previewSlots&&cacheAdded){
-    requestPreviewDraw().catch(e=>{drawError=e;});
-   }
+</head>
+<body>
+<iframe id="gallery" title="Live gallery"></iframe>
+<div id="overlay"><div id="boxes"></div><aside id="panel">
+<h1>Gallery scroll / blank checker</h1>
+<label>Gallery <input id="url" value="/gallery?limit=100&amp;thumbnails_only=1"></label> <button id="go">Load</button> <button id="reset">Reset</button>
+<dl>
+<dt>Current / peak sampled speed</dt><dd id="speed">—</dd>
+<dt>Peak 100ms travel</dt><dd id="travel">—</dd>
+<dt>Peak 100ms speed</dt><dd id="windowSpeed">—</dd>
+<dt>3-screen runway at peak speed</dt><dd id="runway">—</dd>
+<dt>Visible / suspected blank cards</dt><dd id="counts">—</dd>
+<dt>Worst suspected blank cards</dt><dd id="worst">0</dd>
+<dt>Scroll samples with suspected blanks</dt><dd id="samples">0 / 0</dd>
+<dt>Approx. blank area × time</dt><dd id="areaTime">0 viewport·ms</dd>
+<dt>Strip ahead / behind</dt><dd id="buffer">—</dd>
+</dl>
+<div id="status">Loading…</div>
+<p>Only image entries with an existing 64px thumbnail are requested; videos and missing thumbnails are excluded before pagination.</p>
+<p>Red: no ready original and no submitted preview covering the visible image. Amber: a resident preview does not cover it. Counters include only samples with scrolling after the initial batch is ready; idle and warmup samples are excluded. Checks run at up to 10Hz.</p>
+<p><strong>Diagnostic estimates, not pixel detection.</strong> Original “ready” means complete + naturalWidth; preview coverage means the last submitted draw’s clipped rectangle. Neither proves painted pixels. Partial gaps, wrong pixels, occlusion and sub-100ms blanks can be missed. No screenshots, decode calls or GPU readback.</p>
+<label><input id="highlight" type="checkbox" checked style="width:auto"> Highlight suspected blanks</label>
+</aside></div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const frame = $('gallery');
+  const number = n => Math.round(n).toLocaleString();
+  let win, port, lastY = 0, lastT = 0, path = 0, history = [];
+  let peak = 0, maxTravel = 0, worst = 0, checks = 0, badChecks = 0, areaTime = 0;
+  let lastCheck = 0, lastCheckPath = 0, armed = false, failed = false;
+  let startupStartedAt = performance.now();
+  function assert(condition, message) {
+    if (!condition) throw Error(`Benchmark invariant: ${message}`);
   }
-  await completed;if(streamError)throw streamError;
-  if(frameCount!==imageIds.length)throw Error(`Expected ${imageIds.length} frames, received ${frameCount}`);
-  await requestPreviewDraw();if(drawError)throw drawError;
-  const p0=performance.now();
-  for(const texture of textures){gl.bindTexture(gl.TEXTURE_2D_ARRAY,texture);gl.generateMipmap(gl.TEXTURE_2D_ARRAY);}
-  m.mipmapCPU=performance.now()-p0;
-  const error=gl.getError();if(error!==gl.NO_ERROR)throw Error(`WebGL error 0x${error.toString(16)}`);
-  m.submitted=performance.now()-t0;await fence();m.gpuComplete=performance.now()-t0;
-  return {ms:m,bytes,frames:frameCount,width,height};
- }finally{
-  abort.abort();decoder?.close();
-  // Textures adopted by the cache outlive this run, including a partial load.
-  for(const texture of textures)if(!cachedTextures.has(texture))gl.deleteTexture(texture);
- }
-}
-const labels={headers:'Response headers',decoderReady:'Decoder metadata ready',firstDecoded:'First frame decoded',firstUploaded:'First frame upload submitted',firstDrawSubmitted:'Preview redraw after first decode',downloadComplete:'Response stream complete',allocateCPU:'Summed texture allocation CPU',decodeWait:'Summed decode waits (including network)',uploadCPU:'Summed upload CPU',mipmapCPU:'Mipmap submission CPU',submitted:'All rendering submitted',gpuComplete:'GPU-complete elapsed (fence)'};
-$('#start').onclick=async()=>{
- $('#start').disabled=true;$('#results').replaceChildren();$('#raw').textContent='';
- try{
-  if(!globalThis.ImageDecoder||!await ImageDecoder.isTypeSupported('image/webp'))throw Error('WebP ImageDecoder unavailable. Try current Chromium on localhost.');
-  if(!program)init();
-  const n=Number($('#runs').value);if(!Number.isInteger(n)||n<1||n>30)throw Error('Runs must be 1–30');
-  $('#status').textContent='Warmup…';await run();const rows=[];
-  for(let i=0;i<n;i++){$('#status').textContent=`Run ${i+1}/${n}…`;rows.push(await run());}
-  for(const [key,label]of Object.entries(labels)){
-   const vals=rows.map(r=>r.ms[key]).filter(Number.isFinite);if(!vals.length)continue;
-   const tr=document.createElement('tr');for(const text of [label,(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2),Math.min(...vals).toFixed(2),Math.max(...vals).toFixed(2)]){const td=document.createElement('td');td.textContent=text;tr.append(td);}$('#results').append(tr);
+  function panic(error) {
+    failed = true;
+    $('status').textContent = `FAILED: ${error.message}`;
+    $('status').style.color = '#ff6b81';
+    throw error;
   }
-  $('#status').textContent=`Done: ${rows[0].frames} frames, ${rows[0].width}×${rows[0].height}, ${rows[0].bytes.toLocaleString()} streamed bytes. Preview shows ${Math.min(rows[0].frames,previewSlots)} frames in 100 fixed slots.`;
-  $('#raw').textContent=JSON.stringify({endpoint,imageIds,mode:'streaming; network included; persistent cached preview; fresh benchmark uploads',userAgent:navigator.userAgent,runs:rows},null,2);
- }catch(e){$('#status').textContent=`Error: ${e.message}`;console.error(e);}finally{$('#start').disabled=false;}
-};
 
-loadItems().catch(e=>{$('#status').textContent=`Error loading library: ${e.message}`;console.error(e);});
+  function reset() {
+    peak = maxTravel = worst = checks = badChecks = areaTime = path = 0;
+    lastT = performance.now(); lastCheck = lastCheckPath = 0; armed = false;
+    lastY = port?.scrollTop || 0;
+    history = [{ t: lastT, path: 0 }];
+    $('boxes').replaceChildren();
+    for (const id of ['speed','travel','windowSpeed','runway','counts','buffer']) $(id).textContent = '—';
+    $('worst').textContent = '0'; $('samples').textContent = '0 / 0';
+    $('areaTime').textContent = '0 viewport·ms';
+  }
+
+  function load() {
+    try {
+      assert(!failed, 'reload the benchmark after a failure');
+      const url = new URL($('url').value, location.href);
+      if (url.origin !== location.origin || url.pathname.startsWith('/static/benchmark'))
+        throw Error('Choose a same-origin gallery URL, not this benchmark.');
+      if (!url.searchParams.has('limit')) url.searchParams.set('limit', '100');
+      url.searchParams.set('thumbnails_only', '1');
+      // Match the server's query encoding: spaces are %20, never bare '+'.
+      url.search = [...url.searchParams].map(([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
+      $('url').value = url.pathname + url.search;
+      win = port = null; reset();
+      startupStartedAt = performance.now();
+      $('status').textContent = 'Loading images with 64px thumbnails…'; frame.src = url.href;
+    } catch (e) { panic(e); }
+  }
+
+  frame.addEventListener('load', () => {
+    try {
+      if (!frame.getAttribute('src') || frame.contentWindow.location.href === 'about:blank') return;
+      win = frame.contentWindow; port = null; reset();
+      assert(typeof win.booruPreviewSnapshot === 'function', 'gallery diagnostics hook missing');
+      assert(win.document.querySelector('.main-content'), 'gallery scrollport missing');
+      win.addEventListener('error', event => panic(Error(`Gallery error: ${event.message}`)));
+      win.addEventListener('unhandledrejection', event => panic(Error(`Gallery rejection: ${event.reason}`)));
+      // Keep pagination, preferences and filter swaps on the same eligible set.
+      win.document.addEventListener('htmx:configRequest', event => {
+        event.detail.parameters.thumbnails_only = '1';
+      });
+    }
+    catch (e) { panic(e); }
+  });
+
+  function check(now) {
+    assert(typeof win.booruPreviewSnapshot === 'function', 'gallery diagnostics hook missing');
+    const snapshot = win.booruPreviewSnapshot();
+    assert(snapshot && Array.isArray(snapshot.images), 'invalid snapshot');
+    assert(['starting', 'active', 'failed'].includes(snapshot.state), 'invalid renderer lifecycle state (refresh cached gallery.js)');
+    if (snapshot.state === 'failed') throw Error(`Gallery preview failed: ${snapshot.error || 'missing failure reason'}`);
+    if (snapshot.state === 'starting') {
+      assert(now - startupStartedAt < 10000, 'preview initialization timed out after 10 seconds');
+      $('status').textContent = 'Starting preview renderer… (not counted)';
+      lastCheck = now; lastCheckPath = path;
+      $('boxes').replaceChildren();
+      return;
+    }
+    assert(snapshot.active, 'renderer reports active but preview surface is disabled');
+    assert(snapshot.canvas?.isConnected, 'preview canvas disconnected');
+    assert(port.clientHeight > 0 && port.clientWidth > 0, 'empty scrollport');
+    const ready = new Map();
+    for (const item of snapshot.images) {
+      assert(item.image instanceof win.HTMLImageElement, 'invalid snapshot image');
+      assert(!ready.has(item.image), 'duplicate snapshot image');
+      assert(typeof item.ready === 'boolean', 'invalid readiness flag');
+      if (item.painted) for (const key of ['left','top','right','bottom'])
+        assert(Number.isFinite(item.painted[key]), 'non-finite draw rectangle');
+      ready.set(item.image, item);
+    }
+    const strip = snapshot.canvas.getBoundingClientRect();
+    assert(strip.width > 0 && strip.height > 0, 'empty preview strip');
+    const view = port.getBoundingClientRect();
+    const viewport = { left: Math.max(0, view.left + port.clientLeft), top: Math.max(0, view.top + port.clientTop),
+      right: Math.min(win.innerWidth, view.left + port.clientLeft + port.clientWidth),
+      bottom: Math.min(win.innerHeight, view.top + port.clientTop + port.clientHeight) };
+    let visible = 0, blanks = 0, blankArea = 0;
+    const images = [...win.document.querySelectorAll('#photo-grid .gallery-card-image')];
+    const batchReady = images.length > 0 && images.every(img => ready.get(img)?.ready);
+    // Arm only once draw records exist, not merely when texture upload finishes.
+    const scrolled = path > lastCheckPath;
+    const wasArmed = armed;
+    if (!armed && batchReady && snapshot.images.some(item => item.painted)) armed = true;
+    const eligible = wasArmed && scrolled;
+    lastCheckPath = path;
+    const boxes = [];
+    for (const img of images) {
+      const r = img.getBoundingClientRect();
+      const left = Math.max(r.left, viewport.left), top = Math.max(r.top, viewport.top);
+      const right = Math.min(r.right, viewport.right), bottom = Math.min(r.bottom, viewport.bottom);
+      if (right <= left || bottom <= top) continue;
+      visible++;
+      const originalReady = img.complete && img.naturalWidth > 0;
+      const item = ready.get(img);
+      const previewReady = !!item?.ready;
+      const drawn = previewReady && item.painted;
+      const drawLeft = drawn ? Math.max(strip.left, strip.left + drawn.left) : 0;
+      const drawTop = drawn ? Math.max(strip.top, strip.top + drawn.top) : 0;
+      const drawRight = drawn ? Math.min(strip.right, strip.left + drawn.right) : 0;
+      const drawBottom = drawn ? Math.min(strip.bottom, strip.top + drawn.bottom) : 0;
+      const overlapW = drawn ? Math.max(0, Math.min(right, drawRight) - Math.max(left, drawLeft)) : 0;
+      const overlapH = drawn ? Math.max(0, Math.min(bottom, drawBottom) - Math.max(top, drawTop)) : 0;
+      const area = (right-left)*(bottom-top);
+      const covered = overlapW*overlapH;
+      assert(Number.isFinite(covered) && covered <= area + 1, 'invalid covered area');
+      const missing = originalReady ? 0 : Math.max(0, area-covered);
+      if (missing > 1) {
+        blanks++; blankArea += missing;
+        if ($('highlight').checked) {
+          const box = document.createElement('div');
+          box.className = previewReady ? 'blank offstrip' : 'blank';
+          box.style.cssText = `left:${left}px;top:${top}px;width:${right-left}px;height:${bottom-top}px`;
+          boxes.push(box);
+        }
+      }
+    }
+    assert(Number.isInteger(blanks) && blanks >= 0 && blanks <= visible, 'invalid blank count');
+    if (eligible && visible > 0) {
+      checks++; if (blanks > 0) badChecks++;
+      worst = Math.max(worst, blanks);
+    }
+    assert(badChecks <= checks, 'blank samples exceed sampled windows');
+    // Rectangle estimate only. Drop gaps >250ms rather than inventing coverage
+    // while the tab was hidden or sampling stalled.
+    const dt = now-lastCheck;
+    if (eligible && lastCheck && dt > 0 && dt <= 250)
+      areaTime += blankArea / Math.max(1, port.clientWidth*port.clientHeight) * dt;
+    lastCheck = now;
+    $('boxes').replaceChildren(...boxes);
+    $('counts').textContent = `${visible} / ${blanks}`;
+    $('worst').textContent = number(worst);
+    $('samples').textContent = `${number(badChecks)} / ${number(checks)}`;
+    $('areaTime').textContent = `${number(areaTime)} viewport·ms`;
+    $('buffer').textContent = strip ? `${((strip.bottom-viewport.bottom)/port.clientHeight).toFixed(1)} / ${((viewport.top-strip.top)/port.clientHeight).toFixed(1)} screens` : 'Unavailable';
+    $('status').textContent = !armed ? 'Warmup: waiting for thumbnails and first draw (not counted)' :
+      (eligible ? (blanks ? 'Scroll sample: suspected blanks detected' : 'Scroll sample: no suspected blanks') : 'Armed; idle samples are not counted');
+  }
+
+  function tick() {
+    if (failed) return;
+    const now = performance.now();
+    try {
+      const currentPort = win?.document.querySelector('.main-content');
+      if (currentPort && currentPort !== port) {
+        port = currentPort;
+        lastY = port.scrollTop; lastT = now;
+        history = [{t:now,path}]; lastCheck = 0; lastCheckPath = path;
+      }
+      if (port && !document.hidden) {
+        const y = port.scrollTop;
+        const dt = now-lastT;
+        assert(Number.isFinite(y) && Number.isFinite(dt) && dt >= 0, 'invalid scroll sample');
+        const speed = dt > 0 && dt <= 250 ? Math.abs(y-lastY)/dt*1000 : 0;
+        if (dt > 250) { history = [{t:now,path}]; }
+        else { path += Math.abs(y-lastY); }
+        peak = Math.max(peak,speed);
+        history.push({t:now,path});
+        const cutoff = now-100;
+        while(history.length>2 && history[1].t<=cutoff) history.shift();
+        const a=history[0], b=history[1];
+        const start = a.t>=cutoff ? a.path : a.path+(b.path-a.path)*(cutoff-a.t)/(b.t-a.t);
+        maxTravel=Math.max(maxTravel,path-start);
+        lastY=y; lastT=now;
+        if(now-lastCheck>=100) {
+          $('speed').textContent=`${number(speed)} / ${number(peak)} px/s`;
+          $('travel').textContent=`${number(maxTravel)} px`;
+          $('windowSpeed').textContent=`${number(maxTravel*10)} px/s`;
+          $('runway').textContent=maxTravel ? `${number(3*port.clientHeight/(maxTravel*10)*1000)} ms` : '—';
+          check(now);
+        }
+      }
+    } catch(e) { panic(e); }
+    requestAnimationFrame(tick);
+  }
+  $('go').addEventListener('click',load);
+  $('url').addEventListener('keydown',e=>{if(e.key==='Enter')load()});
+  $('reset').addEventListener('click',reset);
+  const requested = new URLSearchParams(location.search).get('gallery');
+  if(requested) $('url').value=requested;
+  load(); requestAnimationFrame(tick);
+})();
 </script>
+</body>
+</html>

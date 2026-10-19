@@ -134,6 +134,59 @@
     animateUntil = 0;
   const endpoint = "/mipmap/64";
   const imageSizes = new ResizeObserver(schedule);
+  let previewSurface, stripTop = null, stripHeight = 0;
+  let diagnosticsEnabled = false;
+  const paintedPreviews = new Map();
+  let rendererState = "starting", rendererError = null;
+
+  function failPreview(error) {
+    rendererState = "failed";
+    rendererError = error instanceof Error ? error.message : String(error);
+    document.documentElement.classList.remove("gallery-previews-active");
+    console.error("Mipmap preview:", error);
+  }
+
+  // The strip lives in content coordinates. Scrolling moves its existing pixels
+  // with the cards; JS only rebases when less than one viewport of buffer remains.
+  function positionPreviewStrip() {
+    const grid = getGrid();
+    const scrollport = grid?.closest(".main-content");
+    if (!grid || !scrollport) return null;
+    if (!previewSurface || previewSurface.parentElement !== grid) {
+      previewSurface?.remove();
+      previewSurface = document.createElement("div");
+      previewSurface.className = "gallery-preview-surface";
+      previewSurface.appendChild(canvas);
+      grid.appendChild(previewSurface);
+      stripTop = null;
+    }
+    const gridRect = grid.getBoundingClientRect();
+    const portRect = scrollport.getBoundingClientRect();
+    const h = scrollport.clientHeight;
+    const visibleTop = portRect.top + scrollport.clientTop - gridRect.top;
+    if (stripTop === null || stripHeight !== h * 7 ||
+        visibleTop < stripTop + h || visibleTop + h > stripTop + stripHeight - h) {
+      stripTop = visibleTop - h * 3;
+      stripHeight = h * 7;
+    }
+    canvas.style.top = `${stripTop}px`;
+    canvas.style.height = `${stripHeight}px`;
+    return { left: gridRect.left, top: gridRect.top + stripTop,
+      width: grid.clientWidth, height: stripHeight };
+  }
+
+  function scrollPreview() {
+    if (!uniforms) return;
+    const grid = getGrid();
+    const scrollport = grid?.closest(".main-content");
+    if (!grid || !scrollport) return;
+    const visibleTop = scrollport.getBoundingClientRect().top +
+      scrollport.clientTop - grid.getBoundingClientRect().top;
+    const h = scrollport.clientHeight;
+    if (stripTop === null || stripHeight !== h * 7 ||
+        visibleTop < stripTop + h || visibleTop + h > stripTop + stripHeight - h)
+      schedule();
+  }
 
   function shader(type, source) {
     const shader = gl.createShader(type);
@@ -214,13 +267,22 @@
 
   function draw() {
     if (!uniforms) return;
+    if (diagnosticsEnabled) paintedPreviews.clear();
     const images = batch ? batch.images : [];
     const thumbnails = batch ? batch.thumbnails : [];
-    const w = innerWidth,
-      h = innerHeight,
-      dpr = devicePixelRatio || 1;
-    const width = Math.round(w * dpr),
-      height = Math.round(h * dpr);
+    const strip = positionPreviewStrip();
+    if (!strip || !strip.width || !strip.height) return;
+    const w = strip.width,
+      h = strip.height;
+    // Seven viewport heights can exceed the GPU's maximum backing-store size.
+    // Preserve the CSS coverage and lower resolution rather than truncate it.
+    const viewportLimit = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+    const backingLimit = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
+    const dpr = Math.min(devicePixelRatio || 1,
+      viewportLimit[0] / w, viewportLimit[1] / h,
+      backingLimit / w, backingLimit / h);
+    const width = Math.max(1, Math.floor(w * dpr)),
+      height = Math.max(1, Math.floor(h * dpr));
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
@@ -235,12 +297,14 @@
         thumb = thumbnails[i];
       if (!thumb || !img.isConnected) continue;
       const rect = img.getBoundingClientRect(); // Includes the actual CSS hover transform.
-      if (!rect.width || !rect.height || rect.bottom <= 0 || rect.top >= h)
+      if (!rect.width || !rect.height ||
+          rect.bottom <= strip.top || rect.top >= strip.top + h)
         continue;
-      let left = 0,
-        top = 0,
-        right = w,
-        bottom = h;
+      let left = strip.left,
+        top = strip.top,
+        right = strip.left + w,
+        bottom = strip.top + h;
+      let insideGrid = true;
       // Respect the real scrollport and all overflow-clipping ancestors, not
       // just the window. clientWidth excludes the scrollbars.
       for (let node = img.parentElement; node; node = node.parentElement) {
@@ -253,13 +317,16 @@
             box.left + node.clientLeft + node.clientWidth,
           );
         }
-        if (css.overflowY !== "visible") {
+        // Outer scrollport clipping is performed by the browser, not baked into
+        // the bitmap: offscreen previews must already exist before scrolling.
+        if (insideGrid && css.overflowY !== "visible") {
           top = Math.max(top, box.top + node.clientTop);
           bottom = Math.min(
             bottom,
             box.top + node.clientTop + node.clientHeight,
           );
         }
+        if (node.id === "photo-grid") insideGrid = false;
       }
       if (right <= left || bottom <= top) continue;
       const card = img.closest(".gallery-card"),
@@ -303,12 +370,14 @@
         Math.max(0, sw - 1) / thumb.width,
         Math.max(0, sh - 1) / thumb.height,
       );
-      gl.uniform4f(uniforms.rect, rect.left, rect.top, rect.width, rect.height);
-      gl.uniform4f(uniforms.clipRect, left, top, right, bottom);
+      gl.uniform4f(uniforms.rect,
+        rect.left - strip.left, rect.top - strip.top, rect.width, rect.height);
+      gl.uniform4f(uniforms.clipRect,
+        left - strip.left, top - strip.top, right - strip.left, bottom - strip.top);
       gl.uniform4f(
         uniforms.cardRect,
-        cardRect.left,
-        cardRect.top,
+        cardRect.left - strip.left,
+        cardRect.top - strip.top,
         cardRect.width,
         cardRect.height,
       );
@@ -316,7 +385,14 @@
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, thumb.texture);
       gl.uniform1i(uniforms.layer, thumb.layer);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (diagnosticsEnabled) paintedPreviews.set(img, {
+        left: Math.max(rect.left, left) - strip.left,
+        top: Math.max(rect.top, top) - strip.top,
+        right: Math.min(rect.right, right) - strip.left,
+        bottom: Math.min(rect.bottom, bottom) - strip.top,
+      });
     }
+    if (rendererState === "starting") rendererState = "active";
   }
 
   function schedule() {
@@ -366,8 +442,7 @@
       loadBatch(current, ids)
         .catch((error) => {
           if (current.abort.signal.aborted) return;
-          console.error("Mipmap preview:", error);
-          document.documentElement.classList.remove("gallery-previews-active");
+          failPreview(error);
         })
         .finally(() => current.decoder?.close());
     });
@@ -498,6 +573,28 @@
       throw Error(`Expected ${ids.length} frames, received ${count}`);
   }
 
+  // Read-only diagnostics for benchmark.html. No observers or work unless called.
+  globalThis.booruPreviewSnapshot = () => {
+    if (!diagnosticsEnabled) {
+      diagnosticsEnabled = true;
+      schedule(); // Populate draw records even when the gallery is idle.
+    }
+    if (gl?.isContextLost() && rendererState !== "failed") {
+      rendererState = "failed";
+      rendererError = "WebGL context lost";
+    }
+    return {
+      state: rendererState,
+      error: rendererError,
+      active: rendererState === "active" && !!uniforms && !gl.isContextLost() &&
+        document.documentElement.classList.contains("gallery-previews-active"),
+      canvas: canvas?.isConnected ? canvas : null,
+      images: batch ? batch.images.map((image, i) => ({
+        image, ready: !!batch.thumbnails[i], painted: paintedPreviews.get(image) || null,
+      })) : [],
+    };
+  };
+
   // Only gallery responses replace the batch. Inspector requests, scrolling,
   // and view changes must not start another download.
   document.addEventListener("htmx:afterSwap", (event) => {
@@ -508,7 +605,7 @@
       requestBatch();
   });
 
-  document.addEventListener("scroll", schedule, true);
+  document.addEventListener("scroll", scrollPreview, true);
   window.addEventListener("resize", schedule);
   for (const event of ["pointerover", "pointerout", "transitionrun"]) {
     document.addEventListener(event, transitionDraw);
@@ -516,14 +613,19 @@
 
   document.addEventListener("DOMContentLoaded", async () => {
     canvas = document.getElementById("thumbnail-background");
-    if (!canvas || !globalThis.ImageDecoder) return;
     try {
-      if (!(await ImageDecoder.isTypeSupported("image/webp"))) return;
+      if (!canvas) throw Error("Missing #thumbnail-background canvas");
+      if (!globalThis.isSecureContext)
+        throw Error("ImageDecoder requires HTTPS or localhost; this page is not a secure context");
+      if (!globalThis.ImageDecoder)
+        throw Error("ImageDecoder is unavailable in this browser; use a supported Chromium browser");
+      if (!(await ImageDecoder.isTypeSupported("image/webp")))
+        throw Error("This browser's ImageDecoder does not support image/webp");
       uniforms = init();
       document.documentElement.classList.add("gallery-previews-active");
       requestBatch();
     } catch (error) {
-      console.error("Mipmap preview:", error);
+      failPreview(error);
     }
   });
 
