@@ -99,10 +99,11 @@ stream_webp_socket_batches :: proc(t: ^testing.T) {
 		})
 		conn, connect_err := net.dial_tcp(endpoint)
 		if !testing.expect(t, connect_err == nil) {
+			// Close before joining to wake accept on Windows.
 			_ = net.shutdown(listener, .Both)
+			net.close(listener)
 			thread.join(worker)
 			thread.destroy(worker)
-			net.close(listener)
 			return
 		}
 		output := make([dynamic]u8)
@@ -143,7 +144,13 @@ stream_webp_socket_batches :: proc(t: ^testing.T) {
 				testing.expect(
 					t,
 					exec_err == nil && status.exit_code == 0,
-					fmt.tprintf("%s%s", stdout, stderr),
+					fmt.tprintf(
+						"webpinfo: process error=%v, exit=%d\n%s%s",
+						exec_err,
+						status.exit_code,
+						stdout,
+						stderr,
+					),
 				)
 				delete(stdout)
 				delete(stderr)
