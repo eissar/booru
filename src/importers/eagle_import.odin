@@ -214,36 +214,32 @@ eagle_import :: proc(
 	// currently imported items only appear after the next replay.
 }
 
-@(test) // just for convenience, ignore
+@(test)
 eagle_import_test :: proc(t: ^testing.T) {
-	root, join_err := os.join_path({"/home/eissar/Memes.library", "images"}, context.allocator)
-	defer delete(root, context.allocator)
-
-	if join_err != nil {
-		fmt.eprintfln("error: building library root: %v", join_err)
-		return
-	}
-
-	ctx := Eagle_Import_Ctx{}
+	// synthetic fixture; paths are relative to the repo root (where tests run)
+	root := "test/fixture/eagle/fixture.library/images"
 
 	fd, err := os.open(root, {.Read}, os.Permissions_Default)
-	if err != nil {
-		fmt.panicf("error opening lib dir %v ; err=%v", root, err)
-	}
+	if !testing.expectf(t, err == nil, "open fixture %v: %v", root, err) {return}
 	defer os.close(fd)
 
-	// never write into the source library; import into a scratch library
-	dest_root := "/tmp/booru_eagle_import_test"
-	if init_err := library.init_new_library(dest_root); init_err != nil {
-		fmt.panicf("error creating dest library %v ; err=%v", dest_root, init_err)
-	}
+	// import into a fresh scratch library so reruns don't collide
+	dest_root, temp_err := os.make_directory_temp("", "booru-eagle-import-*", context.allocator)
+	if !testing.expect(t, temp_err == nil) {return}
+	defer delete(dest_root)
+	defer os.remove_all(dest_root)
+	init_err := library.init_new_library(dest_root)
+	if !testing.expectf(t, init_err == nil, "init library: %v", init_err) {return}
 
+	ctx := Eagle_Import_Ctx{}
 	e := elog.EventLog {
 		root = dest_root,
 	}
 	eagle_import(root, dest_root, &ctx, linux.Fd(os.fd(fd)), &e)
 
-	fmt.println(ctx)
+	testing.expect_value(t, ctx.success, 3)
+	testing.expect_value(t, ctx.missing, 1)
+	testing.expect_value(t, ctx.read_errors, 0)
 }
 
 copy_and_hash :: proc(dst_path: string, src_path: string) -> (sha: string, err: os.Error) {

@@ -116,10 +116,8 @@ test_replay_flat_parse :: proc(t: ^testing.T) {
 
 // Experimental end-to-end comparison: setup and result verification are not timed.
 benchmark_replay :: proc(t: ^testing.T, flat: bool) {
-	data, read_err := os.read_entire_file(
-		"/tmp/booru_eagle_import_test/events/2026-10.ndjson",
-		context.allocator,
-	)
+	if !testing.expect(t, ensure_events_file(), "generate replay benchmark events") {return}
+	data, read_err := os.read_entire_file(EVENTS_PATH, context.allocator)
 	if !testing.expect(t, read_err == nil, "read replay benchmark fixture") {return}
 	defer delete(data)
 	text := string(data)

@@ -5,16 +5,23 @@ Add event types: implement remaining operations.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
 lfs-booru parity achieved
 
- Not quite: startup still builds state.library_images through an add-only loader. SQLite replay applies patches/deletes, but the server serves the unchanged image slice. Deleted items remain visible; patched metadata stays stale.
+ Not quite: `library_images` is gone and handlers read from the SQLite store, but `handle_ingest` and the Eagle importer don't apply their events to the store, so new items only appear after a restart.
 
 # Store Write Path TODO
 
 - [ ] Add `store.apply(tx, event)` as the only public store write proc; make `insert_*`, `patch_item`, `delete_item` in `src/store/store.odin` `@(private = "package")`. Move the op `switch` out of `replay.replay` (`src/replay/replay.odin`) so replay just loops `apply`. Unknown ops should error, not `continue`.
-- [ ] Runtime handlers apply events to SQLite: after `elog.event_append` succeeds in upload/delete (`src/server/handlers.odin`), open a tx and call `store.apply`. Order: log first, then apply (a failed apply is recovered by replay). Currently the gallery reads from the store but uploads/deletes only mutate `s.library_images`, so changes don't show until restart. Drop the `library_images` mutation once done.
+- [ ] Runtime handlers apply events to SQLite: after `elog.event_append` succeeds in upload/delete (`src/server/handlers.odin`), open a tx and call `store.apply`. Order: log first, then apply (a failed apply is recovered by replay). `handle_delete` already does this (log, then `sqlite.with_transaction(db, id, store.delete_item)`); `handle_ingest` and Eagle import don't, so uploads/imports don't show until restart. Route delete through `apply` too.
 - [ ] `apply` advances the per-shard replay cursor in the same SQLite tx as the state change, so store and cursor can't drift (lfs-booru: `applyEvent(event, nextCursor)` in `src/index_store.ts`).
 - [ ] Serialize runtime applies (and `add` id allocation) if handlers run concurrently (lfs-booru: `this.mu` + `nextIdMutex`).
 - [ ] Keep a batch path: replay/import open one tx and `apply` every line (lfs-booru: `applyEventsFromFile`).
+- [ ] Rebuild path: defer secondary indexes (`items_added_at`, `item_tags_by_tag`) and the FK check during full replay. Create the indexes after the bulk insert, then run `PRAGMA foreign_key_check`. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
 - [ ] Optional: CI/pre-commit check that nothing outside `store` writes to the DB directly.
+- [ ] Investigate `mipmap_rejects_malformed_ids` (`src/server/mipmap_invalid_ids_test.odin`).
+- [ ] Add tests for `handle_delete` (store row removed, 404/500 paths) and `handle_ingest`.
+- [ ] `handle_delete`: a failed `os.remove` is now logged to stderr and still returns 200 (see the TODO in the handler); decide how failed removals of remote/proxied originals get retried or reconciled.
+- [ ] Remove `core:log` (still used in `src/main.odin` and `src/server/server.odin`); use `fmt.eprint*` instead.
+- [ ] `main.odin` seeds the id counter from `store.read_images` after replay; replace with a `SELECT MAX(id)` query.
+- [ ] `generate_missing_thumbnails` and `find_missing_thumbnails` each run `store.read_images` (naive double read); `lookup_thumbnail_oid_by_id` runs two queries per id in `handle_mipmap`. Revisit if startup or mipmap throughput regresses; add a `handle_mipmap` case to `bench/handlers`.
 
 - [ ] In `generate_image_thumbnails`, try `images/<id>.<ext>` directly using `img.ext`.
   Fall back to scanning for the `<id>.` prefix only when the extension is missing or the direct read fails.
@@ -37,7 +44,6 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 - [ ] Check dimensions before decoding and skip oversized thumbnail inputs with a documented pixel-count limit and clear log.
 
-- [ ] Add AVIF decoding with libavif + dav1d: minimal Odin bindings, decode-only build with other codec backends/tools/tests disabled, and dimension/pixel-count limits before allocation. Feed decoded RGBA into the WebP thumbnail pipeline.
 
 # Thumbnail Preview TODO
 
@@ -66,7 +72,6 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 # Importer TODO
 
 - [ ] Add `import_begin` and `import_end` events around each full-library import, where `import_begin` records the run ID, source path, and expected item count and `import_end` records the added, skipped, and failed counts, and tag every `add` from that run with the run ID. At load time, treat an `import_begin` with no matching `import_end` as an interrupted import, log how many of its `add` events exist against the expected count, and let the user resume by re-running the import. Take an exclusive non-blocking `flock` on `<library>/.import.lock` for the whole import so two runs can't append to the log at once, and keep the file handle open until the import finishes so the OS releases the lock on exit or crash.
-- [ ] Make `eagle_import_test` idempotent: reset the scratch library at `/tmp/booru_eagle_import_test` before each run (it currently panics with `Exist` on re-run). Deferred to the importer refactor.
 
 # JXL Support
 

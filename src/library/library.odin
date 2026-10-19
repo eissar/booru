@@ -35,12 +35,13 @@ Image :: struct {
 init_new_library :: proc(root: string) -> os.Error {
 	subdirs := [?]string{"events", "images", "thumbnails", "thumbnails/64", "thumbnails/128"}
 
-	if err := os.mkdir_all(root, os.Permissions_Default_Directory); err != nil {
+	if err := os.mkdir_all(root, os.Permissions_Default_Directory); err != nil && err != .Exist {
 		return err
 	}
 	for sub in subdirs {
 		path := fmt.tprintf("%s/%s", root, sub)
-		if err := os.mkdir_all(path, os.Permissions_Default_Directory); err != nil {
+		if err := os.mkdir_all(path, os.Permissions_Default_Directory);
+		   err != nil && err != .Exist {
 			return err
 		}
 	}

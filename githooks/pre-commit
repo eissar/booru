@@ -10,10 +10,10 @@ if [ -z "$staged" ]; then
     exit 0
 fi
 
-odinfmt=${ODINFMT:-$HOME/.local/share/nvim/mason/bin/odinfmt}
+odinfmt=${ODINFMT:-}
 if [ ! -x "$odinfmt" ]; then
     echo "pre-commit: odinfmt not found at $odinfmt" >&2
-    echo "pre-commit: set ODINFMT or install OLS" >&2
+    echo "pre-commit: set ODINFMT to the odinfmt binary" >&2
     exit 1
 fi
 

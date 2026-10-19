@@ -129,7 +129,7 @@ tasks:
   fmt:
     desc: 'Format Odin sources in place (pass a path with --, e.g. task fmt -- src/http)'
     cmds:
-      - '"$HOME/.local/share/nvim/mason/bin/odinfmt" -path:{{.CLI_ARGS | default "src"}} -w'
+      - '"$ODINFMT" -path:{{.CLI_ARGS | default "src"}} -w'
 
   clean:
     desc: Remove build outputs
