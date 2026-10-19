@@ -81,7 +81,7 @@ EagleItem_Event :: struct {
 eagle_import :: proc(
 	src_images_dir: string,
 	s: ^library.State,
-	rootFd: linux.Fd,
+	root_dir: ^os.File,
 ) -> (
 	res: Import_Result,
 ) {
@@ -105,7 +105,7 @@ eagle_import :: proc(
 
 		when ODIN_OS == .Linux {
 			buf: [1024 * 4]u8 = ---
-			n, err := linux.getdents(rootFd, buf[:])
+			n, err := linux.getdents(linux.Fd(os.fd(root_dir)), buf[:])
 			if err != .NONE {
 				res.read_errors += 1
 				fmt.eprintfln("error: reading %s: %v", src_images_dir, err, flush = true)
@@ -123,7 +123,7 @@ eagle_import :: proc(
 			}
 		} else when ODIN_OS == .Windows {
 			nt_buf: [512]u64 = ---
-			n, ok := dirlist.read_batch(win.HANDLE(uintptr(rootFd)), nt_buf[:], &dir_names, true)
+			n, ok := dirlist.read_batch(win.HANDLE(os.fd(root_dir)), nt_buf[:], &dir_names, true)
 			if !ok {
 				res.read_errors += 1
 				fmt.eprintfln("error: reading %s", src_images_dir, flush = true)
