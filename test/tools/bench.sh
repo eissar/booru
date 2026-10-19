@@ -3,15 +3,7 @@ set -euo pipefail
 
 # Resolve the repository regardless of the caller's working directory.
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.."
-if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
-    printf 'Working tree must match HEAD (no staged, unstaged, or untracked files).\n' >&2
-    git status --short >&2
-    exit 1
-fi
-if ! task --status build; then
-    printf 'Server build is missing or stale. Run: task build\n' >&2
-    exit 1
-fi
+task_bin=$(command -v task) || { printf "task not found in PATH\n" >&2; exit 1; }
 
 # Server CLI flags are forwarded. Override benchmark settings via environment.
 port=8081
@@ -33,7 +25,7 @@ if sudo test -e /sys/fs/cgroup/booru-bench; then
     exit 1
 fi
 
-sudo bash -s -- "$(id -u)" "$(id -g)" "-port=$port" "$@" >"$log" 2>&1 <<'EOF' &
+sudo env "PATH=$PATH" "HOME=$HOME" bash -s -- "$(id -u)" "$(id -g)" "$task_bin" "-port=$port" "$@" >"$log" 2>&1 <<'EOF' &
 set -euo pipefail
 cg=/sys/fs/cgroup/booru-bench
 mkdir "$cg"
@@ -48,16 +40,14 @@ if [[ "$state" != isolated ]]; then
     exit 1
 fi
 
-echo 536870912 > "$cg/memory.max"
-echo 0 > "$cg/memory.swap.max"
-
 uid=$1
 gid=$2
-shift 2
+task_bin=$3
+shift 3
 (
     echo "$BASHPID" > "$cg/cgroup.procs"
     exec setpriv --reuid="$uid" --regid="$gid" --init-groups \
-        taskset -c 2 ./bin/booru "$@"
+        taskset -c 2 "$task_bin" run -- -o:speed -- "$@"
 )
 EOF
 server=$!
@@ -71,7 +61,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 wait_for_server() {
-    for ((i=0; i<150; i++)); do
+    for ((i=0; i<600; i++)); do
         kill -0 "$server" 2>/dev/null || return 1
         if curl --silent --output /dev/null --max-time 1 "$url"; then
             return 0

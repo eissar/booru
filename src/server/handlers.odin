@@ -290,6 +290,16 @@ handle_mipmap :: proc(
 	}
 	requested_count := strings.count(img_ids_raw, ",") + 1
 
+	// Reject malformed IDs before touching the store.
+	validate := img_ids_raw
+	for raw_str_id in strings.split_iterator(&validate, ",") {
+		if raw_str_id == "" {continue}
+		if _, ok := strconv.parse_int(raw_str_id); !ok {
+			http.res_error("", res, status = .BadRequest)
+			return
+		}
+	}
+
 	thumbnails := make([dynamic]thumbnail.Thumb, requested_count, req.alloc)
 	defer delete(thumbnails)
 
@@ -298,11 +308,7 @@ handle_mipmap :: proc(
 		if raw_str_id == "" {continue}
 		slot := idx
 		idx += 1
-		id, ok := strconv.parse_int(raw_str_id)
-		if !ok {
-			http.res_error("", res, status = .BadRequest)
-			return
-		}
+		id, _ := strconv.parse_int(raw_str_id)
 
 		oid, found, rc := lookup_thumbnail_oid_by_id(s, id, req.alloc)
 		if rc != sqlite.OK {

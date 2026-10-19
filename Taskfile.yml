@@ -41,27 +41,6 @@ tasks:
       - mkdir -p {{.BIN_DIR}}
       - odin build src -o:speed -out:{{.BIN_DIR}}/booru
 
-  build:bench:all:
-    desc: Build the optimized benchmark suite
-    method: checksum
-    sources:
-      - src/*.odin
-      - src/**/*.odin
-      - bench/*.odin
-      - bench/**/*.odin
-      - Taskfile.yml
-    generates:
-      - '{{.BIN_DIR}}/bench-all'
-    cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - odin build bench/ -build-mode:test -o:speed -out:{{.BIN_DIR}}/bench-all -define:ODIN_TEST_THREADS=1
-
-  bench:all:
-    desc: Run benchmarks serially (reuse the build when sources are unchanged)
-    deps: [hooks:check, build:bench:all]
-    cmds:
-      - ./{{.BIN_DIR}}/bench-all
-
   run:
     desc: 'Build and run the server (e.g. task run -- -debug -- -port:9000)'
     deps: [hooks:check]

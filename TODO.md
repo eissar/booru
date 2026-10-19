@@ -16,7 +16,6 @@ lfs-booru parity achieved
 - [ ] Keep a batch path: replay/import open one tx and `apply` every line (lfs-booru: `applyEventsFromFile`).
 - [ ] Rebuild path: defer secondary indexes (`items_added_at`, `item_tags_by_tag`) and the FK check during full replay. Create the indexes after the bulk insert, then run `PRAGMA foreign_key_check`. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
 - [ ] Optional: CI/pre-commit check that nothing outside `store` writes to the DB directly.
-- [ ] Investigate `mipmap_rejects_malformed_ids` (`src/server/mipmap_invalid_ids_test.odin`).
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths) and `handle_ingest`.
 - [ ] `handle_delete`: a failed `os.remove` is now logged to stderr and still returns 200 (see the TODO in the handler); decide how failed removals of remote/proxied originals get retried or reconciled.
 - [ ] Remove `core:log` (still used in `src/main.odin` and `src/server/server.odin`); use `fmt.eprint*` instead.
