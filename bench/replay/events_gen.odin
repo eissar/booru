@@ -6,9 +6,8 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:sync"
-import "core:time"
 
-EVENTS_PATH :: ".test-data/events-100k.ndjson"
+EVENTS_PATH :: ".test-data/events-epoch-100k.ndjson"
 EVENTS_COUNT :: 100_000
 
 @(private = "file")
@@ -29,24 +28,7 @@ rand_below :: proc(state: ^u64, n: int) -> int {
 	return int(splitmix64(state) % u64(n))
 }
 
-@(private = "file")
-write_iso :: proc(b: ^strings.Builder, ms: i64) {
-	dt, _ := time.time_to_datetime(time.Time{_nsec = ms * 1_000_000})
-	fmt.sbprintf(
-		b,
-		"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
-		dt.year,
-		dt.month,
-		dt.day,
-		dt.hour,
-		dt.minute,
-		dt.second,
-		ms % 1000,
-	)
-}
-
 // Generates EVENTS_COUNT `add` events once; reuses the file afterwards.
-// Delete .test-data/events-100k.ndjson to regenerate.
 ensure_events_file :: proc() -> bool {
 	// tests run in parallel; only one may write the file
 	sync.guard(&events_mu)
@@ -156,20 +138,15 @@ ensure_events_file :: proc() -> bool {
 		sha2.update(&sha_ctx, transmute([]u8)fmt.tprintf("oid-%d", id))
 		sha2.final(&sha_ctx, digest[:])
 		oid_hex := hex.encode(digest[:], context.temp_allocator)
-		fmt.sbprintf(&b, `{{"added_at":"`)
-		write_iso(&b, added)
 		fmt.sbprintf(
 			&b,
-			`","content_type":"%s","ext":"%s","height":%d,"id":%d,"mtime":"`,
+			`{{"added_at":%d,"content_type":"%s","ext":"%s","height":%d,"id":%d,"mtime":%d,"name":"%s %s %s #%d","oid":"%s","op":"add","path":"","tags":[`,
+			added,
 			f[1],
 			f[0],
 			64 + rand_below(&rng, 4032),
 			id,
-		)
-		write_iso(&b, mtime)
-		fmt.sbprintf(
-			&b,
-			`","name":"%s %s %s #%d","oid":"%s","op":"add","path":"","tags":[`,
+			mtime,
 			adjectives[rand_below(&rng, len(adjectives))],
 			nouns[rand_below(&rng, len(nouns))],
 			extras[rand_below(&rng, len(extras))],

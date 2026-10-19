@@ -101,9 +101,15 @@ parse_item :: proc(
 		case "content_type":
 			item.content_type = replay_flat_string(token, alloc)
 		case "mtime":
-			item.mtime = replay_flat_string(token, alloc)
+			assert(token.kind == .Integer)
+			value, ok := strconv.parse_i64(token.text)
+			assert(ok)
+			item.mtime = value
 		case "added_at":
-			item.added_at = replay_flat_string(token, alloc)
+			assert(token.kind == .Integer)
+			value, ok := strconv.parse_i64(token.text)
+			assert(ok)
+			item.added_at = value
 		}
 	}
 

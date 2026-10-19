@@ -49,8 +49,8 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 			content_type TEXT NOT NULL,
 			width INTEGER NOT NULL,
 			height INTEGER NOT NULL,
-			mtime TEXT NOT NULL,
-			added_at TEXT NOT NULL
+			mtime INTEGER NOT NULL,
+			added_at INTEGER NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS items_added_at ON items(added_at, id);
 		CREATE TABLE IF NOT EXISTS item_tags (
@@ -127,8 +127,8 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 			ext = COALESCE(NULLIF(?, ''), ext),
 			name = COALESCE(NULLIF(?, ''), name),
 			content_type = COALESCE(NULLIF(?, ''), content_type),
-			mtime = COALESCE(NULLIF(?, ''), mtime),
-			added_at = COALESCE(NULLIF(?, ''), added_at),
+			mtime = COALESCE(NULLIF(?, 0), mtime),
+			added_at = COALESCE(NULLIF(?, 0), added_at),
 			width = COALESCE(NULLIF(?, 0), width),
 			height = COALESCE(NULLIF(?, 0), height)
 		WHERE id = ?`,
@@ -141,18 +141,14 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 	}
 	if rc != sqlite.OK {return rc}
 
-	values := [7]string {
-		item.oid,
-		item.path,
-		item.ext,
-		item.name,
-		item.content_type,
-		item.mtime,
-		item.added_at,
-	}
+	values := [5]string{item.oid, item.path, item.ext, item.name, item.content_type}
 	for value, i in values {
 		if !sqlite.bind_string(stmt, i + 1, value) {return 1} 	// SQLITE_ERROR
 	}
+	rc = sqlite.bind_int64(stmt, 6, item.mtime)
+	if rc != sqlite.OK {return rc}
+	rc = sqlite.bind_int64(stmt, 7, item.added_at)
+	if rc != sqlite.OK {return rc}
 	rc = sqlite.bind_int64(stmt, 8, i64(item.width))
 	if rc != sqlite.OK {return rc}
 	rc = sqlite.bind_int64(stmt, 9, i64(item.height))
@@ -218,23 +214,21 @@ insert_item_tx :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 	}
 	if rc != sqlite.OK {return rc}
 
-	integer_values := [3]i64{i64(item.id), i64(item.width), i64(item.height)}
-	integer_indices := [3]c.int{1, 7, 8}
+	integer_values := [5]i64 {
+		i64(item.id),
+		i64(item.width),
+		i64(item.height),
+		item.mtime,
+		item.added_at,
+	}
+	integer_indices := [5]c.int{1, 7, 8, 9, 10}
 	for value, i in integer_values {
 		rc = sqlite.bind_int64(stmt, integer_indices[i], value)
 		if rc != sqlite.OK {return rc}
 	}
 
-	text_values := [7]string {
-		item.oid,
-		item.path,
-		item.ext,
-		item.name,
-		item.content_type,
-		item.mtime,
-		item.added_at,
-	}
-	text_indices := [7]c.int{2, 3, 4, 5, 6, 9, 10}
+	text_values := [5]string{item.oid, item.path, item.ext, item.name, item.content_type}
+	text_indices := [5]c.int{2, 3, 4, 5, 6}
 	for value, i in text_values {
 		if len(value) > 0x7fff_ffff {return 18} 	// SQLITE_TOOBIG
 		p := cstring(raw_data(value))

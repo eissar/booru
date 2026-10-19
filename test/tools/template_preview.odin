@@ -71,8 +71,8 @@ Event :: struct {
 	width:        int,
 	height:       int,
 	name:         string,
-	mtime:        string,
-	added_at:     string,
+	mtime:        i64,
+	added_at:     i64,
 	content_type: string,
 }
 
@@ -693,6 +693,10 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
     return s;
   }
 
+  function isoMs(ms) {
+    return ms ? new Date(ms).toISOString() : "";
+  }
+
   function detailRow(label, value, breakAll) {
     var s = '<li class="flex flex-col gap-2"><span class="font-medium shrink-0">' + escText(label);
     s += '</span><span class="text-xs ' + (breakAll ? "break-all " : "") + 'text-muted">';
@@ -755,8 +759,8 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
 
     b += detailRow("OID", image.oid, true);
     b += detailRow("Path", image.path, true);
-    b += detailRow("Added", image.added_at, false);
-    b += detailRow("Modified", image.mtime, false);
+    b += detailRow("Added", isoMs(image.added_at), false);
+    b += detailRow("Modified", isoMs(image.mtime), false);
 
     b += "</ul></form></section>";
     return b;
@@ -1196,9 +1200,9 @@ images_json :: proc(images: []library.Image) -> string {
 		strings.write_string(&b, "\"name\":")
 		json_string(&b, img.name)
 		strings.write_string(&b, ",\"mtime\":")
-		json_string(&b, img.mtime)
+		fmt.sbprintf(&b, "%d", img.mtime)
 		strings.write_string(&b, ",\"added_at\":")
-		json_string(&b, img.added_at)
+		fmt.sbprintf(&b, "%d", img.added_at)
 		strings.write_string(&b, ",\"content_type\":")
 		json_string(&b, img.content_type)
 		strings.write_string(&b, "}")

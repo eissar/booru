@@ -2,6 +2,7 @@ package template
 
 import "core:fmt"
 import "core:strings"
+import "core:time"
 
 import "../library"
 
@@ -139,11 +140,28 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 
 	write_detail_row(&b, "OID", image.oid, true)
 	write_detail_row(&b, "Path", image.path, true)
-	write_detail_row(&b, "Added", image.added_at, false)
-	write_detail_row(&b, "Modified", image.mtime, false)
+	write_detail_row(&b, "Added", format_timestamp_ms(image.added_at), false)
+	write_detail_row(&b, "Modified", format_timestamp_ms(image.mtime), false)
 
 	wr(&b, "</ul></form></section>")
 	return strings.to_string(b)
+}
+
+// format_timestamp_ms renders epoch milliseconds as UTC ISO text; zero is blank.
+@(private = "file")
+format_timestamp_ms :: proc(ms: i64) -> string {
+	if ms == 0 {return ""}
+	dt, _ := time.time_to_datetime(time.Time{_nsec = ms * 1_000_000})
+	return fmt.tprintf(
+		"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+		dt.year,
+		dt.month,
+		dt.day,
+		dt.hour,
+		dt.minute,
+		dt.second,
+		ms % 1000,
+	)
 }
 
 // write_detail_row writes a read-only inspector label/value row. break_all is

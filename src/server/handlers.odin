@@ -515,6 +515,8 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	ev.content_type = media.mime(format)
 	// TODO: Read the media dimensions; width and height should not remain zero.
 
+	ev.added_at = time.to_unix_nanoseconds(time.now()) / 1_000_000
+
 	// update the event log
 	append_err := elog.event_append(s.event_log, ev)
 	if append_err != "" {
@@ -542,6 +544,23 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	defer os.close(dir)
 	if err := os.sync(dir); err != nil {
 		fmt.panicf("ingest: sync images directory: %v", err)
+	}
+
+	item := library.Image {
+		id           = ev.id,
+		oid          = ev.oid,
+		path         = ev.path,
+		ext          = ev.ext,
+		tags         = ev.tags,
+		width        = ev.width,
+		height       = ev.height,
+		name         = ev.name,
+		mtime        = ev.mtime,
+		added_at     = ev.added_at,
+		content_type = ev.content_type,
+	}
+	if rc := store.insert_into_items(s.data_store, item); rc != sqlite.OK {
+		fmt.panicf("ingest: apply event to store: rc=%v", rc)
 	}
 
 	http.res_html(template.render_toast("Original saved", .Success), res, .Created)

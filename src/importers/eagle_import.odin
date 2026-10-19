@@ -62,12 +62,12 @@ EagleItem :: struct {
 
 // transmutable into Event
 EagleItem_Event :: struct {
-	added_at:     Iso_Time `json:"btime"`,
+	added_at:     i64 `json:"btime"`,
 	content_type: string `json:"-"`,
 	ext:          string, // Eagle's "ext" key matches, no tag needed
 	height:       int,
 	id:           int `json:"-"`,
-	mtime:        Iso_Time,
+	mtime:        i64,
 	name:         string,
 	oid:          string `json:"-"`,
 	op:           string `json:"-"`,

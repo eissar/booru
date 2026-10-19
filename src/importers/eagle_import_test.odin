@@ -15,7 +15,7 @@ FIXTURE_EAGLE_LIBRARY :: "test/fixture/eagle/fixture.library/images"
 
 // EagleItem_Event is transmuted into Event, so both must have the same
 // field names in the same order, at the same offsets, with the same sizes.
-// Types may differ (e.g. Iso_Time vs string) as long as the layout matches.
+// Types may differ (e.g. tagged vs untagged) as long as the layout matches.
 @(test)
 eagle_item_transmutable_into_event :: proc(t: ^testing.T) {
 	src := reflect.struct_fields_zipped(EagleItem_Event)

@@ -19,8 +19,8 @@ Event :: struct {
 	width:        int,
 	height:       int,
 	name:         string,
-	mtime:        string,
-	added_at:     string,
+	mtime:        i64,
+	added_at:     i64,
 	content_type: string,
 }
 
