@@ -213,15 +213,17 @@ eagle_import :: proc(
 	}
 	// Originals have each been synced once. Persist their new filenames once
 	// for the completed batch before syncing the event log.
-	images_dir, images_dir_err := os.open(
-		fmt.tprintf("%s/images", s.library_path),
-		{.Read},
-		os.Permissions_Default,
-	)
-	if images_dir_err != nil {fmt.panicf("import: open images directory: %v", images_dir_err)}
-	defer os.close(images_dir)
-	if err := os.sync(images_dir); err != nil {
-		fmt.panicf("import: sync images directory: %v", err)
+	when ODIN_OS == .Linux {
+		images_dir, images_dir_err := os.open(
+			fmt.tprintf("%s/images", s.library_path),
+			{.Read},
+			os.Permissions_Default,
+		)
+		if images_dir_err != nil {fmt.panicf("import: open images directory: %v", images_dir_err)}
+		defer os.close(images_dir)
+		if err := os.sync(images_dir); err != nil {
+			fmt.panicf("import: sync images directory: %v", err)
+		}
 	}
 	if err := elog.events_append(s.event_log, events[:]); err != "" {
 		fmt.panicf("import: event log append failed: %s", err)
