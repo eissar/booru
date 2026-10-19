@@ -4,7 +4,11 @@ import "core:c"
 
 // C ABI bindings for the vendored dav1d 1.5.4 headers.
 // Link against a separately built libdav1d; vendoring source does not build it.
-foreign import dav1d "system:dav1d"
+when ODIN_OS == .Windows {
+	foreign import dav1d "windows-amd64/dav1d.lib"
+} else {
+	foreign import dav1d "system:dav1d"
+}
 
 Dav1dContext :: struct {}
 Dav1dRef :: struct {}

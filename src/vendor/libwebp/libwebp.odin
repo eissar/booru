@@ -5,7 +5,11 @@ import "core:c"
 import "core:os"
 
 // Requires libwebp (input encoding) and webpinfo (output validation).
-foreign import webp "system:webp"
+when ODIN_OS == .Windows {
+	foreign import webp "windows-amd64/libwebp.lib"
+} else {
+	foreign import webp "system:webp"
+}
 
 // Mirrors of encode.h structs. Keep field order identical to the C headers.
 WebPConfig :: struct {
