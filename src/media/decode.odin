@@ -2,8 +2,13 @@ package media
 import dav1d "../vendor/dav1d"
 import libwebp "../vendor/libwebp"
 import "core:c"
-import "core:sys/posix"
 import stbi "vendor:stb/image"
+
+// dav1d reports "try again" as -EAGAIN (DAV1D_ERR(EAGAIN)). EAGAIN is 11 on
+// both Linux and the MSVC CRT. Defined locally instead of using
+// core:sys/posix, which may not build on Windows; if it does, this constant
+// can be dropped in favour of posix.EAGAIN.
+EAGAIN :: 11
 
 Decoded_ARGB :: struct {
 	pixels:        [^]u8,
@@ -51,12 +56,12 @@ decode_yuv_dav1d :: proc(data: []u8) -> (img: Decoded_Dav1d_YUV, err: Decode_Err
 	for {
 		if packet.sz > 0 {
 			err := dav1d.dav1d_send_data(decoder, &packet)
-			if err < 0 && err != -posix.EAGAIN {return {}, .Failed}
+			if err < 0 && err != -EAGAIN {return {}, .Failed}
 		}
 
 		err := dav1d.dav1d_get_picture(decoder, &pic)
 		if err == 0 {break}
-		if err != -posix.EAGAIN {return {}, .Failed}
+		if err != -EAGAIN {return {}, .Failed}
 		if packet.sz == 0 {
 			// Input is consumed; the next call drains frame-threaded output.
 			if dav1d.dav1d_get_picture(decoder, &pic) != 0 {return {}, .Failed}
