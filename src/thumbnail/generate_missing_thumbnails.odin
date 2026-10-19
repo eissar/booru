@@ -2,6 +2,7 @@ package thumbnail
 
 import "core:c"
 import "core:fmt"
+import "core:log"
 import "core:os"
 import "core:strings"
 import "core:sys/linux"
@@ -173,6 +174,7 @@ generate_missing_thumbnails :: proc(s: library.State) -> (generated, failed: int
 	missing := make(map[string]bit_set[LOD_RESOLUTION])
 	defer delete(missing)
 	find_missing_thumbnails(s, &missing)
+	log.info("thumbnails: generate missing start")
 	// Intentionally naive: SELECT everything and loop over the rows.
 	images, rc := store.read_images(s.data_store, context.temp_allocator)
 	if rc != sqlite.OK {
@@ -278,11 +280,10 @@ find_missing_thumbnails :: proc(s: library.State, missing: ^map[string]bit_set[L
 		os.close(osf)
 	}
 
-	for n, r in resolutions {
-		count := 0
-		for _, sizes in missing^ {
-			if r in sizes {count += 1}
-		}
-		fmt.printfln("missing %spx thumbnails: %d", n, count)
+	missing_64, missing_128: int
+	for _, sizes in missing^ {
+		if .x64 in sizes {missing_64 += 1}
+		if .x128 in sizes {missing_128 += 1}
 	}
+	log.infof("thumbnails: missing 64px=%d, 128px=%d", missing_64, missing_128)
 }

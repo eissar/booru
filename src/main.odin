@@ -54,8 +54,6 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	log.infof("server listening on %v", net.endpoint_to_string(ep))
-
 	defer net.close(sock)
 
 
@@ -110,9 +108,9 @@ main :: proc() {
 		)
 	}
 
-	if cfg.scanThumbnail {
+	if cfg.scan_thumbnail {
 		generated, failed := thumbnail.generate_missing_thumbnails(state)
-		log.infof("thumbnails: %d generated, %d failed", generated, failed)
+		log.infof("thumbnails: generated=%d, failed=%d", generated, failed)
 	}
 
 	defer free_all(context.temp_allocator)

@@ -23,6 +23,10 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 	// request scoped arena, we free_all explicitly before each conn
 	mem.arena_init(&arena, backing)
 	alloc := mem.arena_allocator(&arena)
+	if ep, endpoint_err := net.bound_endpoint(sock); endpoint_err == nil {
+		log.infof("server listening on %v", net.endpoint_to_string(ep))
+	}
+
 	// loop new client conns
 	for conn, src, err := net.accept_tcp(sock, net.DEFAULT_TCP_OPTIONS);
 	    err == nil;
