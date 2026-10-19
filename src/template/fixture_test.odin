@@ -61,29 +61,45 @@ load_images :: proc(path: string) -> []library.Image {
 }
 
 expect_html_fixture :: proc(t: ^testing.T, name, html: string) {
-	state, output, errors, err := os.process_exec(
-		{
-			command = {
-				"perl",
-				"test/html-fixture-tdd/compare_html.pl",
-				fmt.tprintf("test/html-fixture-tdd/fixture/%s.expected.html", name),
-				html,
-			},
-		},
-		context.allocator,
-	)
-	defer delete(output)
-	defer delete(errors)
+	path := fmt.tprintf("test/html-fixture-tdd/fixture/%s.expected.html", name)
+	expected_bytes, read_err := os.read_entire_file(path, context.allocator)
+	if !testing.expect(
+		t,
+		read_err == nil,
+		fmt.tprintf("HTML fixture %s: read error=%v", name, read_err),
+	) {
+		return
+	}
+	defer delete(expected_bytes)
+
+	expected, expected_ok := normalize_html(string(expected_bytes))
+	if !testing.expect(
+		t,
+		expected_ok,
+		fmt.tprintf("HTML fixture %s: could not normalize expected HTML", name),
+	) {
+		return
+	}
+	defer delete(expected)
+
+	actual, actual_ok := normalize_html(html)
+	if !testing.expect(
+		t,
+		actual_ok,
+		fmt.tprintf("HTML fixture %s: could not normalize actual HTML", name),
+	) {
+		return
+	}
+	defer delete(actual)
+
 	testing.expect(
 		t,
-		err == nil && state.exit_code == 0,
+		actual == expected,
 		fmt.tprintf(
-			"HTML fixture %s: process error=%v, exit=%d\n%s%s",
-			name,
-			err,
-			state.exit_code,
-			string(output),
-			string(errors),
+			"HTML mismatch: %s\n--- expected (normalized)\n%s\n+++ actual (normalized)\n%s\n",
+			path,
+			expected,
+			actual,
 		),
 	)
 }
