@@ -7,11 +7,13 @@ import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:sys/linux"
+import win "core:sys/windows"
 
 import "core:crypto/sha2"
 
 import "core:encoding/json"
 
+import "../dirlist"
 import elog "../event_log"
 import "../library"
 import "../media"
@@ -93,29 +95,49 @@ eagle_import :: proc(
 	event_alloc := mem.dynamic_arena_allocator(&arena)
 	events := make([dynamic]elog.Event, event_alloc)
 
-	buf: [1024 * 4]u8
+	// Directory names from the current batch (entries that are not directories are already dropped).
+	dir_names := make([dynamic]string, 0, 256)
+	defer delete(dir_names)
+
 	for {
 		defer free_all(context.temp_allocator)
+		clear(&dir_names)
 
-		n, err := linux.getdents(rootFd, buf[:])
-		if err != .NONE {
-			res.read_errors += 1
-			fmt.eprintfln("error: reading %s: %v", src_images_dir, err, flush = true)
-			return
+		when ODIN_OS == .Linux {
+			buf: [1024 * 4]u8 = ---
+			n, err := linux.getdents(rootFd, buf[:])
+			if err != .NONE {
+				res.read_errors += 1
+				fmt.eprintfln("error: reading %s: %v", src_images_dir, err, flush = true)
+				return
+			}
+			if n == 0 {break}
+
+			offs := 0
+			for {
+				ent, cont := linux.dirent_iterate_buf(buf[:n], &offs)
+				if !cont {break}
+				// TODO: some filesystems report .UNKNOWN
+				if ent.type != .DIR {continue}
+				append(&dir_names, linux.dirent_name(ent))
+			}
+		} else when ODIN_OS == .Windows {
+			nt_buf: [512]u64 = ---
+			n, ok := dirlist.read_batch(win.HANDLE(uintptr(rootFd)), nt_buf[:], &dir_names, true)
+			if !ok {
+				res.read_errors += 1
+				fmt.eprintfln("error: reading %s", src_images_dir, flush = true)
+				return
+			}
+			if n == 0 {break}
+		} else {
+			#panic("eagle_import: unsupported OS")
 		}
-		if n == 0 {break}
 
-		offs := 0
-		for {
-			ent, cont := linux.dirent_iterate_buf(buf[:n], &offs)
-			if !cont {break}
-
+		for meta_dirname in dir_names {
 			// An item is <id>.info/
 			// skip everything else (including . and ..).
-			meta_dirname := linux.dirent_name(ent)
-
-			// TODO: some filesystems report .UNKNOWN
-			if ent.type != .DIR || !strings.has_suffix(meta_dirname, ".info") {continue}
+			if !strings.has_suffix(meta_dirname, ".info") {continue}
 
 			meta_path := fmt.tprintf("%s/%s/metadata.json", src_images_dir, meta_dirname)
 
