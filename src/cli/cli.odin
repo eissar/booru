@@ -10,6 +10,7 @@ Opts :: struct {
 
 	/* default test/fixture/library */
 	library:       string `usage:"Path to the library root (contains events/ and images/)."`,
+	import_eagle:  string `name:"import-eagle" usage:"Import an Eagle library root before serving."`,
 
 	// pack: string
 	/* remove cached renderer artifacts before startup */

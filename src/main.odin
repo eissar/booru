@@ -5,11 +5,13 @@ import "core:log"
 import "core:net"
 import "core:os"
 import "core:strings"
+import "core:sys/linux"
 import "core:time"
 
 import "cli"
 import "core:c"
 import elog "event_log"
+import "importers"
 import "library"
 import "replay"
 import "server"
@@ -87,6 +89,26 @@ main :: proc() {
 		time.duration_milliseconds(time.since(load_start)),
 		cfg.library,
 	)
+
+	if cfg.import_eagle != "" {
+		source := fmt.aprintf("%s/images", cfg.import_eagle)
+		defer delete(source)
+
+		fd, open_err := os.open(source, {.Read}, os.Permissions_Default)
+		if open_err != nil {
+			log.fatalf("open Eagle images directory %s: %v", source, open_err)
+			os.exit(1)
+		}
+
+		result := importers.eagle_import(source, &state, linux.Fd(os.fd(fd)))
+		os.close(fd)
+		log.infof(
+			"Eagle import: %d imported, %d missing metadata, %d read errors",
+			result.success,
+			result.missing,
+			result.read_errors,
+		)
+	}
 
 	if cfg.scanThumbnail {
 		generated, failed := thumbnail.generate_missing_thumbnails(state)
