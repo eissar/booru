@@ -10,6 +10,7 @@ import "core:strings"
 
 import "../library"
 import "../store"
+import "../template"
 import "../vendor/sqlite"
 
 lookup_thumbnail_oid_by_id :: proc(
@@ -247,6 +248,11 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 			tags_query = fmt.tprintf("%s&tags=%s", tags_query, tag)
 		}
 	}
+	if q.search != "" {
+		encoded := net.percent_encode(q.search)
+		defer delete(encoded)
+		tags_query = fmt.tprintf("%s&q=%s", tags_query, encoded)
+	}
 	gallery_url = fmt.tprintf("/gallery?limit=%d&sort=%s%s", q.limit, q.sort, tags_query)
 	fragment_url = fmt.tprintf(
 		"/fragment/gallery-content?limit=%d&sort=%s%s",
@@ -255,6 +261,23 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 		tags_query,
 	)
 	return
+}
+
+// Search state lives in the filter bar, which existing htmx actions include.
+search_filter_chips :: proc(q: Gallery_Query) -> []template.Filter_Chip {
+	if q.search == "" {return nil}
+	without_search := q
+	without_search.search = ""
+	gallery_url, fragment_url := filter_urls(without_search)
+	chips := make([]template.Filter_Chip, 1)
+	chips[0] = {
+		key          = "q",
+		value        = q.search,
+		display      = fmt.tprintf("search: %s", q.search),
+		gallery_url  = gallery_url,
+		fragment_url = fragment_url,
+	}
+	return chips
 }
 
 //endregion
