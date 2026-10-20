@@ -88,7 +88,7 @@ parse_gallery_query :: proc(
 		sort  = "idDesc",
 	}
 	params := make(map[string]string, alloc)
-	if !parse_query_params(query, &params, alloc) {return q, false}
+	if !parse_query_params(query, &params, alloc, combine_tags = true) {return q, false}
 	if value, present := params["q"]; present {
 		q.search = strings.trim_space(value)
 	}
@@ -143,6 +143,7 @@ parse_query_params :: proc(
 	query: string,
 	params: ^map[string]string,
 	alloc := context.allocator,
+	combine_tags := false,
 ) -> (
 	ok: bool,
 ) {
@@ -158,7 +159,12 @@ parse_query_params :: proc(
 		if !ok {return false}
 		value, ok = net.percent_decode(value, alloc)
 		if !ok {return false}
-		if key in params {continue}
+		if key in params {
+			if combine_tags && key == "tags" {
+				params[key] = fmt.aprintf("%s,%s", params[key], value, allocator = alloc)
+			}
+			continue
+		}
 		params[key] = value
 	}
 	return true
@@ -241,12 +247,10 @@ page_slice :: proc(
 // filter_urls builds the canonical chip URLs for the filter bar.
 filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 	tags_query := ""
-	for tag, i in q.tags[:] {
-		if i == 0 {
-			tags_query = fmt.tprintf("&tags=%s", tag)
-		} else {
-			tags_query = fmt.tprintf("%s&tags=%s", tags_query, tag)
-		}
+	for tag in q.tags {
+		encoded := net.percent_encode(tag)
+		tags_query = fmt.tprintf("%s&tags=%s", tags_query, encoded)
+		delete(encoded)
 	}
 	if q.search != "" {
 		encoded := net.percent_encode(q.search)
@@ -263,19 +267,42 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 	return
 }
 
-// Search state lives in the filter bar, which existing htmx actions include.
-search_filter_chips :: proc(q: Gallery_Query) -> []template.Filter_Chip {
-	if q.search == "" {return nil}
-	without_search := q
-	without_search.search = ""
-	gallery_url, fragment_url := filter_urls(without_search)
-	chips := make([]template.Filter_Chip, 1)
-	chips[0] = {
-		key          = "q",
-		value        = q.search,
-		display      = fmt.tprintf("search: %s", q.search),
-		gallery_url  = gallery_url,
-		fragment_url = fragment_url,
+// Filter state lives in the filter bar, which existing htmx actions include.
+gallery_filter_chips :: proc(q: Gallery_Query) -> []template.Filter_Chip {
+	count := len(q.tags)
+	if q.search != "" {count += 1}
+	if count == 0 {return nil}
+	chips := make([]template.Filter_Chip, count)
+	index := 0
+	if q.search != "" {
+		without_search := q
+		without_search.search = ""
+		gallery_url, fragment_url := filter_urls(without_search)
+		chips[index] = {
+			key          = "q",
+			value        = q.search,
+			display      = fmt.tprintf("search: %s", q.search),
+			gallery_url  = gallery_url,
+			fragment_url = fragment_url,
+		}
+		index += 1
+	}
+	for tag, i in q.tags {
+		remaining := make([]string, len(q.tags) - 1)
+		copy(remaining[:i], q.tags[:i])
+		copy(remaining[i:], q.tags[i + 1:])
+		without_tag := q
+		without_tag.tags = remaining
+		gallery_url, fragment_url := filter_urls(without_tag)
+		delete(remaining)
+		chips[index] = {
+			key          = "tags",
+			value        = tag,
+			display      = tag,
+			gallery_url  = gallery_url,
+			fragment_url = fragment_url,
+		}
+		index += 1
 	}
 	return chips
 }

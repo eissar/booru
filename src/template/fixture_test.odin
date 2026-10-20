@@ -105,13 +105,20 @@ expect_html_fixture :: proc(t: ^testing.T, name, html: string) {
 }
 
 fixture_gallery_filter :: proc() -> Gallery_Filter {
-	chips := make([]Filter_Chip, 1)
+	chips := make([]Filter_Chip, 2)
 	chips[0] = {
 		key          = "q",
 		value        = "blue",
 		display      = "search: blue",
 		gallery_url  = "/gallery?limit=2&sort=addedAtAsc",
 		fragment_url = "/fragment/gallery-content?limit=2&sort=addedAtAsc",
+	}
+	chips[1] = {
+		key          = "tags",
+		value        = "landscape",
+		display      = "landscape",
+		gallery_url  = "/gallery?limit=2&sort=addedAtAsc&q=blue",
+		fragment_url = "/fragment/gallery-content?limit=2&sort=addedAtAsc&q=blue",
 	}
 	return {
 		limit = 2,

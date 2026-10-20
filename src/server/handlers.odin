@@ -53,7 +53,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		offset       = q.offset + len(page),
 		gallery_url  = gallery_url,
 		fragment_url = fragment_url,
-		extra_chips  = search_filter_chips(q),
+		extra_chips  = gallery_filter_chips(q),
 	}
 	http.res_html(template.render_gallery_page("Gallery", filter, page, has_more), res)
 }
@@ -86,7 +86,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		offset       = q.offset + len(page),
 		gallery_url  = gallery_url,
 		fragment_url = fragment_url,
-		extra_chips  = search_filter_chips(q),
+		extra_chips  = gallery_filter_chips(q),
 	}
 	res.headers["Hx-Push-Url"] = gallery_url
 	http.res_html(template.render_gallery_content(filter, page, has_more), res)
