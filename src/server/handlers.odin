@@ -593,10 +593,6 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http.Req) {
 	context.allocator = req.alloc
 
-	res.headers["HX-Reswap"] = "beforeend"
-	http.res_html(template.render_toast("not implemented", .Error), res, .NotImplemented)
-	when true {return}
-
 	id, order := parse_regen_thumbnail_query(req.header.query)
 	if id < 0 || order < 0 {
 		res.headers["HX-Reswap"] = "beforeend"
@@ -624,17 +620,16 @@ handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http
 	}
 
 	set := bit_set[thumbnail.LOD_RESOLUTION]{.x128, .x64}
-	thumbnail.generate_image_thumbnails(s^, item, set)
-	r, _ := thumbnail.largest_resolution(set)
-	res_px := thumbnail.resolution_pixels(r)
-
-	best_res_path := fmt.aprintf(
-		"%s/thumbnails/%d/%s.webp",
-		s.library_path,
-		res_px,
-		item.oid,
-		allocator = req.alloc,
-	)
+	_, failed := thumbnail.force_generate_image_thumbnails(s^, item, set)
+	if failed > 0 {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("could not regenerate thumbnails", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
 
 	http.res_html(template.render_item_card(item, order), res, .OK)
 	return

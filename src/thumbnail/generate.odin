@@ -154,3 +154,82 @@ generate_image_thumbnails :: proc(
 	}
 	return
 }
+
+//HACK: Force regeneration by removing existing thumbnails before encoding.
+force_generate_image_thumbnails :: proc(
+	s: library.State,
+	img: library.Image,
+	sizes: bit_set[LOD_RESOLUTION],
+) -> (
+	generated, failed: int,
+) {
+	oid := img.oid
+	img_path := fmt.tprintf("%s/images/%d.%s", s.library_path, img.id, img.ext)
+	format, sniff_err := media.hack_sniff_first_32_bytes(img_path)
+	if sniff_err != nil {
+		fmt.eprintfln("thumbnail: sniff %s: %v", oid, sniff_err)
+		return 0, card(sizes)
+	}
+	if format not_in SUPPORTED_THUMBNAIL {return 0, 0}
+	data, err := os.read_entire_file(img_path, context.allocator)
+	if err != nil {
+		fmt.eprintfln("thumbnail: read %s: %v", oid, err)
+		return 0, card(sizes)
+	}
+	defer delete(data)
+	decoded: media.Decoded_ARGB
+	yuv: media.Decoded_Dav1d_YUV
+	#partial switch format {
+	case .AVIF:
+		offset, length, ok := media.Parse_AVIF(data)
+		if !ok {
+			fmt.eprintfln("thumbnail: cannot extract AVIF primary item: %s", oid)
+			return 0, card(sizes)
+		}
+		decode_err: media.Decode_Error
+		yuv, decode_err = media.decode_yuv_dav1d(data[offset:offset + length])
+		if decode_err != .None {
+			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
+			return 0, card(sizes)
+		}
+	case .PNG, .JPEG, .GIF, .WebP:
+		decoded, _ = media.decode_rgba(data)
+		if decoded.pixels == nil {
+			fmt.eprintfln("thumbnail: cannot decode %s", oid)
+			return 0, card(sizes)
+		}
+	case:
+		return 0, 0
+	}
+	defer media.free_decoded(decoded)
+	defer media.free_decoded_dav1d(&yuv)
+	for size in sizes {
+		edge: c.int
+		#partial switch size {
+		case .x64:
+			edge = 64
+		case .x128:
+			edge = 128
+		case:
+			continue
+		}
+		path := fmt.tprintf("%s/thumbnails/%d/%s.webp", s.library_path, edge, oid)
+		if err := os.remove(path); err != nil && err != .Not_Exist {
+			fmt.eprintfln("thumbnail: remove %s: %v", path, err)
+			failed += 1
+			continue
+		}
+		ok: bool
+		if format == .AVIF {
+			ok = encode_thumbnail(s.library_path, oid, edge, yuv)
+		} else {
+			ok = encode_thumbnail(s.library_path, oid, edge, decoded)
+		}
+		if ok {
+			generated += 1
+		} else {
+			failed += 1
+		}
+	}
+	return
+}
