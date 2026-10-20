@@ -61,6 +61,7 @@ Gallery_Query :: struct {
 	offset: int,
 	sort:   string,
 	tags:   []string,
+	search: string,
 }
 
 parse_int_param :: proc(value: string) -> (out: int, ok: bool) {
@@ -70,7 +71,7 @@ parse_int_param :: proc(value: string) -> (out: int, ok: bool) {
 	return v, true
 }
 
-// parse_gallery_query parses limit/offset/sort/tags from a raw query string.
+// parse_gallery_query parses limit/offset/sort/tags/q from a raw query string.
 // Semantics follow ../lfs-booru/server.ts: invalid or small limit clamps to
 // MIN_LIMIT; unknown sort falls back to idDesc; an invalid or negative offset
 // marks the query invalid (caller returns 400).
@@ -87,6 +88,9 @@ parse_gallery_query :: proc(
 	}
 	params := make(map[string]string, alloc)
 	if !parse_query_params(query, &params, alloc) {return q, false}
+	if value, present := params["q"]; present {
+		q.search = strings.trim_space(value)
+	}
 
 	if value, ok_param := params["limit"]; ok_param {
 		if n, parse_ok := parse_int_param(value); parse_ok && n >= MIN_LIMIT {

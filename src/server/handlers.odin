@@ -35,7 +35,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		http.res_error("", res, .BadRequest); return
 	}
 
-	images, rc := store.read_images(s.data_store, req.alloc)
+	images, rc := store.search_images(s.data_store, q.search, req.alloc)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
 		return
@@ -67,7 +67,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		return
 	}
 
-	images, rc := store.read_images(s.data_store, req.alloc)
+	images, rc := store.search_images(s.data_store, q.search, req.alloc)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
 		return
@@ -100,7 +100,7 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 		return
 	}
 
-	images, rc := store.read_images(s.data_store, req.alloc)
+	images, rc := store.search_images(s.data_store, q.search, req.alloc)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
 		return
