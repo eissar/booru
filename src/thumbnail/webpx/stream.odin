@@ -1,4 +1,4 @@
-package webp
+package webpx
 
 import thumbnail "../"
 import "core:encoding/endian"

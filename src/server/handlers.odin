@@ -18,7 +18,7 @@ import "../media"
 import "../store"
 import "../template"
 import "../thumbnail"
-import "../thumbnail/webp"
+import "../thumbnail/webpx"
 import "../util"
 import "../vendor/sqlite"
 
@@ -253,7 +253,7 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 
 Mipmap_Stream :: struct {
 	files:  []thumbnail.Thumb,
-	prefix: webp.Webp_Extended_Prefix,
+	prefix: webpx.Webp_Extended_Prefix,
 }
 
 send_mipmap_stream :: proc(conn: ^net.TCP_Socket, raw: rawptr) -> (err: io.Error) {
@@ -271,7 +271,7 @@ send_mipmap_stream :: proc(conn: ^net.TCP_Socket, raw: rawptr) -> (err: io.Error
 		}
 	}
 
-	return webp.Encode(data.files, &data.prefix, out_stream)
+	return webpx.Encode(data.files, &data.prefix, out_stream)
 
 }
 
@@ -365,8 +365,8 @@ handle_mipmap :: proc(
 		http.res_error("", res, status = .NotFound)
 		return
 	}
-	prefix: webp.Webp_Extended_Prefix
-	length := webp.Prepare_Webp_X(thumbnails[:idx], &prefix)
+	prefix: webpx.Webp_Extended_Prefix
+	length := webpx.Prepare_Webp_X(thumbnails[:idx], &prefix)
 	// Retain the frames in the request allocator until the response is sent.
 	data := new(Mipmap_Stream, req.alloc)
 	data.files = make([]thumbnail.Thumb, idx, req.alloc)

@@ -10,7 +10,7 @@ import "core:testing"
 import "core:thread"
 
 import thumbnail "../thumbnail"
-import "../thumbnail/webp"
+import "../thumbnail/webpx"
 import libwebp "../vendor/libwebp"
 import "../vendor/webpinfo"
 
@@ -30,7 +30,7 @@ stream_webp_socket_batches :: proc(t: ^testing.T) {
 	copy(alpha[:12], plain[:12])
 	copy(alpha[12:16], transmute([]u8)string("VP8X"))
 	endian.put_u32(alpha[16:20], .Little, 10)
-	alpha[20] = transmute(u8)bit_set[webp.WEBP_Flags;u8]{.Alpha}
+	alpha[20] = transmute(u8)bit_set[webpx.WEBP_Flags;u8]{.Alpha}
 	alpha[24] = 1 // Canvas width minus one, height minus one stays zero.
 	copy(alpha[30:34], transmute([]u8)string("JUNK"))
 	endian.put_u32(alpha[34:38], .Little, 1)
@@ -60,8 +60,8 @@ stream_webp_socket_batches :: proc(t: ^testing.T) {
 		{alpha_thumb, {bytes = []u8{1, 2, 3}, width = 64}},
 	}
 	for batch, batch_index in batches {
-		prefix: webp.Webp_Extended_Prefix
-		length := webp.Prepare_Webp_X(batch, &prefix)
+		prefix: webpx.Webp_Extended_Prefix
+		length := webpx.Prepare_Webp_X(batch, &prefix)
 		canvas_width, _ := endian.get_u32(prefix.VP8X[12:16], .Little)
 		// Width occupies the low three bytes; the next height byte is zero here.
 		testing.expect(t, canvas_width > 0, "canvas populated")
@@ -76,7 +76,7 @@ stream_webp_socket_batches :: proc(t: ^testing.T) {
 		state := struct {
 			listener: net.TCP_Socket,
 			files:    []thumbnail.Thumb,
-			prefix:   webp.Webp_Extended_Prefix,
+			prefix:   webpx.Webp_Extended_Prefix,
 			err:      io.Error,
 		} {
 			listener = listener,
@@ -88,7 +88,7 @@ stream_webp_socket_batches :: proc(t: ^testing.T) {
 			state := cast(^struct {
 				listener: net.TCP_Socket,
 				files:    []thumbnail.Thumb,
-				prefix:   webp.Webp_Extended_Prefix,
+				prefix:   webpx.Webp_Extended_Prefix,
 				err:      io.Error,
 			})raw
 			conn, _, err := net.accept_tcp(state.listener)
@@ -97,7 +97,7 @@ stream_webp_socket_batches :: proc(t: ^testing.T) {
 				return
 			}
 			defer net.close(conn)
-			state.err = webp.Encode(state.files, &state.prefix, socket_writer(&conn))
+			state.err = webpx.Encode(state.files, &state.prefix, socket_writer(&conn))
 		})
 		conn, connect_err := net.dial_tcp(endpoint)
 		if !testing.expect(t, connect_err == nil) {

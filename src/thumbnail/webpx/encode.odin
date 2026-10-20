@@ -1,4 +1,4 @@
-package webp
+package webpx
 
 import "core:encoding/endian"
 import "core:io"
@@ -148,6 +148,7 @@ parse_chunk_header :: proc "contextless" (b: []u8) -> (f: FourCC, size: u32, ok:
 }
 
 // Shared encoder for socket output and in-memory tests.
+// this is technically remuxing but whatever
 Encode :: proc(
 	files: []thumbnail.Thumb,
 	p: ^Webp_Extended_Prefix,

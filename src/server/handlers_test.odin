@@ -12,7 +12,7 @@ import "../http"
 import "../library"
 import "../store"
 import "../thumbnail"
-import "../thumbnail/webp"
+import "../thumbnail/webpx"
 import "../vendor/sqlite"
 
 // Capture the streaming encoder solely for body assertions in unit tests.
@@ -22,7 +22,7 @@ materialize_mipmap_for_test :: proc(t: ^testing.T, res: ^http.Response) {
 	buffer: bytes.Buffer
 	bytes.buffer_init_allocator(&buffer, 0, res.body_stream_length, context.temp_allocator)
 	defer bytes.buffer_destroy(&buffer)
-	err := webp.Encode(data.files, &data.prefix, io.to_writer(bytes.buffer_to_stream(&buffer)))
+	err := webpx.Encode(data.files, &data.prefix, io.to_writer(bytes.buffer_to_stream(&buffer)))
 	if !testing.expect(t, err == nil) {return}
 	output := bytes.buffer_to_bytes(&buffer)
 	testing.expect(t, len(output) == res.body_stream_length, "stream length matches headers")
