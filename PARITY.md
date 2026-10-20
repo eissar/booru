@@ -3,10 +3,6 @@ git:eissar/lfs-booru
 
 ## gallery_page
 [ ] - hook up the Search button: submits `q` to `/gallery`, but the server ignores `q`
-[ ] - hook up the page-size "2" option: server clamps limits below 10
-
-## inspector
-[ ] - implement the 'regenerate thumbnail' (Refresh) handler: `GET /regen-thumbnail` is routed, but returns 501 Not Implemented
 
 ## item_card
 none

@@ -5,14 +5,11 @@ high level tasks
 Harden flat parser: validation, boundaries, tests/fuzzing.
 Add event types: implement remaining operations.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
-lfs-booru parity achieved
-
- Not quite: `library_images` is gone and handlers read from the SQLite store, but `handle_ingest` and the Eagle importer don't apply their events to the store, so new items only appear after a restart.
 
 # Store Write Path TODO
 
 - [ ] Add `store.apply(tx, event)` as the only public store write proc; make `insert_*`, `patch_item`, `delete_item` in `src/store/store.odin` `@(private = "package")`. Move the op `switch` out of `replay.replay` (`src/replay/replay.odin`) so replay just loops `apply`. Unknown ops should error, not `continue`.
-- [ ] Runtime handlers apply events to SQLite: after `elog.event_append` succeeds in upload/delete (`src/server/handlers.odin`), open a tx and call `store.apply`. Order: log first, then apply (a failed apply is recovered by replay). `handle_delete` already does this (log, then `sqlite.with_transaction(db, id, store.delete_item)`); `handle_ingest` and Eagle import don't, so uploads/imports don't show until restart. Route delete through `apply` too.
+- [ ] Route runtime upload/delete and Eagle import store writes through `store.apply`. Keep log-first ordering: a failed apply is recovered by replay.
 - [ ] `apply` advances the per-shard replay cursor in the same SQLite tx as the state change, so store and cursor can't drift (lfs-booru: `applyEvent(event, nextCursor)` in `src/index_store.ts`).
 - [ ] Serialize runtime applies (and `add` id allocation) if handlers run concurrently (lfs-booru: `this.mu` + `nextIdMutex`).
 - [ ] Keep a batch path: replay/import open one tx and `apply` every line (lfs-booru: `applyEventsFromFile`).

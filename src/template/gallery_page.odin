@@ -165,7 +165,6 @@ write_toolbar :: proc(b: ^strings.Builder, f: Gallery_Filter) {
 		"page-size-input",
 		"limit",
 		{
-			{"2", f.limit == 2},
 			{"10", f.limit == 10},
 			{"25", f.limit == 25},
 			{"50", f.limit == 50},
