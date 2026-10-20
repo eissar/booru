@@ -129,6 +129,8 @@
 
   // One current mipmap batch. No image-ID cache or cross-batch reuse.
   let canvas, gl, program, uniforms, batch;
+  //HACK: this is temporary before we decide on gpu caching strategy
+  const thumbnailsByURL = new Map();
   let pending = false,
     batchQueued = false,
     animateUntil = 0;
@@ -309,7 +311,6 @@
     }
     if (diagnosticsEnabled) paintedPreviews.clear();
     const images = batch ? batch.images : [];
-    const thumbnails = batch ? batch.thumbnails : [];
     const strip = positionPreviewStrip();
     if (!strip || !strip.width || !strip.height) return;
     const w = strip.width,
@@ -350,7 +351,7 @@
     gl.uniform2f(uniforms.screen, w, h);
     for (let i = 0; i < images.length; i++) {
       const img = images[i],
-        thumb = thumbnails[i];
+        thumb = thumbnailsByURL.get(img.src);
       if (!thumb || !img.isConnected) continue;
       const rect = img.getBoundingClientRect(); // Includes the actual CSS hover transform.
       if (!rect.width || !rect.height ||
@@ -481,7 +482,6 @@
     requestAnimationFrame(() => {
       batchQueued = false;
       if (rendererState === "failed") return;
-      releaseBatch();
       imageSizes.disconnect();
       const grid = getGrid();
       const cards = grid ? collectCards(grid) : [];
@@ -495,11 +495,20 @@
       previewLog("batch-start");
       for (const img of current.images) imageSizes.observe(img);
       draw();
-      if (!cards.length) return;
       // Capture request order before masonry or another response changes the DOM.
-      const ids = cards.map((card) => card.dataset.imageId);
-      loadBatch(current, ids)
+      const ids = [], urls = [];
+      for (const card of cards) {
+        const url = card.querySelector(".gallery-card-image").src;
+        if (thumbnailsByURL.has(url)) continue;
+        thumbnailsByURL.set(url, null);
+        ids.push(card.dataset.imageId);
+        urls.push(url);
+      }
+      if (!ids.length) return;
+      loadBatch(current, ids, urls)
         .catch((error) => {
+          for (const url of urls)
+            if (!thumbnailsByURL.get(url)) thumbnailsByURL.delete(url);
           if (current.abort.signal.aborted) return;
           failPreview(error);
         })
@@ -507,7 +516,7 @@
     });
   }
 
-  async function loadBatch(current, ids) {
+  async function loadBatch(current, ids, urls) {
     // Same URL as the <link rel="preload"> in the page head, so the first
     // batch reuses that request. Keep the request mode and cache defaults.
     const response = await fetch(endpoint + "?ids=" + ids.join(","), {
@@ -628,7 +637,7 @@
         const error = gl.getError();
         if (error !== gl.NO_ERROR)
           throw Error(`WebGL error 0x${error.toString(16)}`);
-        current.thumbnails[i] = { texture, layer, width, height };
+        thumbnailsByURL.set(urls[i], { texture, layer, width, height });
         count++;
         schedule();
       } finally {
@@ -659,7 +668,7 @@
         document.documentElement.classList.contains("gallery-previews-active"),
       canvas: canvas?.isConnected ? canvas : null,
       images: batch ? batch.images.map((image, i) => ({
-        image, ready: !!batch.thumbnails[i], painted: paintedPreviews.get(image) || null,
+        image, ready: !!thumbnailsByURL.get(image.src), painted: paintedPreviews.get(image) || null,
       })) : [],
     };
   };
