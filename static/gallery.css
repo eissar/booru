@@ -407,10 +407,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
     white-space: nowrap;
 }
 
-#settings-button,
-#dark-mode-toggle,
-#inspector-toggle,
-#upload-button,
+.toolbar-icon-button,
 .gallery-view-controls {
     border: 1px solid var(--border-color-light);
     border-radius: 0.5rem;
@@ -418,15 +415,97 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
     box-shadow: 0 1px 2px 0 var(--shadow-color);
 }
 
-#settings-button,
-#dark-mode-toggle,
-#inspector-toggle,
-#upload-button {
+.toolbar-icon-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 2.5rem;
     height: 2.5rem;
+}
+
+/* One form; distinct mobile toggle and desktop submit icon. */
+.toolbar-search {
+    width: 100%;
+    max-width: 20rem;
+    min-width: 0;
+}
+
+.toolbar-search > .mobile-search-toggle,
+.mobile-search-label {
+    display: none;
+}
+
+.toolbar-search > #search-form {
+    display: flex;
+    max-width: none;
+}
+
+#search-input {
+    flex: 1;
+    min-width: 0;
+}
+
+#search-form button[type='submit'] {
+    flex-shrink: 0;
+}
+
+@media (width < 768px) {
+    #toolbar .toolbar-row {
+        position: relative;
+        height: auto;
+        min-height: 4rem;
+        flex-wrap: wrap;
+        gap: 0 0.5rem;
+    }
+
+    #toolbar .gallery-view-label {
+        min-width: 0;
+        padding-inline: 0.25rem;
+        font-size: 0.75rem;
+    }
+
+    #toolbar .toolbar-actions {
+        flex: 0 0 auto;
+        gap: 0.25rem;
+    }
+
+    #toolbar .toolbar-icon-button {
+        width: 1.875rem;
+        padding: 0.25rem;
+    }
+
+    .toolbar-search {
+        width: auto;
+        max-width: none;
+    }
+
+    .toolbar-search > .mobile-search-toggle {
+        display: inline-flex;
+    }
+
+    .mobile-search-toggle::-webkit-details-marker,
+    .desktop-search-icon {
+        display: none;
+    }
+
+    .mobile-search-label {
+        display: inline;
+    }
+
+    .toolbar-search:not([open]) > #search-form {
+        display: none;
+    }
+
+    .toolbar-search[open] > #search-form {
+        position: absolute;
+        inset: 4rem 1rem auto;
+        width: auto;
+    }
+
+    #toolbar .toolbar-row:has(.toolbar-search[open]) {
+        min-height: 7.25rem;
+        padding-bottom: 3.25rem;
+    }
 }
 
 .gallery-view-controls {
