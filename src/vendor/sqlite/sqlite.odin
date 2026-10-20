@@ -8,7 +8,11 @@ package sqlite
 
 import "core:c"
 
-foreign import sqlite "system:sqlite3"
+when ODIN_OS == .Windows {
+	foreign import sqlite "windows-amd64/sqlite3.lib"
+} else {
+	foreign import sqlite "system:sqlite3"
+}
 
 DB :: struct {} // opaque sqlite3
 Stmt :: struct {} // opaque sqlite3_stmt

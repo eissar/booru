@@ -5,7 +5,6 @@ import "core:log"
 import "core:net"
 import "core:os"
 import "core:strings"
-import "core:sys/linux"
 import "core:time"
 
 import "cli"
@@ -98,7 +97,7 @@ main :: proc() {
 			os.exit(1)
 		}
 
-		result := importers.eagle_import(source, &state, linux.Fd(os.fd(fd)))
+		result := importers.eagle_import(source, &state, fd)
 		os.close(fd)
 		log.infof(
 			"Eagle import: %d imported, %d missing metadata, %d read errors",

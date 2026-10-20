@@ -94,10 +94,16 @@ event_append :: proc(log: ^EventLog, e: Event) -> (err: string) {
 		return "could not sync event log"
 	}
 
-	dir, dir_err := os.open(fmt.tprintf("%s/events", log.root), {.Read}, os.Permissions_Default)
-	if dir_err != nil {return "could not open events directory for syncing"}
-	defer os.close(dir)
-	if os.sync(dir) != nil {return "could not sync events directory"}
+	when ODIN_OS == .Linux {
+		dir, dir_err := os.open(
+			fmt.tprintf("%s/events", log.root),
+			{.Read},
+			os.Permissions_Default,
+		)
+		if dir_err != nil {return "could not open events directory for syncing"}
+		defer os.close(dir)
+		if os.sync(dir) != nil {return "could not sync events directory"}
+	}
 	return ""
 }
 
@@ -153,10 +159,16 @@ events_append :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 		return "could not sync event log"
 	}
 
-	dir, dir_err := os.open(fmt.tprintf("%s/events", log.root), {.Read}, os.Permissions_Default)
-	if dir_err != nil {return "could not open events directory for syncing"}
-	defer os.close(dir)
-	if os.sync(dir) != nil {return "could not sync events directory"}
+	when ODIN_OS == .Linux {
+		dir, dir_err := os.open(
+			fmt.tprintf("%s/events", log.root),
+			{.Read},
+			os.Permissions_Default,
+		)
+		if dir_err != nil {return "could not open events directory for syncing"}
+		defer os.close(dir)
+		if os.sync(dir) != nil {return "could not sync events directory"}
+	}
 	return ""
 }
 

@@ -10,12 +10,18 @@ import libwebp "../vendor/libwebp"
 
 FIXTURE_LIBRARY :: "test/fixture/library"
 
+when ODIN_OS == .Windows {
+	NULL_DEVICE :: "NUL"
+} else {
+	NULL_DEVICE :: "/dev/null"
+}
+
 @(test)
 rescale_fixtures :: proc(t: ^testing.T) {
 	state := library.State {
 		library_path = FIXTURE_LIBRARY,
 	}
-	file, err := os.open("/dev/null", os.O_WRONLY)
+	file, err := os.open(NULL_DEVICE, os.O_WRONLY)
 	if !testing.expect(t, err == nil, "open output") {return}
 	defer os.close(file)
 

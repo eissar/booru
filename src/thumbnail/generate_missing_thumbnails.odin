@@ -6,7 +6,9 @@ import "core:log"
 import "core:os"
 import "core:strings"
 import "core:sys/linux"
+import win "core:sys/windows"
 
+import "../dirlist"
 import "../library"
 import "../media"
 import "../store"
@@ -94,17 +96,34 @@ generate_image_thumbnails :: proc(
 ) {
 	oid := img.oid
 	id_prefix := fmt.tprintf("%d.", img.id)
-	dir, open_err := os.open(fmt.tprintf("%v/images/", s.library_path), {.Read}, {})
+	dir, open_err := os.open(
+		fmt.tprintf("%v/images/", s.library_path),
+		{.Read},
+		os.Permissions_Default_Directory,
+	)
 	if open_err != nil {return 0, card(sizes)}
 	defer os.close(dir)
 	img_path := ""
-	dents_buf: [32 * 1024]u8
+	names := make([dynamic]string, 0, 256)
+	defer delete(names)
 	scan: for {
-		n, err := linux.getdents(linux.Fd(os.fd(dir)), dents_buf[:])
-		if err != nil || n == 0 {break}
-		offset := 0
-		for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
-			name := linux.dirent_name(entry)
+		clear(&names)
+		when ODIN_OS == .Linux {
+			dents_buf: [32 * 1024]u8 = ---
+			n, err := linux.getdents(linux.Fd(os.fd(dir)), dents_buf[:])
+			if err != nil || n == 0 {break}
+			offset := 0
+			for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
+				append(&names, linux.dirent_name(entry))
+			}
+		} else when ODIN_OS == .Windows {
+			nt_buf: [4 * 1024]u64 = ---
+			n, ok := dirlist.read_batch(win.HANDLE(os.fd(dir)), nt_buf[:], &names, false)
+			if !ok || n == 0 {break}
+		} else {
+			#panic("generate_image_thumbnails: unsupported OS")
+		}
+		for name in names {
 			if strings.has_prefix(name, id_prefix) {
 				img_path = fmt.tprintf("%s/images/%s", s.library_path, name)
 				break scan
@@ -196,18 +215,30 @@ filter_missing_thumbnails :: proc(
 	list: ^map[string]bit_set[LOD_RESOLUTION],
 	resolution: LOD_RESOLUTION,
 ) {
-	dents_buf: [32 * 1024]u8
-
-	fd := linux.Fd(os.fd(dfd))
+	names := make([dynamic]string, 0, 1024)
+	defer delete(names)
 
 	for {
-		n, err := linux.getdents(fd, dents_buf[:])
-		if err != nil {return}
-		if n == 0 {break} 	// end of directory
+		clear(&names)
+		when ODIN_OS == .Linux {
+			dents_buf: [32 * 1024]u8 = ---
+			n, err := linux.getdents(linux.Fd(os.fd(dfd)), dents_buf[:])
+			if err != nil {return}
+			if n == 0 {break} 	// end of directory
+			offset := 0
+			for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
+				append(&names, linux.dirent_name(entry))
+			}
+		} else when ODIN_OS == .Windows {
+			nt_buf: [4 * 1024]u64 = ---
+			n, ok := dirlist.read_batch(win.HANDLE(os.fd(dfd)), nt_buf[:], &names, false)
+			if !ok {return}
+			if n == 0 {break} 	// end of directory
+		} else {
+			#panic("filter_missing_thumbnails: unsupported OS")
+		}
 
-		offset := 0
-		for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
-			name := linux.dirent_name(entry)
+		for name in names {
 			if name[0] == '.' {continue} 	// ignore ./../.*
 
 			if !strings.has_suffix(name, ".webp") {continue}
@@ -272,7 +303,7 @@ find_missing_thumbnails :: proc(s: library.State, missing: ^map[string]bit_set[L
 			n, // e.g. 64
 			allocator = context.temp_allocator,
 		)
-		osf, err := os.open(pth, {.Read}, {})
+		osf, err := os.open(pth, {.Read}, os.Permissions_Default_Directory)
 		if err != nil {
 			continue
 		}

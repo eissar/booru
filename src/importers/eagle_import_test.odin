@@ -2,7 +2,6 @@ package importers
 
 import "core:os"
 import "core:reflect"
-import "core:sys/linux"
 import "core:testing"
 
 import elog "../event_log"
@@ -72,7 +71,7 @@ eagle_items_import_into_sqlite_with_correct_amount_of_items :: proc(t: ^testing.
 	}
 	if !testing.expect(t, store.Init(&imported, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&imported)
-	res := eagle_import(FIXTURE_EAGLE_LIBRARY, &imported, linux.Fd(os.fd(fd)))
+	res := eagle_import(FIXTURE_EAGLE_LIBRARY, &imported, fd)
 	testing.expect(
 		t,
 		res.success == 3 && res.missing == 1 && res.read_errors == 0,

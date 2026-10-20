@@ -538,12 +538,14 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	if err := os.sync(file); err != nil {
 		fmt.panicf("ingest: sync original %s: %v", path, err)
 	}
-	images_dir := fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
-	dir, dir_err := os.open(images_dir, {.Read}, os.Permissions_Default)
-	if dir_err != nil {fmt.panicf("ingest: open images directory for syncing: %v", dir_err)}
-	defer os.close(dir)
-	if err := os.sync(dir); err != nil {
-		fmt.panicf("ingest: sync images directory: %v", err)
+	when ODIN_OS == .Linux {
+		images_dir := fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
+		dir, dir_err := os.open(images_dir, {.Read}, os.Permissions_Default)
+		if dir_err != nil {fmt.panicf("ingest: open images directory for syncing: %v", dir_err)}
+		defer os.close(dir)
+		if err := os.sync(dir); err != nil {
+			fmt.panicf("ingest: sync images directory: %v", err)
+		}
 	}
 
 	item := library.Image {

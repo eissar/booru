@@ -1,0 +1,6 @@
+6df5546b7c576ee5b410464ff9a504b82a6b54a3092ff7642b169fa636910be1  src/vendor/dav1d/windows-amd64/dav1d.lib
+f7ccc6f78850640593ad071bb24415b4addde3f70cf611cda1fe17510b7a65fd  src/vendor/libwebp/windows-amd64/libwebp.lib
+4b59d3cded9dc1608544160f3b4b10ac974c6ac0d6ffc23064e5f4c8dbd05aea  src/vendor/sqlite/windows-amd64/sqlite3.dll
+30831fd76becbdde92a50d9ec155b4e5c629dd509117427118159b72f6c72dee  src/vendor/sqlite/windows-amd64/sqlite3.lib
+4fd9c79ce52498bc69a2c588680888ece2dff33d47a949416da34148c660b6b5  src/vendor/sqlite/windows-amd64/sqlite3.def
+2644f4db96b1b49a76e15abeee768839b84550456f21567ef5c7dcbbbbcfa27d  src/vendor/tidy/windows-amd64/tidy.lib

@@ -41,24 +41,39 @@ Its SONAME is `libtidy.so.58`; deploy it with that name in a loader search path
 
 ## Windows x64
 
-Zig 0.17.0, GNU Windows target; static archive, no Tidy DLL:
+Clang/LLVM 19.1.7, `x86_64-pc-windows-msvc` target, static MSVC CRT;
+no Tidy DLL. Use the same xwin SDK/CRT setup as dav1d in
+`../WINDOWS.md`. From the repository root, with the extracted source at
+`/tmp/tidy-html5-5.8.0`:
 
 ```sh
-mkdir -p tidy-win-obj
-for f in tidy-html5-5.8.0/src/*.c; do
-  zig cc -target x86_64-windows-gnu -O2 -DTIDY_STATIC \
+set -e
+sdk="$HOME/.xwin" # absolute path to xwin splat output
+src=/tmp/tidy-html5-5.8.0
+obj="$(mktemp -d)"
+for f in "$src"/src/*.c; do
+  clang-19 --target=x86_64-pc-windows-msvc -fms-runtime-lib=static \
+    -O2 -DNDEBUG -DTIDY_STATIC \
     -DLIBTIDY_VERSION='"5.8.0"' -DRELEASE_DATE='"2021/07/10"' \
-    -Itidy-html5-5.8.0/include -Itidy-html5-5.8.0/src \
-    -c "$f" -o "tidy-win-obj/$(basename "$f" .c).o" || exit
- done
-zig ar rcs src/vendor/tidy/windows-amd64/tidy.lib tidy-win-obj/*.o
+    -isystem "$sdk/crt/include" -isystem "$sdk/sdk/include/ucrt" \
+    -isystem "$sdk/sdk/include/shared" -isystem "$sdk/sdk/include/um" \
+    -I"$src/include" -I"$src/src" \
+    -c "$f" -o "$obj/$(basename "$f" .c).obj"
+done
+llvm-ar-19 rcs "$obj/tidy.lib" "$obj"/*.obj
+cp "$obj/tidy.lib" src/vendor/tidy/windows-amd64/tidy.lib
+rm -r "$obj"
 ```
 
-Upstream config.c emits four discarded-const warnings with this compiler.
+`NDEBUG` disables upstream debug tracing. Upstream config.c emits four
+discarded-const warnings; language headers emit eight unknown-pragma warnings.
+COFF directives include `/DEFAULTLIB:libcmt.lib` and
+`/DEFAULTLIB:oldnames.lib`, matching the static CRT used by dav1d/WebP.
+The previous GNU Windows build used an incompatible CRT.
 
-Validation: Odin Linux package check passed. C smoke programs linked against
-both artifacts, checked `sizeof(Bool)==4`, set all six normalization options,
-parsed/repaired/saved a nested-div document and released it. The Windows program
-ran under Wine; output matched Linux after removing CR bytes introduced by
-Windows default newline and stdout text-mode conversion. Odin Windows build
-requires `-windows-sdk-root` and was not validated here.
+Validation: `timeout --kill-after=10s 120s bash test/tools/windows.sh`
+linked successfully and ran all 45 tests under Wine, exiting 1 with three
+failures (not a timeout): `test.import_browse_delete_replay` (GET /gallery
+returned 0 instead of 200), `thumbnail.generate_missing_fixture_thumbnails`
+(missing-source reporting), and `thumbnail.stream_webp_socket_batches`
+(external command status). No test fixes were made.
