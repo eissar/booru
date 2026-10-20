@@ -15,7 +15,6 @@ none
 none
 
 ## toast
-[ ] - hook up the Dismiss button: `toast.odin:27` uses `hx-on-click`, which htmx 2 ignores; use `hx-on:click`
 
 
 [ ] - hook up the "Suggest tags" button: requests `/genai/tags`, no route/handler exists

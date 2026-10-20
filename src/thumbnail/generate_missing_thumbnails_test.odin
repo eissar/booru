@@ -10,6 +10,8 @@ import "../store"
 import libwebp "../vendor/libwebp"
 import "../vendor/sqlite"
 
+FIXTURE_LIBRARY :: "test/fixture/library"
+
 @(test)
 generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
 	root, err := os.make_directory_temp("", "booru-thumbnails-*", context.allocator)

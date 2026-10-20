@@ -15,12 +15,8 @@ import "../store"
 import libwebp "../vendor/libwebp"
 import "../vendor/sqlite"
 
-generate_thumbnail :: proc {
-	generate_thumbnail_argb,
-	generate_thumbnail_yuv,
-}
 
-generate_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded_ARGB) -> bool {
+encode_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded_ARGB) -> bool {
 	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
 		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
@@ -51,7 +47,7 @@ generate_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decod
 	return true
 }
 
-generate_thumbnail_yuv :: proc(
+encode_thumbnail_yuv :: proc(
 	root, oid: string,
 	edge: c.int,
 	img: media.Decoded_Dav1d_YUV,
@@ -86,6 +82,12 @@ generate_thumbnail_yuv :: proc(
 	}
 	return true
 }
+
+encode_thumbnail :: proc {
+	encode_thumbnail_argb,
+	encode_thumbnail_yuv,
+}
+
 
 generate_image_thumbnails :: proc(
 	s: library.State,
@@ -175,9 +177,9 @@ generate_image_thumbnails :: proc(
 		}
 		ok: bool
 		if format == .AVIF {
-			ok = generate_thumbnail(s.library_path, oid, edge, yuv)
+			ok = encode_thumbnail(s.library_path, oid, edge, yuv)
 		} else {
-			ok = generate_thumbnail(s.library_path, oid, edge, decoded)
+			ok = encode_thumbnail(s.library_path, oid, edge, decoded)
 		}
 		if ok {
 			generated += 1

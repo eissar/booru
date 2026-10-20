@@ -1,5 +1,6 @@
 package server
 
+import "core:bufio"
 import "core:crypto/sha2"
 import "core:encoding/hex"
 import "core:fmt"
@@ -17,6 +18,7 @@ import "../media"
 import "../store"
 import "../template"
 import "../thumbnail"
+import "../thumbnail/webp"
 import "../util"
 import "../vendor/sqlite"
 
@@ -251,12 +253,26 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 
 Mipmap_Stream :: struct {
 	files:  []thumbnail.Thumb,
-	prefix: thumbnail.Webp_Extended_Prefix,
+	prefix: webp.Webp_Extended_Prefix,
 }
 
-send_mipmap_stream :: proc(conn: ^net.TCP_Socket, raw: rawptr) -> io.Error {
+send_mipmap_stream :: proc(conn: ^net.TCP_Socket, raw: rawptr) -> (err: io.Error) {
 	data := cast(^Mipmap_Stream)raw
-	return thumbnail.Webp_X(data.files, &data.prefix, conn)
+
+	buffer: [4 * 1024]u8
+
+	writer: bufio.Writer
+	bufio.writer_init_with_buf(&writer, socket_writer(conn), buffer[:])
+	out_stream := bufio.writer_to_writer(&writer)
+	defer {
+		// works with implicit return
+		if err == nil {
+			err = bufio.writer_flush(&writer)
+		}
+	}
+
+	return webp.Encode(data.files, &data.prefix, out_stream)
+
 }
 
 handle_mipmap :: proc(
@@ -286,8 +302,9 @@ handle_mipmap :: proc(
 	// can be fetched with a GET (e.g. <link rel="preload" as="fetch">).
 	img_ids_raw := transmute(string)raw_req_body
 	if len(raw_req_body) == 0 {
-		params := make(map[string]string)
-		if !parse_query_params(req.header.query, &params) {
+		params := make(map[string]string, req.alloc)
+		defer delete(params)
+		if !parse_query_params(req.header.query, &params, req.alloc) {
 			http.res_error(ENCODING_ERR_MSG, res, status = .BadRequest)
 			return
 		}
@@ -348,8 +365,8 @@ handle_mipmap :: proc(
 		http.res_error("", res, status = .NotFound)
 		return
 	}
-	prefix: thumbnail.Webp_Extended_Prefix
-	length := thumbnail.Prepare_Webp_X(thumbnails[:idx], &prefix)
+	prefix: webp.Webp_Extended_Prefix
+	length := webp.Prepare_Webp_X(thumbnails[:idx], &prefix)
 	// Retain the frames in the request allocator until the response is sent.
 	data := new(Mipmap_Stream, req.alloc)
 	data.files = make([]thumbnail.Thumb, idx, req.alloc)
