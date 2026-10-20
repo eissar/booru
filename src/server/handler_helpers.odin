@@ -4,7 +4,6 @@ import "core:c"
 import "core:fmt"
 import "core:mem"
 import "core:net"
-import "core:os"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
@@ -58,11 +57,10 @@ parse_regen_thumbnail_query :: proc(
 }
 
 Gallery_Query :: struct {
-	limit:           int,
-	offset:          int,
-	sort:            string,
-	tags:            []string,
-	thumbnails_only: bool,
+	limit:  int,
+	offset: int,
+	sort:   string,
+	tags:   []string,
 }
 
 parse_int_param :: proc(value: string) -> (out: int, ok: bool) {
@@ -123,9 +121,6 @@ parse_gallery_query :: proc(
 		}
 	}
 	q.tags = tags_dyn[:]
-	if value, found := params["thumbnails_only"]; found {
-		q.thumbnails_only = value == "1"
-	}
 	return q, true
 }
 
@@ -189,30 +184,6 @@ filter_images :: proc(all: []library.Image, tags: []string) -> []library.Image {
 	return out[:]
 }
 
-// Benchmark-only: require an image and a real 64px thumbnail on disk.
-// Filter before slicing so missing thumbnails do not leave holes in pages.
-filter_benchmark_thumbnails :: proc(all: []library.Image, root: string) -> []library.Image {
-	out := make([dynamic]library.Image, 0, len(all))
-	for img in all {
-		if !strings.has_prefix(img.content_type, "image/") || !oid_path_safe(img.oid) {continue}
-		if os.is_file(fmt.tprintf("%s/thumbnails/64/%s.webp", root, img.oid)) {
-			append(&out, img)
-		}
-	}
-	return out[:]
-}
-
-filter_gallery_images :: proc(
-	all: []library.Image,
-	q: Gallery_Query,
-	root: string,
-) -> []library.Image {
-	filtered := filter_images(all, q.tags)
-	if !q.thumbnails_only {return filtered}
-	defer delete(filtered)
-	return filter_benchmark_thumbnails(filtered, root)
-}
-
 less_img :: proc(a, b: library.Image, sort: string) -> bool {
 	switch sort {
 	case "idAsc":
@@ -271,9 +242,6 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 		} else {
 			tags_query = fmt.tprintf("%s&tags=%s", tags_query, tag)
 		}
-	}
-	if q.thumbnails_only {
-		tags_query = fmt.tprintf("%s&thumbnails_only=1", tags_query)
 	}
 	gallery_url = fmt.tprintf("/gallery?limit=%d&sort=%s%s", q.limit, q.sort, tags_query)
 	fragment_url = fmt.tprintf(

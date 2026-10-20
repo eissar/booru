@@ -50,6 +50,8 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 # Thumbnail Preview TODO
 
+- [ ] Add a canvas pixel budget and a bounded texture cache so preview memory stays bounded as viewport size and loaded-card count grow.
+
 - [ ] Validate VP8 thumbnail headers and dimensions before assembling mipmaps; the writer currently assumes valid VP8 input and a uniform longest edge.
 
 - If visible-grid redraws become a bottleneck, render changed slots into a persistent texture-backed framebuffer and blit it to the canvas on rAF. Compare blit bandwidth and framebuffer memory against drawing the cached textures; invalidate affected slots on sorting, scrolling, and resize.

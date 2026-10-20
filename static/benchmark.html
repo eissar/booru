@@ -15,7 +15,7 @@ h1{font-size:16px;margin:0 0 8px}p{font-size:12px;line-height:1.4;margin:8px 0 0
 <iframe id="gallery" title="Live gallery"></iframe>
 <div id="overlay"><div id="boxes"></div><aside id="panel">
 <h1>Gallery scroll / blank checker</h1>
-<label>Gallery <input id="url" value="/gallery?limit=100&amp;thumbnails_only=1"></label> <button id="go">Load</button> <button id="reset">Reset</button>
+<label>Gallery <input id="url" value="/gallery?limit=100"></label> <button id="go">Load</button> <button id="reset">Reset</button>
 <dl>
 <dt>Current / peak sampled speed</dt><dd id="speed">—</dd>
 <dt>Peak 100ms travel</dt><dd id="travel">—</dd>
@@ -28,7 +28,7 @@ h1{font-size:16px;margin:0 0 8px}p{font-size:12px;line-height:1.4;margin:8px 0 0
 <dt>Strip ahead / behind</dt><dd id="buffer">—</dd>
 </dl>
 <div id="status">Loading…</div>
-<p>Only image entries with an existing 64px thumbnail are requested; videos and missing thumbnails are excluded before pagination.</p>
+<p>Uses the normal gallery listing, including videos and entries with missing thumbnails.</p>
 <p>Red: no ready original and no submitted preview covering the visible image. Amber: a resident preview does not cover it. Counters include only samples with scrolling after the initial batch is ready; idle and warmup samples are excluded. Checks run at up to 10Hz.</p>
 <p><strong>Diagnostic estimates, not pixel detection.</strong> Original “ready” means complete + naturalWidth; preview coverage means the last submitted draw’s clipped rectangle. Neither proves painted pixels. Partial gaps, wrong pixels, occlusion and sub-100ms blanks can be missed. No screenshots, decode calls or GPU readback.</p>
 <label><input id="highlight" type="checkbox" checked style="width:auto"> Highlight suspected blanks</label>
@@ -70,14 +70,13 @@ h1{font-size:16px;margin:0 0 8px}p{font-size:12px;line-height:1.4;margin:8px 0 0
       if (url.origin !== location.origin || url.pathname.startsWith('/static/benchmark'))
         throw Error('Choose a same-origin gallery URL, not this benchmark.');
       if (!url.searchParams.has('limit')) url.searchParams.set('limit', '100');
-      url.searchParams.set('thumbnails_only', '1');
       // Match the server's query encoding: spaces are %20, never bare '+'.
       url.search = [...url.searchParams].map(([key, value]) =>
         `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
       $('url').value = url.pathname + url.search;
       win = port = null; reset();
       startupStartedAt = performance.now();
-      $('status').textContent = 'Loading images with 64px thumbnails…'; frame.src = url.href;
+      $('status').textContent = 'Loading gallery…'; frame.src = url.href;
     } catch (e) { panic(e); }
   }
 
@@ -89,10 +88,6 @@ h1{font-size:16px;margin:0 0 8px}p{font-size:12px;line-height:1.4;margin:8px 0 0
       assert(win.document.querySelector('.main-content'), 'gallery scrollport missing');
       win.addEventListener('error', event => panic(Error(`Gallery error: ${event.message}`)));
       win.addEventListener('unhandledrejection', event => panic(Error(`Gallery rejection: ${event.reason}`)));
-      // Keep pagination, preferences and filter swaps on the same eligible set.
-      win.document.addEventListener('htmx:configRequest', event => {
-        event.detail.parameters.thumbnails_only = '1';
-      });
     }
     catch (e) { panic(e); }
   });

@@ -139,11 +139,34 @@
   const paintedPreviews = new Map();
   let rendererState = "starting", rendererError = null;
 
+  let previewLogSequence = 0;
+  let lastBacking = null;
+  function previewLog(event, details = {}) {
+    const record = {
+      seq: ++previewLogSequence,
+      ms: Math.round(performance.now()),
+      event,
+      state: rendererState,
+      contextLost: gl ? gl.isContextLost() : null,
+      backing: canvas ? [canvas.width, canvas.height] : null,
+      dpr: devicePixelRatio || 1,
+      images: batch?.images.length || 0,
+      textures: batch?.textures.length || 0,
+      ...details,
+    };
+    console.info("[booru-webgl] " + JSON.stringify(record));
+  }
+
   function failPreview(error) {
+    previewLog("failure", {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
+      lastBacking,
+    });
     rendererState = "failed";
     rendererError = error instanceof Error ? error.message : String(error);
     document.documentElement.classList.remove("gallery-previews-active");
-    console.error("Mipmap preview:", error);
+    console.error("[booru-webgl] Mipmap preview:", error);
   }
 
   // The strip lives in content coordinates. Scrolling moves its existing pixels
@@ -198,8 +221,21 @@
   }
 
   function init() {
-    gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true });
+    gl = canvas.getContext("webgl2", {
+      alpha: true, premultipliedAlpha: true, antialias: false, depth: false,
+    });
     if (!gl) throw Error("WebGL2 unavailable");
+    const rendererInfo = gl.getExtension("WEBGL_debug_renderer_info");
+    previewLog("context-created", {
+      attributes: gl.getContextAttributes(),
+      version: gl.getParameter(gl.VERSION),
+      renderer: gl.getParameter(rendererInfo ? rendererInfo.UNMASKED_RENDERER_WEBGL : gl.RENDERER),
+      vendor: gl.getParameter(rendererInfo ? rendererInfo.UNMASKED_VENDOR_WEBGL : gl.VENDOR),
+      maxViewport: Array.from(gl.getParameter(gl.MAX_VIEWPORT_DIMS) || []),
+      maxRenderbuffer: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
+      maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+      maxArrayLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS),
+    });
     const vs = shader(
       gl.VERTEX_SHADER,
       `#version 300 es
@@ -266,7 +302,11 @@
   }
 
   function draw() {
-    if (!uniforms) return;
+    if (!uniforms || rendererState === "failed") return;
+    if (gl.isContextLost()) {
+      failPreview(Error("WebGL context lost; reload the page to retry"));
+      return;
+    }
     if (diagnosticsEnabled) paintedPreviews.clear();
     const images = batch ? batch.images : [];
     const thumbnails = batch ? batch.thumbnails : [];
@@ -278,14 +318,30 @@
     // Preserve the CSS coverage and lower resolution rather than truncate it.
     const viewportLimit = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
     const backingLimit = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
-    const dpr = Math.min(devicePixelRatio || 1,
+    if (!viewportLimit || !backingLimit) {
+      failPreview(Error("WebGL drawing limits unavailable; context may be lost"));
+      return;
+    }
+    // Low-resolution previews do not need display-resolution backing pixels.
+    const previewScale = 0.5;
+    const dpr = Math.min(previewScale,
       viewportLimit[0] / w, viewportLimit[1] / h,
       backingLimit / w, backingLimit / h);
     const width = Math.max(1, Math.floor(w * dpr)),
       height = Math.max(1, Math.floor(h * dpr));
     if (canvas.width !== width || canvas.height !== height) {
+      lastBacking = {
+        css: [w, h], requestedDpr: previewScale, effectiveDpr: dpr,
+        pixels: [width, height], rgbaMiB: +(width * height * 4 / 1048576).toFixed(2),
+        maxViewport: Array.from(viewportLimit), maxRenderbuffer: backingLimit,
+      };
+      previewLog("backing-resize", lastBacking);
       canvas.width = width;
       canvas.height = height;
+      if (gl.isContextLost()) {
+        failPreview(Error("WebGL context lost during canvas resize"));
+        return;
+      }
     }
     gl.viewport(0, 0, width, height);
     gl.clearColor(0, 0, 0, 0);
@@ -396,7 +452,7 @@
   }
 
   function schedule() {
-    if (pending || !uniforms) return;
+    if (pending || !uniforms || rendererState === "failed") return;
     pending = true;
     requestAnimationFrame(() => {
       pending = false;
@@ -412,6 +468,7 @@
 
   function releaseBatch() {
     if (!batch) return;
+    previewLog("batch-release");
     batch.abort.abort();
     batch.decoder?.close();
     for (const texture of batch.textures) gl.deleteTexture(texture);
@@ -419,10 +476,11 @@
   }
 
   function requestBatch() {
-    if (batchQueued || !uniforms) return;
+    if (batchQueued || !uniforms || rendererState === "failed") return;
     batchQueued = true;
     requestAnimationFrame(() => {
       batchQueued = false;
+      if (rendererState === "failed") return;
       releaseBatch();
       imageSizes.disconnect();
       const grid = getGrid();
@@ -434,6 +492,7 @@
         abort: new AbortController(),
         decoder: null,
       });
+      previewLog("batch-start");
       for (const img of current.images) imageSizes.observe(img);
       draw();
       if (!cards.length) return;
@@ -509,6 +568,10 @@
         if (i % batchSize === 0) {
           const texture = gl.createTexture();
           if (!texture) throw Error("Texture allocation failed");
+          previewLog("texture-allocate", {
+            index: current.textures.length, width, height, layers: batchSize,
+            rgbaMiB: +(width * height * batchSize * 4 / 1048576).toFixed(2),
+          });
           current.textures.push(texture);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
           // LINEAR uses only level zero; generating unused mip levels adds no value here.
@@ -520,6 +583,11 @@
             height,
             batchSize,
           );
+          const allocationError = gl.getError();
+          if (allocationError !== gl.NO_ERROR) {
+            previewLog("texture-allocation-error", { code: `0x${allocationError.toString(16)}` });
+            throw Error(`WebGL texture allocation failed: 0x${allocationError.toString(16)}`);
+          }
           gl.texParameteri(
             gl.TEXTURE_2D_ARRAY,
             gl.TEXTURE_MIN_FILTER,
@@ -571,6 +639,7 @@
     if (streamError) throw streamError;
     if (count !== ids.length)
       throw Error(`Expected ${ids.length} frames, received ${count}`);
+    previewLog("batch-complete", { frames: count });
   }
 
   // Read-only diagnostics for benchmark.html. No observers or work unless called.
@@ -615,6 +684,18 @@
     canvas = document.getElementById("thumbnail-background");
     try {
       if (!canvas) throw Error("Missing #thumbnail-background canvas");
+      previewLog("startup", {
+        userAgent: navigator.userAgent, secureContext: globalThis.isSecureContext,
+        imageDecoder: !!globalThis.ImageDecoder,
+        viewport: [innerWidth, innerHeight], visibility: document.visibilityState,
+      });
+      canvas.addEventListener("webglcontextcreationerror", event => {
+        previewLog("context-creation-error", { message: event.statusMessage });
+      });
+      canvas.addEventListener("webglcontextlost", event => {
+        previewLog("context-lost", { message: event.statusMessage, lastBacking });
+        failPreview(Error("WebGL context lost; reload the page to retry"));
+      });
       if (!globalThis.isSecureContext)
         throw Error("ImageDecoder requires HTTPS or localhost; this page is not a secure context");
       if (!globalThis.ImageDecoder)
