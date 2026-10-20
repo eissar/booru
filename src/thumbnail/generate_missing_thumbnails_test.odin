@@ -30,7 +30,7 @@ generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
 		os.mkdir_all(fmt.tprintf("%s/images", root), os.Permissions_Default_Directory) == nil,
 	)
 	testing.expect(t, os.write_entire_file(fmt.tprintf("%s/images/2.webp", root), data) == nil)
-	images := [?]library.Image{{id = 2, oid = oid}}
+	images := [?]library.Image{{id = 2, oid = oid, ext = "webp"}}
 	state := library.State {
 		library_path = root,
 	}

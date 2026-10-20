@@ -97,41 +97,7 @@ generate_image_thumbnails :: proc(
 	generated, failed: int,
 ) {
 	oid := img.oid
-	id_prefix := fmt.tprintf("%d.", img.id)
-	dir, open_err := os.open(
-		fmt.tprintf("%v/images/", s.library_path),
-		{.Read},
-		os.Permissions_Default_Directory,
-	)
-	if open_err != nil {return 0, card(sizes)}
-	defer os.close(dir)
-	img_path := ""
-	names := make([dynamic]string, 0, 256)
-	defer delete(names)
-	scan: for {
-		clear(&names)
-		when ODIN_OS == .Linux {
-			dents_buf: [32 * 1024]u8 = ---
-			n, err := linux.getdents(linux.Fd(os.fd(dir)), dents_buf[:])
-			if err != nil || n == 0 {break}
-			offset := 0
-			for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
-				append(&names, linux.dirent_name(entry))
-			}
-		} else when ODIN_OS == .Windows {
-			nt_buf: [4 * 1024]u64 = ---
-			n, ok := dirlist.read_batch(win.HANDLE(os.fd(dir)), nt_buf[:], &names, false)
-			if !ok || n == 0 {break}
-		} else {
-			#panic("generate_image_thumbnails: unsupported OS")
-		}
-		for name in names {
-			if strings.has_prefix(name, id_prefix) {
-				img_path = fmt.tprintf("%s/images/%s", s.library_path, name)
-				break scan
-			}
-		}
-	}
+	img_path := fmt.tprintf("%s/images/%d.%s", s.library_path, img.id, img.ext)
 	data, err := os.read_entire_file(img_path, context.allocator)
 	if err != nil {
 		fmt.eprintfln("thumbnail: read %s: %v", oid, err)
@@ -210,52 +176,6 @@ generate_missing_thumbnails :: proc(s: library.State) -> (generated, failed: int
 		failed += f
 	}
 	return
-}
-
-filter_missing_thumbnails :: proc(
-	dfd: ^os.File,
-	list: ^map[string]bit_set[LOD_RESOLUTION],
-	resolution: LOD_RESOLUTION,
-) {
-	names := make([dynamic]string, 0, 1024)
-	defer delete(names)
-
-	for {
-		clear(&names)
-		when ODIN_OS == .Linux {
-			dents_buf: [32 * 1024]u8 = ---
-			n, err := linux.getdents(linux.Fd(os.fd(dfd)), dents_buf[:])
-			if err != nil {return}
-			if n == 0 {break} 	// end of directory
-			offset := 0
-			for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
-				append(&names, linux.dirent_name(entry))
-			}
-		} else when ODIN_OS == .Windows {
-			nt_buf: [4 * 1024]u64 = ---
-			n, ok := dirlist.read_batch(win.HANDLE(os.fd(dfd)), nt_buf[:], &names, false)
-			if !ok {return}
-			if n == 0 {break} 	// end of directory
-		} else {
-			#panic("filter_missing_thumbnails: unsupported OS")
-		}
-
-		for name in names {
-			if name[0] == '.' {continue} 	// ignore ./../.*
-
-			if !strings.has_suffix(name, ".webp") {continue}
-			oid := name[:len(name) - len(".webp")]
-			remaining, exists := list^[oid]
-			if !exists {continue}
-			remaining -= bit_set[LOD_RESOLUTION]{resolution}
-			if remaining == {} {
-				delete_key(list, oid)
-			} else {
-				value := &list^[oid]
-				value^ = remaining
-			}
-		}
-	}
 }
 
 LOD_RESOLUTION :: enum {
