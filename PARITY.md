@@ -6,11 +6,7 @@ git:eissar/lfs-booru
 [ ] - hook up the page-size "2" option: server clamps limits below 10
 
 ## inspector
-[ ] - hook up the 'regenerate thumbnail' (Refresh) button: `GET /regen-thumbnail` has no route/handler
-[ ] - hook up the Delete button: `POST /delete` has no route/handler
-for now, permanent delete. future possible
-trash w/
-[ ] - hook up the Save button (name and tags): `/update-metadata` has no route/handler
+[ ] - implement the 'regenerate thumbnail' (Refresh) handler: `GET /regen-thumbnail` is routed, but returns 501 Not Implemented
 
 ## item_card
 none

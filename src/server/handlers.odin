@@ -692,6 +692,120 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 }
 
 
+// handle_update_metadata serves POST /update-metadata (inspector name form).
+// Logs a "patch" event first, then applies it to the store.
+handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
+	context.allocator = req.alloc
+	params := make(map[string]string)
+	if !parse_query_params(string(body), &params, req.alloc) {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast(ENCODING_ERR_MSG, .Error), res, .BadRequest)
+		return
+	}
+	raw_id := params["id"]
+	id, id_ok := parse_int_param(raw_id[:])
+	if !id_ok || id < 1 {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("bad id", .Error), res, .BadRequest)
+		return
+	}
+
+	// Full patch format: every field is optional; empty/zero leaves it alone.
+	ev := elog.Event {
+		id   = id,
+		op   = "patch",
+		tags = form_tags(params["tags"]),
+	}
+	ok := true
+	ev.name = form_string(params, "name", &ok)
+	ev.oid = form_string(params, "oid", &ok)
+	ev.path = form_string(params, "path", &ok)
+	ev.ext = form_string(params, "ext", &ok)
+	ev.content_type = form_string(params, "content_type", &ok)
+	ev.mtime = form_i64(params, "mtime", &ok)
+	ev.added_at = form_i64(params, "added_at", &ok)
+	ev.width = int(form_i64(params, "width", &ok))
+	ev.height = int(form_i64(params, "height", &ok))
+	if !ok {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("bad metadata", .Error), res, .BadRequest)
+		return
+	}
+
+	_, found, rc := store.read_image_by_id(s.data_store, id, req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
+	}
+	if !found {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("no match for ID", .Error), res, .NotFound)
+		return
+	}
+
+	if elog.event_append(s.event_log, ev) != "" {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("could not write patch event", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
+	patch := library.Image {
+		id           = id,
+		oid          = ev.oid,
+		path         = ev.path,
+		ext          = ev.ext,
+		name         = ev.name,
+		content_type = ev.content_type,
+		mtime        = ev.mtime,
+		added_at     = ev.added_at,
+		width        = ev.width,
+		height       = ev.height,
+		tags         = ev.tags,
+	}
+	if sqlite.with_transaction(s.data_store, patch, store.patch_item) != sqlite.OK {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("could not apply patch event", .Error),
+			res,
+			.InternalServerError,
+		)
+		return
+	}
+
+	img, _, rc2 := store.read_image_by_id(s.data_store, id, req.alloc)
+	if rc2 != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
+	}
+	http.res_html(template.render_inspector(img, 0), res)
+}
+
+// form_string returns the decoded, trimmed value of a urlencoded form key ("" if absent).
+form_string :: proc(params: map[string]string, key: string, ok: ^bool) -> string {
+	return strings.trim_space(params[key])
+}
+
+form_i64 :: proc(params: map[string]string, key: string, ok: ^bool) -> i64 {
+	v := form_string(params, key, ok)
+	if v == "" {return 0}
+	n, parsed := strconv.parse_i64(v)
+	if !parsed {ok^ = false}
+	return n
+}
+
+// form_tags splits an already percent-decoded, comma-separated tags value.
+form_tags :: proc(value: string) -> []string {
+	out := make([dynamic]string)
+	for part in strings.split(value, ",") {
+		t := strings.trim_space(part)
+		if t != "" {append(&out, t)}
+	}
+	return out[:]
+}
+
 mime_from_leaf :: proc(name: string) -> http.Content_Type {
 	switch {
 	case strings.has_suffix(name, ".html"):

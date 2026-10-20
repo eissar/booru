@@ -136,6 +136,8 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 			handle_ingest(s, &res, {req_header, alloc, rec_time}, body)
 		case req_header.path == "/delete":
 			handle_delete(s, &res, {req_header, alloc, rec_time}, body)
+		case req_header.path == "/update-metadata":
+			handle_update_metadata(s, &res, {req_header, alloc, rec_time}, body)
 		case strings.starts_with(req_header.path, "/fragment/inspect/"):
 			handle_fragment_inspect(s^, &res, req)
 		case strings.starts_with(req_header.path, "/mipmap/"):
