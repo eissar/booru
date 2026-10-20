@@ -4,7 +4,6 @@ import "base:runtime"
 import "core:c"
 import "core:os"
 
-// Requires libwebp (input encoding) and webpinfo (output validation).
 when ODIN_OS == .Windows {
 	foreign import webp "windows-amd64/libwebp.lib"
 } else {

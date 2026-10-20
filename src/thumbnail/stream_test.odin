@@ -6,11 +6,11 @@ import "core:encoding/endian"
 import "core:fmt"
 import "core:io"
 import "core:net"
-import "core:os"
 import "core:testing"
 import "core:thread"
 
 import libwebp "../vendor/libwebp"
+import "../vendor/webpinfo"
 
 @(test)
 stream_webp_socket_batches :: proc(t: ^testing.T) {
@@ -133,32 +133,8 @@ stream_webp_socket_batches :: proc(t: ^testing.T) {
 			testing.expect(t, !bytes.contains(output[:], alpha[30:40]), "unknown metadata skipped")
 		}
 
-		root, temp_err := os.make_directory_temp("", "booru-stream-*", context.allocator)
-		if testing.expect(t, temp_err == nil) {
-			path := fmt.aprintf("%s/output.webp", root)
-			if testing.expect(t, os.write_entire_file(path, output[:]) == nil) {
-				status, stdout, stderr, exec_err := os.process_exec(
-					{command = {"webpinfo", "-diag", path}},
-					context.allocator,
-				)
-				testing.expect(
-					t,
-					exec_err == nil && status.exit_code == 0,
-					fmt.tprintf(
-						"webpinfo: process error=%v, exit=%d\n%s%s",
-						exec_err,
-						status.exit_code,
-						stdout,
-						stderr,
-					),
-				)
-				delete(stdout)
-				delete(stderr)
-			}
-			os.remove_all(root)
-			delete(path)
-			delete(root)
-		}
+		status := webpinfo.validate(raw_data(output[:]), len(output))
+		testing.expect(t, status == .OK, fmt.tprintf("webpinfo: validation status=%v", status))
 		delete(output)
 	}
 }
