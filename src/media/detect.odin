@@ -1,6 +1,7 @@
 package media
 
 import "core:bytes"
+import "core:os"
 
 Format :: enum {
 	Unknown,
@@ -29,6 +30,23 @@ has_magic :: proc(data: []u8, offset: int, magic: []u8) -> bool {
 		if data[offset + i] != value {return false}
 	}
 	return true
+}
+
+//HACK: dont read the file twice
+hack_sniff_first_32_bytes :: proc(path: string) -> (format: Format, err: os.Error) {
+	file, open_err := os.open(path, {.Read})
+	if open_err != nil {return .Unknown, open_err}
+	defer os.close(file)
+
+	header: [32]u8
+	used := 0
+	for used < len(header) {
+		n, read_err := os.read(file, header[used:])
+		used += n
+		if read_err != nil && read_err != .EOF {return .Unknown, read_err}
+		if read_err == .EOF || n == 0 {break}
+	}
+	return detect_format(header[:used]), nil
 }
 
 detect_format :: proc(data: []u8) -> Format {

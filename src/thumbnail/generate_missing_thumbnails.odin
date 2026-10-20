@@ -27,7 +27,7 @@ generate_missing_thumbnails :: proc(s: library.State) -> (generated, failed: int
 	}
 	for img in images {
 		sizes, exists := missing[img.oid]
-		if !exists {continue}
+		if !exists || sizes == {} {continue}
 		n, f := generate_image_thumbnails(s, img, sizes)
 		generated += n
 		failed += f

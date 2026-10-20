@@ -8,6 +8,8 @@ import "../library"
 import "../media"
 import libwebp "../vendor/libwebp"
 
+SUPPORTED_THUMBNAIL :: bit_set[media.Format]{.PNG, .JPEG, .GIF, .WebP, .AVIF}
+
 encode_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded_ARGB) -> bool {
 	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
@@ -90,13 +92,18 @@ generate_image_thumbnails :: proc(
 ) {
 	oid := img.oid
 	img_path := fmt.tprintf("%s/images/%d.%s", s.library_path, img.id, img.ext)
+	format, sniff_err := media.hack_sniff_first_32_bytes(img_path)
+	if sniff_err != nil {
+		fmt.eprintfln("thumbnail: sniff %s: %v", oid, sniff_err)
+		return 0, card(sizes)
+	}
+	if format not_in SUPPORTED_THUMBNAIL {return 0, 0}
 	data, err := os.read_entire_file(img_path, context.allocator)
 	if err != nil {
 		fmt.eprintfln("thumbnail: read %s: %v", oid, err)
 		return 0, card(sizes)
 	}
 	defer delete(data)
-	format := media.detect_format(data)
 	decoded: media.Decoded_ARGB
 	yuv: media.Decoded_Dav1d_YUV
 	#partial switch format {
