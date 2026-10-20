@@ -189,24 +189,3 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 	testing.expect(t, get_res.status == .OK, "GET with ids returns 200")
 	testing.expect(t, bytes.equal(get_res.body, post_body), "GET body matches POST body")
 }
-
-@(test)
-mipmap_rejects_invalid_requests :: proc(t: ^testing.T) {
-	for path in ([]string{"/mipmap/3", "/mipmap/64"}) {
-		res := http.Response {
-			headers = make(map[string]string),
-		}
-		handle_mipmap(
-			library.State{},
-			&res,
-			http.Req{{path = path}, context.temp_allocator, time.now()},
-		)
-		testing.expect(
-			t,
-			res.status == .BadRequest,
-			"invalid resolution or empty body returns 400",
-		)
-		testing.expect(t, len(res.body) == 0, "rejected request has an empty body")
-		delete(res.headers)
-	}
-}

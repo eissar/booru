@@ -97,7 +97,7 @@ async function run(){
  let frameCount=0,bytes=0,width,height,streamError,drawError;
  const batchSize=Math.min(64,gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS));
  try{
-  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/plain'},body:imageIds.join(','),cache:'no-store',priority:'high',signal:abort.signal});
+  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'ids='+encodeURIComponent(imageIds.join(',')),cache:'no-store',priority:'high',signal:abort.signal});
   m.headers=performance.now()-t0;
   if(!response.ok)throw Error(`Fetch HTTP ${response.status}`);
   if(!response.body)throw Error('Response has no stream');

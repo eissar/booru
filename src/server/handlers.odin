@@ -124,9 +124,14 @@ handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http
 		http.res_html(template.render_toast("Missing image id", .Error), res, .BadRequest)
 		return
 	}
-	params := parse_query_params(req.header.query)
+	params := make(map[string]string)
+	if !parse_query_params(req.header.query, &params) {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast(ENCODING_ERR_MSG, .Error), res, .BadRequest)
+		return
+	}
 	raw_order := params["order"]
-	order, valid_order := parse_int_param(raw_order[:])
+	order, valid_order := parse_int_param(raw_order)
 	if !valid_order {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(template.render_toast("Invalid render order", .Error), res, .BadRequest)
@@ -281,12 +286,12 @@ handle_mipmap :: proc(
 	// can be fetched with a GET (e.g. <link rel="preload" as="fetch">).
 	img_ids_raw := transmute(string)raw_req_body
 	if len(raw_req_body) == 0 {
-		query := req.header.query
-		if !strings.has_prefix(query, "ids=") {
-			http.res_error("", res, status = .BadRequest)
+		params := make(map[string]string)
+		if !parse_query_params(req.header.query, &params) {
+			http.res_error(ENCODING_ERR_MSG, res, status = .BadRequest)
 			return
 		}
-		img_ids_raw, _ = strings.replace_all(query[len("ids="):], "%2C", ",", req.alloc)
+		img_ids_raw = params["ids"]
 	}
 	requested_count := strings.count(img_ids_raw, ",") + 1
 
