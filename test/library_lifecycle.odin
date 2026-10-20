@@ -157,28 +157,27 @@ lifecycle_http :: proc(
 	string,
 	bool,
 ) {
-	state, output, errors, err := os.process_exec(
-		{
-			command = {
-				"curl",
-				"--silent",
-				"--show-error",
-				"--noproxy",
-				"*",
-				"--connect-timeout",
-				"1",
-				"--max-time",
-				"5",
-				"--request",
-				method,
-				fmt.tprintf("--data-raw=%s", body),
-				"--write-out",
-				"%{http_code}",
-				fmt.tprintf("http://127.0.0.1:%d%s", port, path),
-			},
-		},
-		context.temp_allocator,
+	command := make([dynamic]string, 0, 18, context.temp_allocator)
+	append(
+		&command,
+		"curl",
+		"--silent",
+		"--show-error",
+		"--noproxy",
+		"*",
+		"--connect-timeout",
+		"1",
+		"--max-time",
+		"5",
+		"--request",
+		method,
+		"--write-out",
+		"%{http_code}",
+		fmt.tprintf("http://127.0.0.1:%d%s", port, path),
 	)
+	// Avoid empty argv entries on Windows and = syntax on older curl.
+	if body != "" {append(&command, "--data-raw", body)}
+	state, output, errors, err := os.process_exec({command = command[:]}, context.temp_allocator)
 	if !testing.expectf(
 		t,
 		err == nil && state.exit_code == 0 && len(output) >= 3,
