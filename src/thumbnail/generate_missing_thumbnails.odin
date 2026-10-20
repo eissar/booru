@@ -283,40 +283,100 @@ largest_resolution :: proc(sizes: bit_set[LOD_RESOLUTION]) -> (largest: LOD_RESO
 	return
 }
 
-find_missing_thumbnails :: proc(s: library.State, missing: ^map[string]bit_set[LOD_RESOLUTION]) {
-	resolutions := make(map[string]LOD_RESOLUTION, allocator = context.temp_allocator)
-	defer delete(resolutions)
-	resolutions["64"] = .x64
-	resolutions["128"] = .x128
+name_for_r := #partial [LOD_RESOLUTION]string {
+	.x64  = "64",
+	.x128 = "128",
+}
 
+// Seeds candidate OIDs from the store, then excludes existing thumbnail sizes.
+find_missing_thumbnails :: proc(
+	s: library.State,
+	check: ^map[string]bit_set[LOD_RESOLUTION],
+	resolutions: bit_set[LOD_RESOLUTION] = {.x64, .x128},
+) {
 	images, rc := store.read_images(s.data_store, context.temp_allocator)
 	if rc != sqlite.OK {
 		fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
 		return
 	}
 	for img in images {
-		missing^[img.oid] = {.x64, .x128}
+		check[img.oid] = resolutions
+	}
+	exclude_existing_thumbnails(s, check, resolutions)
+}
+
+// Resets caller-seeded OIDs to resolutions, then subtracts sizes found on disk.
+// Does not add OIDs to check.
+exclude_existing_thumbnails :: proc(
+	s: library.State,
+	check: ^map[string]bit_set[LOD_RESOLUTION],
+	resolutions: bit_set[LOD_RESOLUTION] = {.x64, .x128},
+) {
+	for _, &entry in check {
+		// set the list of res to check.
+		// when we scan, we will remove
+		// any matches for this entry
+		entry = resolutions
 	}
 
-	for n, r in resolutions {
+	// scan
+	for res in resolutions {
+		res_name := name_for_r[res]
+
+		// open directory for a resolution
+		// to check what oids are present
 		pth := fmt.aprintf(
 			"%v/thumbnails/%v",
 			s.library_path,
-			n, // e.g. 64
+			res_name,
 			allocator = context.temp_allocator,
 		)
-		osf, err := os.open(pth, {.Read}, os.Permissions_Default_Directory)
-		if err != nil {
+		osf_for_r, open_err := os.open(pth, {.Read}, os.Permissions_Default_Directory)
+		if open_err != nil {
+			// if we can't open the directory for reading,
+			// consider them all missing ?
 			continue
 		}
-		filter_missing_thumbnails(osf, missing, r)
-		os.close(osf)
-	}
+		defer os.close(osf_for_r)
 
-	missing_64, missing_128: int
-	for _, sizes in missing^ {
-		if .x64 in sizes {missing_64 += 1}
-		if .x128 in sizes {missing_128 += 1}
+
+		if ODIN_OS != .Windows && ODIN_OS != .Linux {
+			panic("unsupported os")
+		}
+		when ODIN_OS == .Linux {
+			dents_buf: [32 * 1024]u8 = ---
+			for {
+				n, err := linux.getdents(linux.Fd(os.fd(osf_for_r)), dents_buf[:])
+				if err != nil {return}
+				if n == 0 {break} 	// end of directory
+				offset := 0
+				for entry in linux.dirent_iterate_buf(dents_buf[:n], &offset) {
+					name := linux.dirent_name(entry)
+					if !strings.has_suffix(name, ".webp") {continue}
+					oid := name[:len(name) - len(".webp")]
+					if oid in check {
+						check[oid] -= {res}
+					}
+				}
+			}
+		} else when ODIN_OS == .Windows {
+			nt_buf: [4 * 1024]u64 = ---
+			names := make([dynamic]string, 0, 1024)
+			defer delete(names)
+			for {
+				clear(&names)
+				n, ok := dirlist.read_batch(win.HANDLE(os.fd(osf_for_r)), nt_buf[:], &names, false)
+				if !ok {return}
+				if n == 0 {break} 	// end of directory
+				for name in names {
+					if !strings.has_suffix(name, ".webp") {continue}
+					oid := name[:len(name) - len(".webp")]
+					if oid in check {
+						check[oid] -= {res}
+					}
+				}
+			}
+		}
+
 	}
-	log.infof("thumbnails: missing 64px=%d, 128px=%d", missing_64, missing_128)
 }

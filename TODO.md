@@ -1,5 +1,7 @@
 high level tasks
 
+- [ ] Move platform-specific `when ODIN_OS` branches that depend on platform-only imports into suffixed files such as `_windows.odin` and `_linux.odin`. Keep those imports in their platform files so `odin check -vet` does not flag imports needed only by another target. Cover `src/dirlist`, `src/importers/eagle_import.odin`, and `src/thumbnail/generate_missing_thumbnails.odin`, and audit for other occurrences.
+
 Harden flat parser: validation, boundaries, tests/fuzzing.
 Add event types: implement remaining operations.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.

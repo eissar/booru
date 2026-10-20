@@ -8,7 +8,6 @@ import "core:strings"
 import "core:time"
 
 import "cli"
-import "core:c"
 import elog "event_log"
 import "importers"
 import "library"
