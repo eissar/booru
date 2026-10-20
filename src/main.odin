@@ -18,6 +18,14 @@ import "store"
 import "thumbnail"
 import "vendor/sqlite"
 
+fmt_timestamp :: proc(elapsed: time.Duration) -> string {
+	if elapsed < time.Second {
+		return fmt.tprintf("%.2f ms", time.duration_milliseconds(elapsed))
+	} else {
+		return fmt.tprintf("%.2f s", time.duration_seconds(elapsed))
+	}
+}
+
 main :: proc() {
 	load_start := time.now()
 
@@ -108,9 +116,20 @@ main :: proc() {
 	}
 
 	if cfg.scan_thumbnail {
+		scan_start := time.now()
+		log.info("thumbnails: generate missing start")
 		generated, failed := thumbnail.generate_missing_thumbnails(state)
-		log.infof("thumbnails: generated=%d, failed=%d", generated, failed)
+
+
+		log.infof(
+			"thumbnails: generated=%d, failed=%d in %v",
+			generated,
+			failed,
+			fmt_timestamp(time.since(scan_start)),
+		)
 	}
+
+	log.infof("total startup time=%v", fmt_timestamp(time.since(load_start)))
 
 	defer free_all(context.temp_allocator)
 

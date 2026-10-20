@@ -24,7 +24,7 @@ lfs-booru parity achieved
 - [ ] `main.odin` seeds the id counter from `store.read_images` after replay; replace with a `SELECT MAX(id)` query.
 - [ ] `generate_missing_thumbnails` and `find_missing_thumbnails` each run `store.read_images` (naive double read); `lookup_thumbnail_oid_by_id` runs two queries per id in `handle_mipmap`. Revisit if startup or mipmap throughput regresses; add a `handle_mipmap` case to `bench/handlers`.
 
-- [ ] In `generate_image_thumbnails`, try `images/<id>.<ext>` directly using `img.ext`.
+- [ ] In `gen_item_thumbnail_versions`, try `images/<id>.<ext>` directly using `img.ext`.
   Fall back to scanning for the `<id>.` prefix only when the extension is missing or the direct read fails.
 
 
@@ -161,3 +161,6 @@ The root warning file isn’t generated. Its final name remains undecided.
 
 Implicit event version 0, with startup refusal for unsupported versions.
 Omitting version already matches your decision. MAX_SUPPORTED_VERSION = 0 and the compatibility gate don’t exist yet.
+
+
+// TODO: test throughput MB/s for image formats -> webp
