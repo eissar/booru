@@ -1,6 +1,7 @@
 package store
 
 import "core:c"
+import "core:encoding/json"
 import "core:mem"
 
 import "../library"
@@ -14,7 +15,20 @@ import "../vendor/sqlite"
 read_images :: proc(db: ^sqlite.DB, alloc: mem.Allocator) -> (images: []library.Image, rc: c.int) {
 	return read_items(
 		db,
-		"SELECT id, oid, path, ext, width, height, name, mtime, added_at, content_type FROM items ORDER BY id",
+		`SELECT
+			i.id, i.oid, i.path, i.ext, i.width, i.height,
+			i.name, i.mtime, i.added_at, i.content_type,
+			(
+				SELECT json_group_array(tag)
+				FROM (
+					SELECT tag
+					FROM item_tags
+					WHERE item_id = i.id
+					ORDER BY tag
+				)
+			) AS tags
+		FROM items AS i
+		ORDER BY i.id`,
 		alloc,
 	)
 }
@@ -36,7 +50,16 @@ search_images :: proc(
 		`
 		SELECT
 			i.id, i.oid, i.path, i.ext, i.width, i.height,
-			i.name, i.mtime, i.added_at, i.content_type
+			i.name, i.mtime, i.added_at, i.content_type,
+			(
+				SELECT json_group_array(tag)
+				FROM (
+					SELECT tag
+					FROM item_tags
+					WHERE item_id = i.id
+					ORDER BY tag
+				)
+			) AS tags
 		FROM items AS i
 		WHERE instr(lower(i.name), lower(?1)) > 0
 		   OR EXISTS (
@@ -64,7 +87,20 @@ read_image_by_id :: proc(
 	images: []library.Image
 	images, rc = read_items(
 		db,
-		"SELECT id, oid, path, ext, width, height, name, mtime, added_at, content_type FROM items WHERE id = ?",
+		`SELECT
+			i.id, i.oid, i.path, i.ext, i.width, i.height,
+			i.name, i.mtime, i.added_at, i.content_type,
+			(
+				SELECT json_group_array(tag)
+				FROM (
+					SELECT tag
+					FROM item_tags
+					WHERE item_id = i.id
+					ORDER BY tag
+				)
+			) AS tags
+		FROM items AS i
+		WHERE i.id = ?`,
 		alloc,
 		id = id,
 	)
@@ -85,7 +121,20 @@ read_image_by_oid :: proc(
 	images: []library.Image
 	images, rc = read_items(
 		db,
-		"SELECT id, oid, path, ext, width, height, name, mtime, added_at, content_type FROM items WHERE oid = ? ORDER BY id LIMIT 1",
+		`SELECT
+			i.id, i.oid, i.path, i.ext, i.width, i.height,
+			i.name, i.mtime, i.added_at, i.content_type,
+			(
+				SELECT json_group_array(tag)
+				FROM (
+					SELECT tag
+					FROM item_tags
+					WHERE item_id = i.id
+					ORDER BY tag
+				)
+			) AS tags
+		FROM items AS i
+		WHERE i.oid = ? ORDER BY i.id LIMIT 1`,
 		alloc,
 		oid = oid,
 	)
@@ -105,6 +154,7 @@ Image_Row :: struct {
 	mtime:        i64,
 	added_at:     i64,
 	content_type: string,
+	tags:         string,
 }
 
 @(private = "file")
@@ -137,19 +187,6 @@ read_items :: proc(
 		if !sqlite.bind_string(stmt, 1, value) {return nil, 1}
 	}
 
-	tags: ^sqlite.Stmt
-	rc = sqlite.prepare_v2(
-		db,
-		"SELECT tag FROM item_tags WHERE item_id = ? ORDER BY tag",
-		-1,
-		&tags,
-		nil,
-	)
-	defer {
-		if tags != nil {sqlite.finalize(tags)}
-	}
-	if rc != sqlite.OK {return nil, rc}
-
 	out := make([dynamic]library.Image, alloc)
 	for {
 		row: Image_Row
@@ -172,25 +209,10 @@ read_items :: proc(
 			added_at     = row.added_at,
 			content_type = row.content_type,
 		}
-		rc = sqlite.bind_int64(tags, 1, i64(row.id))
-		if rc != sqlite.OK {return nil, rc}
-		image_tags := make([dynamic]string, alloc)
-		for {
-			tag: struct {
-				value: string,
-			}
-			tag_ok, tag_err, tag_rc := sqlite.step_scan(tags, &tag, alloc)
-			if tag_rc == sqlite.DONE {break}
-			if !tag_ok {
-				if tag_err == .Step {return nil, tag_rc}
-				if tag_err == .Alloc {return nil, 7}
-				return nil, 20
-			}
-			append(&image_tags, tag.value)
+		if err := json.unmarshal(transmute([]u8)row.tags, &image.tags, allocator = alloc);
+		   err != nil {
+			return nil, 20 // SQLITE_MISMATCH
 		}
-		image.tags = image_tags[:]
-		rc = sqlite.reset(tags)
-		if rc != sqlite.OK {return nil, rc}
 		append(&out, image)
 	}
 	return out[:], sqlite.OK

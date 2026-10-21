@@ -3,7 +3,6 @@ high level tasks
 - [ ] Move platform-specific `when ODIN_OS` branches that depend on platform-only imports into suffixed files such as `_windows.odin` and `_linux.odin`. Keep those imports in their platform files so `odin check -vet` does not flag imports needed only by another target. Cover `src/dirlist`, `src/importers/eagle_import.odin`, and `src/thumbnail/generate_missing_thumbnails.odin`, and audit for other occurrences.
 
 Harden flat parser: validation, boundaries, tests/fuzzing.
-Add event types: implement remaining operations.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
 
 # Store Write Path TODO
@@ -15,22 +14,19 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Keep a batch path: replay/import open one tx and `apply` every line (lfs-booru: `applyEventsFromFile`).
 - [ ] Rebuild path: defer secondary indexes (`items_added_at`, `item_tags_by_tag`) and the FK check during full replay. Create the indexes after the bulk insert, then run `PRAGMA foreign_key_check`. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
 - [ ] Optional: CI/pre-commit check that nothing outside `store` writes to the DB directly.
-- [ ] Add `hx-get` to `#search-form` (`src/template/gallery_page.odin`), whose native submit sends `q=a+b` and is now rejected with `ENCODING_ERR_MSG`. Its input is also named `q`, which `parse_gallery_query` never reads (it only parses `limit`, `offset`, `sort`, `tags`), so search does nothing today.
 - [ ] Validate tags as kebab-case where they are produced: `eagle_import` unmarshals Eagle JSON into `EagleItem_Event` and casts it straight to `elog.Event` (`src/importers/eagle_import.odin:172`), with no tag processing, and `library.new_add_event` only sets `op`/`id` despite its comment. Tags flow verbatim into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL structurally (the browser normalizes spaces only). Decide reject vs normalize (lowercase, spaces to `-`); a rejection will skip items whose Eagle libraries use tags like `Big Cat`, and existing rows stay unvalidated. Then `filter_urls` needs no `net.percent_encode`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths) and `handle_ingest`.
-- [ ] `handle_delete`: a failed `os.remove` is now logged to stderr and still returns 200 (see the TODO in the handler); decide how failed removals of remote/proxied originals get retried or reconciled.
 - [ ] Remove `core:log` (still used in `src/main.odin` and `src/server/server.odin`); use `fmt.eprint*` instead.
-- [ ] `main.odin` seeds the id counter from `store.read_images` after replay; replace with a `SELECT MAX(id)` query.
-- [ ] `generate_missing_thumbnails` and `find_missing_thumbnails` each run `store.read_images` (naive double read); `lookup_thumbnail_oid_by_id` runs two queries per id in `handle_mipmap`. Revisit if startup or mipmap throughput regresses; add a `handle_mipmap` case to `bench/handlers`.
+- [ ] Add a `handle_mipmap` case to `bench/handlers` to measure lookup and streaming throughput.
 
-- [ ] In `gen_item_thumbnail_versions`, try `images/<id>.<ext>` directly using `img.ext`.
-  Fall back to scanning for the `<id>.` prefix only when the extension is missing or the direct read fails.
 
 
 ## RESEARCH
 sccache - Mozilla's compiler cache - compiler artifacts can live in different remote storage backends
 
 # Performance Audit TODO
+
+- [ ] Avoid redundant serialization: `SQLite (row → JSON) → Odin (JSON → Odin → JSON) → client`. Keep data typed until final serialization, or pass SQLite-produced JSON through without decoding and re-encoding when no transformation is needed.
 - oha + valgrind/callgrind/memcheck
 
 - Build a Lighthouse-like resource audit for representative Odin workloads:
@@ -151,8 +147,7 @@ solution after increment_id if lib.id % 5 -> detect_orphan_oid
 INVARIANT:
 Rebuild incompatible databases; never migrate them.
 The derived-store compatibility check and rebuild lifecycle aren’t implemented.
-Incremental indexing, including Roaring bitmap tag indexes.
-Neither the bitmap index nor incremental projection updates are implemented.
+Roaring bitmap tag indexes are not implemented.
 
 Proxied libraries referencing originals outside the library.
 External-original resolution isn’t implemented; current operations assume managed originals.
