@@ -42,6 +42,7 @@ EventLog :: struct {
 
 Event :: struct {
 	added_at:     i64 `json:"added_at,omitempty"`,
+	comment:      string `json:"comment,omitempty"`,
 	content_type: string `json:"content_type,omitempty"`,
 	ext:          string `json:"ext,omitempty"`,
 	height:       int `json:"height,omitempty"`,

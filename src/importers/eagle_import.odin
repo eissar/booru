@@ -65,6 +65,7 @@ EagleItem :: struct {
 // transmutable into Event
 EagleItem_Event :: struct {
 	added_at:     i64 `json:"btime"`,
+	comment:      string `json:"annotation"`,
 	content_type: string `json:"-"`,
 	ext:          string, // Eagle's "ext" key matches, no tag needed
 	height:       int,
@@ -243,6 +244,7 @@ eagle_import :: proc(
 					width        = ev.width,
 					height       = ev.height,
 					name         = ev.name,
+					comment      = ev.comment,
 					mtime        = ev.mtime,
 					added_at     = ev.added_at,
 					content_type = ev.content_type,

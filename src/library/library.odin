@@ -23,6 +23,7 @@ Image :: struct {
 	width:        int,
 	height:       int,
 	name:         string,
+	comment:      string,
 	mtime:        i64,
 	added_at:     i64,
 	content_type: string,
