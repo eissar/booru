@@ -690,20 +690,7 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
     flex-direction: column;
     min-width: 0;
     height: 100%;
-    padding: 1.25rem;
     overflow: hidden;
-}
-
-@media (width >= 640px) {
-    .gallery-content {
-        padding: 1.5rem;
-    }
-}
-
-@media (width >= 1024px) {
-    .gallery-content {
-        padding: 2rem;
-    }
 }
 
 .layout {
@@ -714,12 +701,25 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
     overflow: hidden;
 }
 
-/* Main content area */
+/* Main content area; padding scrolls with the filters and cards. */
 .main-content {
     flex: 1 1 auto;
     min-width: 0;
+    padding: 1.25rem;
     overflow: auto;
     scrollbar-gutter: stable;
+}
+
+@media (width >= 640px) {
+    .main-content {
+        padding: 1.5rem;
+    }
+}
+
+@media (width >= 1024px) {
+    .main-content {
+        padding: 2rem;
+    }
 }
 
 /* Inspector panel */

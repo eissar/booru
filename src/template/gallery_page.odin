@@ -79,7 +79,7 @@ write_filter_chip :: proc(
 		" hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\">#",
 	)
 	escape_text(b, display)
-	wr(b, "×</a></span>")
+	wr(b, "</a></span>")
 }
 
 // render_gallery_content renders the replaceable gallery content region.
@@ -90,8 +90,8 @@ render_gallery_content :: proc(
 ) -> string {
 	b := strings.builder_make()
 	wr(&b, "<div class=\"gallery-content\">")
-	wr(&b, render_filter_bar(filter))
 	wr(&b, "<div id=\"gallery-layout\" class=\"layout\"><section class=\"main-content\">")
+	wr(&b, render_filter_bar(filter))
 	wr(&b, render_photo_grid(images, filter.offset, has_more))
 	wr(&b, "</section></div></div>")
 	return strings.to_string(b)
