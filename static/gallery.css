@@ -810,6 +810,10 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
 }
 
 @media (width < 768px) {
+    .gallery-main .inspector {
+        transition: none;
+    }
+
     .inspector {
         display: none;
         position: fixed;

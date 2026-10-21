@@ -72,7 +72,7 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	attrf(&b, "hx-vals", "%s\"order\":%d%s", "{", render_order, "}")
 	wr(
 		&b,
-		" hx-target=\"#inspector-content\" hx-target-error=\"#toasts-log\" hx-swap=\"innerHTML\" data-hx-on-click=\"booruToggleInspector(true)\"><span class=\"font-medium truncate\">",
+		" hx-target=\"#inspector-content\" hx-target-error=\"#toasts-log\" hx-swap=\"innerHTML\"><span class=\"font-medium truncate\">",
 	)
 	escape_text(&b, image.name)
 	wr(&b, "</span><div class=\"flex flex-wrap gap-2 text-xs mt-2\">")
