@@ -809,6 +809,28 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
     overflow-wrap: anywhere;
 }
 
+@media (width < 768px) {
+    .inspector {
+        display: none;
+        position: fixed;
+        inset: auto 0 0;
+        z-index: 51;
+        height: 81vh;
+        height: 81dvh;
+        overflow: hidden;
+    }
+
+    .gallery-main.inspector-open .inspector {
+        display: block;
+        width: 100%;
+        border-left-width: 0;
+    }
+
+    .inspector-inner {
+        width: 100%;
+    }
+}
+
 /* Show placeholder text when inspector content is empty */
 #inspector-content:empty::after {
     content: 'Select an image to inspect it.';
