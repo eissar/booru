@@ -33,7 +33,7 @@ render_photo_grid :: proc(images: []library.Image, offset: int, has_more: bool) 
 	if has_more {
 		wr(
 			&b,
-			"<button type=\"button\" hx-get=\"/fragment/items\" hx-target=\"#pagination-controls\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\" hx-select=\"#photo-grid > *\" hx-include=\"#filter-bar,#pagination-controls\" class=\"mt-6 w-full py-2 px-4 rounded-md bg-indigo-600 text-white font-medium hover:bg-indigo-700 focus-ring\">Load more <span class=\"text-sm opacity-80\">(showing ",
+			"<button type=\"button\" hx-get=\"/fragment/items\" hx-target=\"#pagination-controls\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\" hx-select=\"#photo-grid > *\" hx-include=\"#filter-bar,#pagination-controls\" class=\"mt-6 w-full py-2 px-4 rounded bg-indigo-600 text-white font-medium hover:bg-indigo-700 focus-ring\">Load more <span class=\"text-sm opacity-80\">(showing ",
 		)
 		escape_text(&b, offset_str)
 		wr(&b, ")</span></button>")

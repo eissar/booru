@@ -24,7 +24,7 @@ render_toast :: proc(message: string, variant: Toast_Variant) -> string {
 	escape_text(&b, message)
 	wr(
 		&b,
-		"</span><button type=\"button\" class=\"booru-toast-dismiss\" hx-on-click=\"this.closest('.booru-toast').remove()\">Dismiss</button></div>",
+		"</span><button type=\"button\" class=\"booru-toast-dismiss rounded\" hx-on-click=\"this.closest('.booru-toast').remove()\">Dismiss</button></div>",
 	)
 	return strings.to_string(b)
 }
