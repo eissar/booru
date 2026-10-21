@@ -17,7 +17,7 @@ read_images :: proc(db: ^sqlite.DB, alloc: mem.Allocator) -> (images: []library.
 		db,
 		`SELECT
 			i.id, i.oid, i.path, i.ext, i.width, i.height,
-			i.name, i.mtime, i.added_at, i.content_type,
+			i.name, i.mtime, i.added_at, i.content_type, i.comment,
 			(
 				SELECT json_group_array(tag)
 				FROM (
@@ -50,7 +50,7 @@ search_images :: proc(
 		`
 		SELECT
 			i.id, i.oid, i.path, i.ext, i.width, i.height,
-			i.name, i.mtime, i.added_at, i.content_type,
+			i.name, i.mtime, i.added_at, i.content_type, i.comment,
 			(
 				SELECT json_group_array(tag)
 				FROM (
@@ -89,7 +89,7 @@ read_image_by_id :: proc(
 		db,
 		`SELECT
 			i.id, i.oid, i.path, i.ext, i.width, i.height,
-			i.name, i.mtime, i.added_at, i.content_type,
+			i.name, i.mtime, i.added_at, i.content_type, i.comment,
 			(
 				SELECT json_group_array(tag)
 				FROM (
@@ -123,7 +123,7 @@ read_image_by_oid :: proc(
 		db,
 		`SELECT
 			i.id, i.oid, i.path, i.ext, i.width, i.height,
-			i.name, i.mtime, i.added_at, i.content_type,
+			i.name, i.mtime, i.added_at, i.content_type, i.comment,
 			(
 				SELECT json_group_array(tag)
 				FROM (
@@ -154,6 +154,7 @@ Image_Row :: struct {
 	mtime:        i64,
 	added_at:     i64,
 	content_type: string,
+	comment:      string,
 	tags:         string,
 }
 
@@ -208,6 +209,7 @@ read_items :: proc(
 			mtime        = row.mtime,
 			added_at     = row.added_at,
 			content_type = row.content_type,
+			comment      = row.comment,
 		}
 		if err := json.unmarshal(transmute([]u8)row.tags, &image.tags, allocator = alloc);
 		   err != nil {

@@ -46,6 +46,7 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 			path TEXT NOT NULL,
 			ext TEXT NOT NULL,
 			name TEXT NOT NULL,
+			comment TEXT NOT NULL,
 			content_type TEXT NOT NULL,
 			width INTEGER NOT NULL,
 			height INTEGER NOT NULL,
@@ -130,8 +131,9 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 			mtime = COALESCE(NULLIF(?, 0), mtime),
 			added_at = COALESCE(NULLIF(?, 0), added_at),
 			width = COALESCE(NULLIF(?, 0), width),
-			height = COALESCE(NULLIF(?, 0), height)
-		WHERE id = ?`,
+			height = COALESCE(NULLIF(?, 0), height),
+			comment = COALESCE(NULLIF(?11, ''), comment)
+		WHERE id = ?10`,
 		-1,
 		&stmt,
 		nil,
@@ -153,6 +155,7 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 	if rc != sqlite.OK {return rc}
 	rc = sqlite.bind_int64(stmt, 9, i64(item.height))
 	if rc != sqlite.OK {return rc}
+	if !sqlite.bind_string(stmt, 11, item.comment) {return 1}
 	rc = sqlite.bind_int64(stmt, 10, i64(item.id))
 	if rc != sqlite.OK {return rc}
 	rc = sqlite.step(stmt)
@@ -203,8 +206,8 @@ insert_item_tx :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 		tx.db,
 		`INSERT INTO items (
 			id, oid, path, ext, name, content_type,
-			width, height, mtime, added_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			width, height, mtime, added_at, comment
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		-1,
 		&stmt,
 		nil,
@@ -227,8 +230,15 @@ insert_item_tx :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 		if rc != sqlite.OK {return rc}
 	}
 
-	text_values := [5]string{item.oid, item.path, item.ext, item.name, item.content_type}
-	text_indices := [5]c.int{2, 3, 4, 5, 6}
+	text_values := [6]string {
+		item.oid,
+		item.path,
+		item.ext,
+		item.name,
+		item.content_type,
+		item.comment,
+	}
+	text_indices := [6]c.int{2, 3, 4, 5, 6, 11}
 	for value, i in text_values {
 		if len(value) > 0x7fff_ffff {return 18} 	// SQLITE_TOOBIG
 		p := cstring(raw_data(value))

@@ -105,6 +105,18 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 		"<img src=\"https://unpkg.com/heroicons@2.0.18/24/outline/check.svg\" alt=\"Save\" class=\"h-4 w-4\" style=\"filter: var(--icon-filter);\"/></button></div></li>",
 	)
 
+	// comment row shares the metadata form's save button.
+	wr(&b, "<li class=\"flex flex-col gap-1\"><label")
+	attrf(&b, "for", "image-comment-%s", id)
+	wr(&b, " class=\"font-medium text-sm\">Comment</label><textarea")
+	attrf(&b, "id", "image-comment-%s", id)
+	wr(
+		&b,
+		" name=\"comment\" rows=\"4\" class=\"w-full input-focus-underline text-xs text-muted\">",
+	)
+	escape_text(&b, image.comment)
+	wr(&b, "</textarea></li>")
+
 	// tags row
 	wr(
 		&b,

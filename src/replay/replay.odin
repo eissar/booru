@@ -96,6 +96,8 @@ parse_item :: proc(
 			item.path = replay_flat_string(token, alloc)
 		case "ext":
 			item.ext = replay_flat_string(token, alloc)
+		case "comment":
+			item.comment = replay_flat_string(token, alloc)
 		case "name":
 			item.name = replay_flat_string(token, alloc)
 		case "content_type":

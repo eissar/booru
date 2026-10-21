@@ -733,6 +733,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	}
 	ok := true
 	ev.name = form_string(params, "name", &ok)
+	ev.comment = form_string(params, "comment", &ok)
 	ev.oid = form_string(params, "oid", &ok)
 	ev.path = form_string(params, "path", &ok)
 	ev.ext = form_string(params, "ext", &ok)

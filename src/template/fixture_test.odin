@@ -173,6 +173,7 @@ html_inspector :: proc(t: ^testing.T) {
 	defer free_all(alloc)
 	context.allocator = alloc
 	images := load_images("test/fixture/library/events/2026-01.ndjson")
+	images[0].comment = "Notes & <details>"
 	expect_html_fixture(t, "inspector", render_inspector(images[0]))
 }
 
