@@ -5,6 +5,7 @@ import "core:encoding/hex"
 import "core:fmt"
 import "core:mem"
 import "core:os"
+import "core:path/filepath"
 import "core:strings"
 import "core:sys/linux"
 import win "core:sys/windows"
@@ -187,7 +188,8 @@ eagle_import :: proc(
 				continue
 			}
 
-			from_leaf := fmt.aprintf("%v.%v", ev.name, ev.ext, allocator = context.temp_allocator)
+			// Keep only the final component so the source stays inside <id>.info/.
+			from_leaf := filepath.base(fmt.tprintf("%v.%v", ev.name, ev.ext))
 			// name = name from dirent, like ID.info/
 			from_path, _ := os.join_path(
 				{src_images_dir, meta_dirname, from_leaf},
