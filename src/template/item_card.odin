@@ -30,6 +30,7 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 		)
 		if link_class != "" {
 			attr(b, "class", link_class)
+			attr(b, "hx-trigger", "click consume")
 		}
 		attr(b, "href", tag_href(tag))
 		attr(b, "hx-get", tag_fragment_href(tag))

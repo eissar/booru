@@ -376,6 +376,10 @@ html[data-theme='dark'] input::placeholder {
     align-items: center;
 }
 
+.filter-chip[data-filter-key='tags'] > a::before {
+    content: '#';
+}
+
 .gallery-view-input {
     position: absolute;
     width: 1px;

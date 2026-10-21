@@ -67,17 +67,16 @@ write_filter_chip :: proc(
 ) {
 	wr(
 		b,
-		"<span class=\"filter-chip text-xs font-medium px-2 py-1 rounded-full backdrop-blur-sm tag-badge\"><input type=\"hidden\"",
+		"<span class=\"filter-chip text-xs font-medium px-2 py-1 rounded-full backdrop-blur-sm tag-badge\"",
 	)
+	attr(b, "data-filter-key", key)
+	wr(b, "><input type=\"hidden\"")
 	attr(b, "name", key)
 	attr(b, "value", value)
 	wr(b, "/><a")
 	attr(b, "href", gallery_url)
 	attr(b, "hx-get", fragment_url)
-	wr(
-		b,
-		" hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\">#",
-	)
+	wr(b, " hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\">")
 	escape_text(b, display)
 	wr(b, "</a></span>")
 }
