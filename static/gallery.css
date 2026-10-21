@@ -34,6 +34,14 @@ html[data-theme] {
     visibility: visible;
 }
 
+html[data-theme='dark'] {
+    color-scheme: dark;
+}
+
+html[data-theme='light'] {
+    color-scheme: light;
+}
+
 /* Theme variables based on data attribute */
 html[data-theme='light'] body,
 body.light-mode {
@@ -351,23 +359,6 @@ html[data-theme='dark'] input::placeholder {
     color: var(--text-muted);
     opacity: 1;
     font-weight: 400;
-}
-
-html[data-theme='dark'] ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-html[data-theme='dark'] ::-webkit-scrollbar-track {
-    background: var(--bg-surface);
-}
-
-html[data-theme='dark'] ::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-}
-
-html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
 }
 
 #filter-bar {
