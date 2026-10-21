@@ -451,11 +451,6 @@ html[data-theme='dark'] input::placeholder {
         gap: 0.25rem;
     }
 
-    #toolbar .toolbar-icon-button {
-        width: 1.875rem;
-        padding: 0.25rem;
-    }
-
     .toolbar-search {
         width: auto;
         max-width: none;
