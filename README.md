@@ -17,6 +17,10 @@ we panic on startup with 'upgrade'. libraries can be backwards but not forwards 
 
 ===
 
+## Frontend CSS
+
+Tailwind 3.4.17 is a pinned build-only dependency. Run `task assets:css` to install locked npm dependencies and regenerate `static/tailwind.css` from `assets/tailwind.css`, the Odin templates, and `static/gallery.js`. Build, run, and preview tasks do this automatically. Commit the generated stylesheet alongside class changes; serving prebuilt assets does not require Node. Load Tailwind before `static/gallery.css` so custom styles retain precedence.
+
 ## prior work
 
 TagStudio is a project to learn from.

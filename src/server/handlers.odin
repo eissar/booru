@@ -174,7 +174,17 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 		return
 	}
 
-	local_fp := strings.join({"./static/", leaf}, "")
+	// Preserve nested asset paths while rejecting traversal and unsafe segments.
+	relative := req.header.path[len("/static/"):]
+	for segment in strings.split(relative, "/") {
+		if segment == "" ||
+		   strings.contains(segment, "..") ||
+		   strings.contains_any(segment, "\\\\\"'<>|&$`;:*? ") {
+			http.res_html("", res, .NotFound)
+			return
+		}
+	}
+	local_fp := strings.join({"./static/", relative}, "")
 	data, err := os.read_entire_file(local_fp, req.alloc)
 	if err != nil {
 		if err == os.General_Error.Not_Exist {
@@ -831,6 +841,8 @@ mime_from_leaf :: proc(name: string) -> http.Content_Type {
 		return .Css
 	case strings.has_suffix(name, ".js"):
 		return .Javascript
+	case strings.has_suffix(name, ".svg"):
+		return .Svg
 	case:
 		return .Octet_Stream
 	}

@@ -1,3 +1,12 @@
+/* Inter 4.1, SIL Open Font License: /static/fonts/LICENSE.txt */
+@font-face {
+    font-family: Inter;
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/static/fonts/InterVariable.woff2") format("woff2");
+}
+
 /* Base document styles */
 html, body {
     height: 100%;

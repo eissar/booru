@@ -9,7 +9,7 @@ import "../library"
 // inspector_icon writes an icon <img> with the shared heroicons attributes.
 inspector_icon :: proc(b: ^strings.Builder, name, alt: string) {
 	wr(b, "<img")
-	attrf(b, "src", "https://unpkg.com/heroicons@2.0.18/24/outline/%s.svg", name)
+	attrf(b, "src", "/static/icons/%s.svg", name)
 	wr(b, " class=\"h-4 w-4\" style=\"filter: var(--icon-filter);\"")
 	if alt != "" {
 		attr(b, "alt", alt)
@@ -102,7 +102,7 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	wr(&b, " class=\"rounded p-1 hover-surface\" style=\"position: relative;\">")
 	wr(
 		&b,
-		"<img src=\"https://unpkg.com/heroicons@2.0.18/24/outline/check.svg\" alt=\"Save\" class=\"h-4 w-4\" style=\"filter: var(--icon-filter);\"/></button></div></li>",
+		"<img src=\"/static/icons/check.svg\" alt=\"Save\" class=\"h-4 w-4\" style=\"filter: var(--icon-filter);\"/></button></div></li>",
 	)
 
 	// comment row shares the metadata form's save button.
@@ -134,7 +134,7 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	)
 	wr(
 		&b,
-		"<img src=\"https://unpkg.com/heroicons@2.0.18/24/outline/pencil.svg\" class=\"h-3 w-3\" style=\"filter: var(--icon-filter);\" alt=\"Edit tags\"/></button></span><div class=\"flex flex-wrap gap-2\">",
+		"<img src=\"/static/icons/pencil.svg\" class=\"h-3 w-3\" style=\"filter: var(--icon-filter);\" alt=\"Edit tags\"/></button></span><div class=\"flex flex-wrap gap-2\">",
 	)
 	if len(image.tags) == 0 {
 		wr(&b, "<span class=\"text-xs text-muted\">No tags</span>")

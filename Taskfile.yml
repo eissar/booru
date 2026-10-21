@@ -27,9 +27,30 @@ tasks:
       - 'echo "githooks are not installed (or are stale); run: task hooks:install" >&2'
       - 'false'
 
+  assets:install:
+    desc: Install pinned frontend build dependencies
+    sources: [package.json, package-lock.json]
+    generates: [node_modules/.package-lock.json]
+    cmds:
+      - npm ci
+
+  assets:css:
+    desc: Generate the committed Tailwind stylesheet
+    deps: [assets:install]
+    sources:
+      - assets/tailwind.css
+      - tailwind.config.js
+      - package.json
+      - package-lock.json
+      - src/template/**/*.odin
+      - static/gallery.js
+    generates: [static/tailwind.css]
+    cmds:
+      - npm run build:css
+
   build:
     desc: Build the optimized server
-    deps: [hooks:check]
+    deps: [hooks:check, assets:css]
     method: checksum
     sources:
       - src/*.odin
@@ -43,14 +64,14 @@ tasks:
 
   run:
     desc: 'Build and run the server (e.g. task run -- -debug -- -port:9000)'
-    deps: [hooks:check]
+    deps: [hooks:check, assets:css]
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - odin run src -out:{{.BIN_DIR}}/booru {{.CLI_ARGS}}
 
   preview:
     desc: 'Run the template preview server (pass a port with --, e.g. task preview -- 9000)'
-    deps: [hooks:check]
+    deps: [hooks:check, assets:css]
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - odin run test/tools -out:{{.BIN_DIR}}/preview -- {{.CLI_ARGS}}

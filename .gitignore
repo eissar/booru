@@ -1,3 +1,6 @@
+# Frontend build dependencies
+/node_modules/
+
 # Odin build outputs
 src.bin
 src/src

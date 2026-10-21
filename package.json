@@ -1,0 +1,10 @@
+{
+  "name": "booru-assets",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i assets/tailwind.css -o static/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}

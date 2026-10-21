@@ -81,6 +81,7 @@ Content_Type :: enum {
 	Png,
 	Css,
 	Javascript,
+	Svg,
 }
 
 CONTENT_TYPE_MIME := [Content_Type]string {
@@ -94,4 +95,5 @@ CONTENT_TYPE_MIME := [Content_Type]string {
 	.Avif         = "image/avif",
 	.Jpeg         = "image/jpeg",
 	.Png          = "image/png",
+	.Svg          = "image/svg+xml",
 }
