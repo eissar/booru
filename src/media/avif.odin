@@ -2,11 +2,17 @@ package media
 
 import "core:encoding/endian"
 
+AVIF_ALPHA_AUX_TYPE :: "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha"
+
 AVIF_Box_Type :: enum {
 	Unknown,
 	meta,
 	pitm,
 	iloc,
+	iprp,
+	ipco,
+	auxC,
+	ipma,
 }
 
 // FullBox version semantics depend on the box type; these notes describe iloc.
@@ -27,6 +33,14 @@ parse_avif_box_header :: proc(data: []u8) -> (cc: AVIF_Box_Type, size, header_sz
 		cc = .pitm
 	case {'i', 'l', 'o', 'c'}:
 		cc = .iloc
+	case {'i', 'p', 'r', 'p'}:
+		cc = .iprp
+	case {'i', 'p', 'c', 'o'}:
+		cc = .ipco
+	case {'a', 'u', 'x', 'C'}:
+		cc = .auxC
+	case {'i', 'p', 'm', 'a'}:
+		cc = .ipma
 	}
 	n, _ := endian.get_u32(data[:4], .Big)
 	header_sz = 8
@@ -51,9 +65,11 @@ parse_avif_box_header :: proc(data: []u8) -> (cc: AVIF_Box_Type, size, header_sz
 // The decoder returns .Unsupported for non-8-bit/I420 images.
 Parse_AVIF :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 	pitm, iloc: []u8
-	for at := 0; at < len(data); {
-		cc, size, header_sz, header_ok := parse_avif_box_header(data[at:])
-		if !header_ok {return}
+	at := 0
+	for {
+		if at >= len(data) {break}
+
+		cc, size, header_sz := parse_avif_box_header(data[at:]) or_return
 		start, end := at + header_sz, at + size
 		at = end
 		if cc != .meta {continue}
@@ -61,14 +77,39 @@ Parse_AVIF :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 
 		// meta is a FullBox; its children follow version/flags.
 		for child := start + 4; child < end; {
-			f, l, h, child_ok := parse_avif_box_header(data[child:end])
-			if !child_ok {return}
+			f, l, h := parse_avif_box_header(data[child:end]) or_return
 			box := data[child + h:child + l]
 			#partial switch f {
 			case .pitm:
 				pitm = box
 			case .iloc:
 				iloc = box
+			case .iprp:
+				property_at := 0
+				for {
+					if property_at >= len(box) {break}
+					kind, size, header := parse_avif_box_header(box[property_at:]) or_return
+					properties := box[property_at + header:property_at + size]
+					property_at += size
+					if kind != .ipco {continue}
+
+					at := 0
+					for {
+						if at >= len(properties) {break}
+						kind, size, header := parse_avif_box_header(properties[at:]) or_return
+						property := properties[at + header:at + size]
+						at += size
+						if kind != .auxC {continue}
+						// auxC is a FullBox followed by a NUL-terminated auxiliary type.
+						if len(property) < 5 || property[0] != 0 {return}
+						end := 4
+						for end < len(property) && property[end] != 0 {end += 1}
+						if end == len(property) {return}
+						if string(property[4:end]) == AVIF_ALPHA_AUX_TYPE {
+							// TODO: retain this property's 1-based index for ipma.
+						}
+					}
+				}
 			}
 			child += l
 		}
@@ -99,7 +140,7 @@ Parse_AVIF :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 	if iloc_version != .V0 {index_size = int(iloc[5] & 0x0f)}
 	if offset_size > 8 || length_size > 8 || base_size > 8 || index_size > 8 {return}
 
-	at := 6
+	at = 6
 	count: u32
 	if iloc_version != .V2 {
 		if len(iloc) - at < 2 {return}
