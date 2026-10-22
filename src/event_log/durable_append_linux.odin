@@ -85,7 +85,7 @@ events_append :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 	input_stream := os.to_writer(ev_handle)
 
 	bw: bufio.Writer
-	bufio.writer_init(&bw, input_stream, size = 1024, allocator = context.allocator)
+	bufio.writer_init(&bw, input_stream, size = MAX_RECORD + 1, allocator = context.allocator)
 	defer bufio.writer_destroy(&bw)
 
 	buffered_stream := bufio.writer_to_stream(&bw)
