@@ -1,11 +1,14 @@
 package importers
 
 import "core:c"
+import "core:crypto"
 import "core:encoding/hex"
+import "core:encoding/uuid"
 import "core:fmt"
 import "core:mem"
 import "core:os"
 import "core:path/filepath"
+import "core:slice"
 import "core:strings"
 import "core:sys/linux"
 import win "core:sys/windows"
@@ -101,6 +104,30 @@ eagle_import :: proc(
 	dir_names := make([dynamic]string, 0, 256)
 	defer delete(dir_names)
 
+	context.random_generator = crypto.random_generator()
+	import_id := uuid.to_string(uuid.generate_v7())
+	defer delete(import_id)
+
+	// open one remediation queue / import
+	// this file will grow arbitrarily big.
+	// if I find a good solution for
+	// writing errors concurrently then
+	// I'll just make this one file and add REMEDIATION_IMPORT_ID to the event.
+	rq_leaf := fmt.aprintf("%v-remediation.ndjson", import_id, allocator = context.allocator)
+	defer delete(rq_leaf, allocator = context.allocator)
+
+	// just eager open
+	rq, rq_err := os.open(
+		fmt.tprintf("%v/%v", s.event_log.root, rq_leaf),
+		{.Write, .Create, .Append},
+		os.Permissions_Default_File,
+	)
+	if rq_err != nil {
+		fmt.panicf("import: can't open log file:", rq_leaf)
+	}
+	defer os.close(rq)
+
+
 	for {
 		defer free_all(context.temp_allocator)
 		clear(&dir_names)
@@ -182,6 +209,37 @@ eagle_import :: proc(
 			// need to bound to read bytes (i)
 			json_err := json.unmarshal(data[:i], &item, json.DEFAULT_SPECIFICATION, event_alloc)
 
+			remediate_tags := make([dynamic]string, allocator = event_alloc)
+
+			kept := make([dynamic]string, 0, len(item.tags), event_alloc)
+			for raw in item.tags {
+				tag := library.lowercase_and_dash_whitespace(raw, event_alloc)
+
+				// if there are still bad chars
+				// is_allowed_tag_char eq false
+				if strings.index_proc(tag, elog.is_allowed_tag_char, false) != -1 {
+					append(&remediate_tags, raw) // record the original
+					tag = library.canonicalize_tag(tag, event_alloc)
+				}
+				if tag == "" || slice.contains(kept[:], tag) {continue}
+				append(&kept, tag)
+			}
+			item.tags = kept[:]
+			// need more complex condition
+			// for other importers
+			ev_needs_remediation := len(remediate_tags) > 0
+
+			// REVIEW:
+			// should we do this _here_ ?
+			if ev_needs_remediation {
+				elog.ev_append(rq, elog.EventRemediation{ev^, remediate_tags[:]})
+			}
+
+
+			// TODO bounds check (2MB)
+			// we can bufio this later
+
+
 			if json_err != nil {
 				// no unique error tracking
 				res.read_errors += 1
@@ -212,6 +270,11 @@ eagle_import :: proc(
 			append(&events, ev^)
 
 			res.success += 1
+		}
+	}
+	if rq_info, _ := os.fstat(rq, context.temp_allocator); rq_info.size > 0 {
+		if err := elog.make_durable(rq); err != "" {
+			fmt.panicf("import: remediation queue make durable: %s", err)
 		}
 	}
 	// Originals have each been synced once. Persist their new filenames once
