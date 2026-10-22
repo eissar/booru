@@ -5,7 +5,13 @@ import "core:fmt"
 import "core:io"
 import "core:os"
 
-ev_append :: proc(log: ^EventLog, events: []Event) -> (err: string) {
+ev_append :: proc {
+	append_records,
+	append_remediation,
+}
+
+@(private)
+append_records :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 	if len(events) == 0 {return ""}
 	shard := get_current_event_shard(context.temp_allocator)
 
@@ -39,6 +45,20 @@ ev_append :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 
 	if err := make_durable(ev_handle); err != "" {
 		return fmt.tprintf("make durable: %v", err)
+	}
+
+	return ""
+}
+
+@(private)
+append_remediation :: proc(rq_handle: ^os.File, rem: EventRemediation) -> (err: string) {
+	buf: [MAX_RECORD + 1]u8
+	bw: bufio.Writer
+	bufio.writer_init_with_buf(&bw, os.to_writer(rq_handle), buf[:])
+
+	if err := write_event(bufio.writer_to_stream(&bw), rem); err != "" {return err}
+	if bufio.writer_flush(&bw) != nil {
+		return "could not flush remediation queue"
 	}
 
 	return ""

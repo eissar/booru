@@ -138,7 +138,7 @@ get_current_event_shard :: proc(allocator := context.allocator) -> string {
 }
 
 // Writes one newline-terminated record to w. Does not flush or sync.
-write_event :: proc(w: io.Writer, e: Event, loc := #caller_location) -> (err: string) {
+write_event :: proc(w: io.Writer, e: any, loc := #caller_location) -> (err: string) {
 	opt := json.Marshal_Options {
 		spec   = .JSON,
 		pretty = false,
@@ -158,4 +158,13 @@ write_event :: proc(w: io.Writer, e: Event, loc := #caller_location) -> (err: st
 	if write_err != nil || written != len(payload) {return "could not write event payload"}
 	if io.write_byte(w, '\n', nil) != nil {return "could not write event newline"}
 	return ""
+}
+
+EventRemediation :: struct {
+	using _:        Event,
+	REMEDIATE_tags: []string `json:"REMEDIATE_tags,omitempty"`,
+}
+
+is_allowed_tag_char :: proc(c: rune) -> bool {
+	return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z') || c == '-'
 }
