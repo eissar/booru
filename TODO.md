@@ -14,12 +14,19 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Keep a batch path: replay/import open one tx and `apply` every line (lfs-booru: `applyEventsFromFile`).
 - [ ] Rebuild path: defer secondary indexes (`items_added_at`, `item_tags_by_tag`) and the FK check during full replay. Create the indexes after the bulk insert, then run `PRAGMA foreign_key_check`. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
 - [ ] Optional: CI/pre-commit check that nothing outside `store` writes to the DB directly.
-- [ ] Validate tags as kebab-case where they are produced: `eagle_import` unmarshals Eagle JSON into `EagleItem_Event` and casts it straight to `elog.Event` (`src/importers/eagle_import.odin:172`), with no tag processing, and `library.new_add_event` only sets `op`/`id` despite its comment. Tags flow verbatim into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL structurally (the browser normalizes spaces only). Decide reject vs normalize (lowercase, spaces to `-`); a rejection will skip items whose Eagle libraries use tags like `Big Cat`, and existing rows stay unvalidated. Then `filter_urls` needs no `net.percent_encode`.
+- [ ] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths) and `handle_ingest`.
 - [ ] Remove `core:log` (still used in `src/main.odin` and `src/server/server.odin`); use `fmt.eprint*` instead.
 - [ ] Add a `handle_mipmap` case to `bench/handlers` to measure lookup and streaming throughput.
 
 
+
+# Tag Remediation TODO
+
+- [ ] Test the remediation path: import a temporary library with tags like `Black Cat`, `cat2` and `fav🐕`; assert the item's tags are canonical, the `<uuid>-remediation.ndjson` queue holds flat records with the original tags, and replay still matches the import.
+- [ ] Decide how the remediation queue is consumed (UI listing, resolve/dismiss); nothing reads it yet.
+- [ ] Linux: replace the per-original fsync loop after the Eagle import loop with one `syncfs` on the images directory (1k-item import: ~107 ms vs ~950 ms). Trade-offs: flushes the whole filesystem, and only reports writeback errors on Linux >= 5.8. Windows keeps per-file `FlushFileBuffers`.
+- [ ] `os.open` on Linux resolves the path with a `readlink` of `/proc/self/fd/N` on every open (3 extra syscalls per imported item). Low priority next to the fsyncs; would need `linux.open` for the metadata and image files.
 
 ## RESEARCH
 sccache - Mozilla's compiler cache - compiler artifacts can live in different remote storage backends
@@ -160,3 +167,13 @@ Omitting version already matches your decision. MAX_SUPPORTED_VERSION = 0 and th
 
 
 // TODO: test throughput MB/s for image formats -> webp
+
+filesystem heuristics
+FS_Heuristics :: struct {
+   write_cache_mode: int, // 1 write back, 0 write through, -1 unknown
+   rotational:       int, // 1, 0, -1
+   fs_kind:          FS_Kind, // .Block, .Tmpfs, .Network, .Fuse, .Unknown
+   mount_sync:       bool,
+   mount_nobarrier:  bool,
+   syncfs_reports_errors: bool, // kernel >= 5.8
+}

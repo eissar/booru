@@ -123,7 +123,7 @@ eagle_import :: proc(
 		os.Permissions_Default_File,
 	)
 	if rq_err != nil {
-		fmt.panicf("import: can't open log file:", rq_leaf)
+		fmt.panicf("import: can't open log file %v: %v", rq_leaf, rq_err)
 	}
 	defer os.close(rq)
 
@@ -209,33 +209,6 @@ eagle_import :: proc(
 			// need to bound to read bytes (i)
 			json_err := json.unmarshal(data[:i], &item, json.DEFAULT_SPECIFICATION, event_alloc)
 
-			remediate_tags := make([dynamic]string, allocator = event_alloc)
-
-			kept := make([dynamic]string, 0, len(item.tags), event_alloc)
-			for raw in item.tags {
-				tag := library.lowercase_and_dash_whitespace(raw, event_alloc)
-
-				// if there are still bad chars
-				// is_allowed_tag_char eq false
-				if strings.index_proc(tag, elog.is_allowed_tag_char, false) != -1 {
-					append(&remediate_tags, raw) // record the original
-					tag = library.canonicalize_tag(tag, event_alloc)
-				}
-				if tag == "" || slice.contains(kept[:], tag) {continue}
-				append(&kept, tag)
-			}
-			item.tags = kept[:]
-			// need more complex condition
-			// for other importers
-			ev_needs_remediation := len(remediate_tags) > 0
-
-			// REVIEW:
-			// should we do this _here_ ?
-			if ev_needs_remediation {
-				elog.ev_append(rq, elog.EventRemediation{ev^, remediate_tags[:]})
-			}
-
-
 			// TODO bounds check (2MB)
 			// we can bufio this later
 
@@ -267,6 +240,36 @@ eagle_import :: proc(
 			}
 			ev.oid = strings.clone(oid, event_alloc)
 			ev.content_type = media.mime(format)
+
+			remediate_tags := make([dynamic]string, allocator = event_alloc)
+
+			kept := make([dynamic]string, 0, len(item.tags), event_alloc)
+			for raw in item.tags {
+				tag := library.lowercase_and_dash_whitespace(raw, event_alloc)
+
+				// if there are still bad chars
+				// is_allowed_tag_char eq false
+				if strings.index_proc(tag, elog.is_allowed_tag_char, false) != -1 {
+					append(&remediate_tags, raw) // record the original
+					tag = library.canonicalize_tag(tag, event_alloc)
+				}
+				if tag == "" || slice.contains(kept[:], tag) {continue}
+				append(&kept, tag)
+			}
+			item.tags = kept[:]
+			// need more complex condition
+			// for other importers
+			ev_needs_remediation := len(remediate_tags) > 0
+
+			// REVIEW:
+			// should we do this _here_ ?
+			if ev_needs_remediation {
+				if err := elog.ev_append(rq, elog.EventRemediation{ev^, remediate_tags[:]});
+				   err != "" {
+					fmt.panicf("import: remediation queue append failed: %s", err)
+				}
+			}
+
 			append(&events, ev^)
 
 			res.success += 1
