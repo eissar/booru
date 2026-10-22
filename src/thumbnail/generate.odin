@@ -108,7 +108,7 @@ generate_image_thumbnails :: proc(
 	yuv: media.Decoded_Dav1d_YUV
 	#partial switch format {
 	case .AVIF:
-		offset, length, ok := media.Parse_AVIF(data)
+		offset, length, ok := media.decode(data)
 		if !ok {
 			fmt.eprintfln("thumbnail: cannot extract AVIF primary item: %s", oid)
 			return 0, card(sizes)
@@ -181,7 +181,7 @@ force_generate_image_thumbnails :: proc(
 	yuv: media.Decoded_Dav1d_YUV
 	#partial switch format {
 	case .AVIF:
-		offset, length, ok := media.Parse_AVIF(data)
+		offset, length, ok := media.decode(data)
 		if !ok {
 			fmt.eprintfln("thumbnail: cannot extract AVIF primary item: %s", oid)
 			return 0, card(sizes)

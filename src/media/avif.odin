@@ -6,6 +6,7 @@ AVIF_ALPHA_AUX_TYPE :: "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha"
 
 AVIF_Box_Type :: enum {
 	Unknown,
+	EOF,
 	meta,
 	pitm,
 	iloc,
@@ -58,47 +59,62 @@ parse_avif_box_header :: proc(data: []u8) -> (cc: AVIF_Box_Type, size, header_sz
 	return cc, int(box_size), header_sz, true
 }
 
+AVIF_Box_Iterator :: struct {
+	data:   []u8,
+	offset: int,
+}
+
+next_box :: proc(iter: ^AVIF_Box_Iterator) -> (kind: AVIF_Box_Type, payload: []u8, ok: bool) {
+	if iter.offset == len(iter.data) {return .EOF, nil, true}
+	cc, size, header := parse_avif_box_header(iter.data[iter.offset:]) or_return
+	payload = iter.data[iter.offset + header:iter.offset + size]
+	iter.offset += size
+	return cc, payload, true
+}
+
 // unreviewed
 //
 // Returns the primary item's file-relative byte range. Assumes a directly
 // coded AV1 image; accepts one file-relative extent with no external reference.
 // The decoder returns .Unsupported for non-8-bit/I420 images.
-Parse_AVIF :: proc(data: []u8) -> (offset, length: int, ok: bool) {
+decode :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 	pitm, iloc: []u8
-	at := 0
+	boxes := AVIF_Box_Iterator {
+		data = data,
+	}
 	for {
-		if at >= len(data) {break}
-
-		cc, size, header_sz := parse_avif_box_header(data[at:]) or_return
-		start, end := at + header_sz, at + size
-		at = end
+		cc, meta := next_box(&boxes) or_return
+		if cc == .EOF {break}
 		if cc != .meta {continue}
-		if end - start < 4 || data[start] != 0 {return}
+		if len(meta) < 4 || meta[0] != 0 {return}
 
 		// meta is a FullBox; its children follow version/flags.
-		for child := start + 4; child < end; {
-			f, l, h := parse_avif_box_header(data[child:end]) or_return
-			box := data[child + h:child + l]
+		children := AVIF_Box_Iterator {
+			data = meta[4:],
+		}
+		for {
+			f, box := next_box(&children) or_return
+			if f == .EOF {break}
 			#partial switch f {
 			case .pitm:
 				pitm = box
 			case .iloc:
 				iloc = box
 			case .iprp:
-				property_at := 0
+				property_boxes := AVIF_Box_Iterator {
+					data = box,
+				}
 				for {
-					if property_at >= len(box) {break}
-					kind, size, header := parse_avif_box_header(box[property_at:]) or_return
-					properties := box[property_at + header:property_at + size]
-					property_at += size
+					kind, properties := next_box(&property_boxes) or_return
+					if kind == .EOF {break}
 					if kind != .ipco {continue}
 
-					at := 0
+					properties_iter := AVIF_Box_Iterator {
+						data = properties,
+					}
 					for {
-						if at >= len(properties) {break}
-						kind, size, header := parse_avif_box_header(properties[at:]) or_return
-						property := properties[at + header:at + size]
-						at += size
+						kind, property := next_box(&properties_iter) or_return
+						if kind == .EOF {break}
 						if kind != .auxC {continue}
 						// auxC is a FullBox followed by a NUL-terminated auxiliary type.
 						if len(property) < 5 || property[0] != 0 {return}
@@ -111,7 +127,6 @@ Parse_AVIF :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 					}
 				}
 			}
-			child += l
 		}
 		break
 	}
@@ -140,7 +155,7 @@ Parse_AVIF :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 	if iloc_version != .V0 {index_size = int(iloc[5] & 0x0f)}
 	if offset_size > 8 || length_size > 8 || base_size > 8 || index_size > 8 {return}
 
-	at = 6
+	at := 6
 	count: u32
 	if iloc_version != .V2 {
 		if len(iloc) - at < 2 {return}
