@@ -27,4 +27,8 @@ Status :: enum c.int {
 foreign validator {
 	@(link_name = "webpinfo_validate")
 	validate :: proc(data: [^]u8, size: c.size_t) -> Status ---
+
+	// Reports alpha presence on success; otherwise clears has_alpha to zero.
+	@(link_name = "webpinfo_inspect")
+	inspect :: proc(data: [^]u8, size: c.size_t, has_alpha: ^c.int) -> Status ---
 }
