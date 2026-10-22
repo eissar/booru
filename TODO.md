@@ -15,7 +15,7 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Rebuild path: defer secondary indexes (`items_added_at`, `item_tags_by_tag`) and the FK check during full replay. Create the indexes after the bulk insert, then run `PRAGMA foreign_key_check`. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
 - [ ] Optional: CI/pre-commit check that nothing outside `store` writes to the DB directly.
 - [ ] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
-- [ ] Add tests for `handle_delete` (store row removed, 404/500 paths) and `handle_ingest`.
+- [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
 - [ ] Remove `core:log` (still used in `src/main.odin` and `src/server/server.odin`); use `fmt.eprint*` instead.
 - [ ] Add a `handle_mipmap` case to `bench/handlers` to measure lookup and streaming throughput.
 
@@ -50,12 +50,11 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 # Thumbnail Preview TODO
 
-- [ ] Add a canvas pixel budget and a bounded texture cache so preview memory stays bounded as viewport size and loaded-card count grow.
+- [ ] Explore server-driven adaptive thumbnail streaming: continuously sample TCP RTT and ACK-derived delivery rate to choose AV1/WebP and resolution for images not yet queued, without pausing transmission. Account for roughly one RTT of feedback lag and bound queued data so adaptation can take effect; use a framing format that supports independently encoded images instead of the precomputed WebP container.
 
-- [ ] Validate VP8 thumbnail headers and dimensions before assembling mipmaps; the writer currently assumes valid VP8 input and a uniform longest edge.
+- [ ] Add explicit preview memory budgeting for canvas backing storage and mipmap textures, accounting for viewport size and batch image count.
 
 - If visible-grid redraws become a bottleneck, render changed slots into a persistent texture-backed framebuffer and blit it to the canvas on rAF. Compare blit bandwidth and framebuffer memory against drawing the cached textures; invalidate affected slots on sorting, scrolling, and resize.
-- Expose the RIFF frame-to-image-ID mapping so the GPU cache can follow images across reordered or filtered streams instead of using endpoint/frame-index keys.
 
 # LOD 0 Micro-Atlas TODO
 

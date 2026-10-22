@@ -352,7 +352,8 @@
     for (let i = 0; i < images.length; i++) {
       const img = images[i],
         thumb = thumbnailsByURL.get(img.src);
-      if (!thumb || !img.isConnected) continue;
+      if (!thumb || !img.isConnected ||
+          (img.complete && img.naturalWidth > 0)) continue;
       const rect = img.getBoundingClientRect(); // Includes the actual CSS hover transform.
       if (!rect.width || !rect.height ||
           rect.bottom <= strip.top || rect.top >= strip.top + h)
@@ -682,6 +683,13 @@
     if (path === "/fragment/items" || path === "/fragment/gallery-content")
       requestBatch();
   });
+
+  document.addEventListener("load", (event) => {
+    if (event.target instanceof HTMLImageElement &&
+        event.target.classList.contains("gallery-card-image")) {
+      schedule();
+    }
+  }, true);
 
   document.addEventListener("scroll", scrollPreview, true);
   window.addEventListener("resize", schedule);
