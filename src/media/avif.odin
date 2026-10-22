@@ -77,8 +77,10 @@ next_box :: proc(iter: ^AVIF_Box_Iterator) -> (kind: AVIF_Box_Type, payload: []u
 // Returns the primary item's file-relative byte range. Assumes a directly
 // coded AV1 image; accepts one file-relative extent with no external reference.
 // The decoder returns .Unsupported for non-8-bit/I420 images.
-decode :: proc(data: []u8) -> (offset, length: int, ok: bool) {
+decode :: proc(data: []u8) -> (offset, length, alpha_offset, alpha_length: int, ok: bool) {
 	pitm, iloc: []u8
+	alpha_property_index: int
+	alpha_id: u32
 	boxes := AVIF_Box_Iterator {
 		data = data,
 	}
@@ -107,14 +109,55 @@ decode :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 				for {
 					kind, properties := next_box(&property_boxes) or_return
 					if kind == .EOF {break}
+					if kind == .ipma {
+						if len(properties) < 8 || properties[0] > 1 {return}
+						wide := properties[3] & 1 != 0
+						count, _ := endian.get_u32(properties[4:8], .Big)
+						at := 8
+						for _ in 0 ..< count {
+							item: u32
+							if properties[0] == 0 {
+								if len(properties) - at < 2 {return}
+								n, _ := endian.get_u16(properties[at:at + 2], .Big)
+								item = u32(n)
+								at += 2
+							} else {
+								if len(properties) - at < 4 {return}
+								item, _ = endian.get_u32(properties[at:at + 4], .Big)
+								at += 4
+							}
+							if at >= len(properties) {return}
+							associations := int(properties[at])
+							at += 1
+							for _ in 0 ..< associations {
+								index: int
+								if wide {
+									if len(properties) - at < 2 {return}
+									n, _ := endian.get_u16(properties[at:at + 2], .Big)
+									index = int(n & 0x7fff)
+									at += 2
+								} else {
+									if at >= len(properties) {return}
+									index = int(properties[at] & 0x7f)
+									at += 1
+								}
+								if alpha_property_index != 0 && index == alpha_property_index {
+									alpha_id = item
+								}
+							}
+						}
+						continue
+					}
 					if kind != .ipco {continue}
 
 					properties_iter := AVIF_Box_Iterator {
 						data = properties,
 					}
+					property_index := 0
 					for {
 						kind, property := next_box(&properties_iter) or_return
 						if kind == .EOF {break}
+						property_index += 1
 						if kind != .auxC {continue}
 						// auxC is a FullBox followed by a NUL-terminated auxiliary type.
 						if len(property) < 5 || property[0] != 0 {return}
@@ -122,7 +165,7 @@ decode :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 						for end < len(property) && property[end] != 0 {end += 1}
 						if end == len(property) {return}
 						if string(property[4:end]) == AVIF_ALPHA_AUX_TYPE {
-							// TODO: retain this property's 1-based index for ipma.
+							alpha_property_index = property_index
 						}
 					}
 				}
@@ -192,12 +235,11 @@ decode :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 		extent_size := index_size + offset_size + length_size
 		extent_bytes := int(extents) * extent_size
 		if extent_bytes > len(iloc) - at {return}
-		if item != id {
+		if item != id && (alpha_id == 0 || item != alpha_id) {
 			at += extent_bytes
 			continue
 		}
 
-		// Only locates the primary AV1 bytes; optional features such as alpha are left for later.
 		if extents != 1 {return}
 		if iloc_version != .V0 {
 			method, _ := endian.get_u16(iloc[method_at:method_at + 2], .Big)
@@ -217,7 +259,15 @@ decode :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 		start := base + extent_offset
 		if start > u64(len(data)) || extent_length == 0 {return}
 		if extent_length > u64(len(data)) - start {return}
-		return int(start), int(extent_length), true
+		if item == id {
+			offset, length = int(start), int(extent_length)
+		} else {
+			alpha_offset, alpha_length = int(start), int(extent_length)
+		}
+		at += length_size
+		if length != 0 && (alpha_id == 0 || alpha_length != 0) {
+			return offset, length, alpha_offset, alpha_length, true
+		}
 	}
 	return
 }

@@ -43,6 +43,8 @@ WebPConfig :: struct {
 	qmax:              c.int,
 }
 
+WEBP_YUV420A :: 4
+
 WebPPicture :: struct {
 	use_argb:        c.int,
 	colorspace:      c.int,

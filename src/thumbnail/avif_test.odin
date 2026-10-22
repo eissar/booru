@@ -13,7 +13,7 @@ avif_thumbnail_fixture :: proc(t: ^testing.T) {
 	data, err := os.read_entire_file("test/fixture/media/thumbnail.avif", context.allocator)
 	if !testing.expect(t, err == nil, "read AVIF fixture") {return}
 	defer delete(data)
-	offset, length, ok := media.decode(data)
+	offset, length, _, _, ok := media.decode(data)
 	if !testing.expect(t, ok, "extract primary AV1 item") {return}
 	img, decode_err := media.decode_yuv_dav1d(data[offset:offset + length])
 	if !testing.expect(t, decode_err == .None, "decode AVIF fixture") {return}

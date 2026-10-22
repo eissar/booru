@@ -32,10 +32,18 @@ Decode_Error :: enum {
 	Unsupported,
 }
 
-// Takes extracted AV1 bytes, not an AVIF container. Accepts only 8-bit YUV420.
+// Takes extracted AV1 bytes, not an AVIF container. Accepts 8-bit I420 or I400.
+// Use I400 for alpha; its samples are returned in y, with no chroma planes.
 // Input is borrowed for this call; the returned picture owns its planes.
-decode_yuv_dav1d :: proc(data: []u8) -> (img: Decoded_Dav1d_YUV, err: Decode_Error) {
+decode_yuv_dav1d :: proc(
+	data: []u8,
+	layout: dav1d.Dav1dPixelLayout = .I420,
+) -> (
+	img: Decoded_Dav1d_YUV,
+	err: Decode_Error,
+) {
 	if len(data) == 0 {return {}, .Failed}
+	if layout != .I420 && layout != .I400 {return {}, .Unsupported}
 
 	settings: dav1d.Dav1dSettings
 	dav1d.dav1d_default_settings(&settings)
@@ -69,7 +77,7 @@ decode_yuv_dav1d :: proc(data: []u8) -> (img: Decoded_Dav1d_YUV, err: Decode_Err
 		}
 	}
 
-	if pic.p.bpc != 8 || pic.p.layout != .I420 {
+	if pic.p.bpc != 8 || pic.p.layout != layout {
 		dav1d.dav1d_picture_unref(&pic)
 		return {}, .Unsupported
 	}

@@ -45,7 +45,12 @@ encode_thumbnail_yuv :: proc(
 	root, oid: string,
 	edge: c.int,
 	img: media.Decoded_Dav1d_YUV,
+	alpha: ^media.Decoded_Dav1d_YUV = nil,
 ) -> bool {
+	if alpha != nil && (alpha.width != img.width || alpha.height != img.height) {
+		fmt.eprintfln("thumbnail: alpha dimensions do not match: %s", oid)
+		return false
+	}
 	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
 		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
@@ -67,6 +72,11 @@ encode_thumbnail_yuv :: proc(
 	pic.y, pic.u, pic.v = img.y, img.u, img.v
 	pic.y_stride = c.int(img.y_stride)
 	pic.uv_stride = c.int(img.uv_stride)
+	if alpha != nil {
+		pic.colorspace = libwebp.WEBP_YUV420A
+		pic.a = alpha.y
+		pic.a_stride = c.int(alpha.y_stride)
+	}
 	if ok {ok = libwebp.rescale(&pic, file, edge)}
 	close_err := os.close(file)
 	if !ok || close_err != nil {
@@ -106,9 +116,14 @@ generate_image_thumbnails :: proc(
 	defer delete(data)
 	decoded: media.Decoded_ARGB
 	yuv: media.Decoded_Dav1d_YUV
+	alpha: media.Decoded_Dav1d_YUV
+	alpha_picture: ^media.Decoded_Dav1d_YUV
+	defer media.free_decoded(decoded)
+	defer media.free_decoded_dav1d(&yuv)
+	defer media.free_decoded_dav1d(&alpha)
 	#partial switch format {
 	case .AVIF:
-		offset, length, ok := media.decode(data)
+		offset, length, alpha_offset, alpha_length, ok := media.decode(data)
 		if !ok {
 			fmt.eprintfln("thumbnail: cannot extract AVIF primary item: %s", oid)
 			return 0, card(sizes)
@@ -119,6 +134,17 @@ generate_image_thumbnails :: proc(
 			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
 		}
+		if alpha_length != 0 {
+			alpha, decode_err = media.decode_yuv_dav1d(
+				data[alpha_offset:alpha_offset + alpha_length],
+				.I400,
+			)
+			if decode_err != .None {
+				fmt.eprintfln("thumbnail: cannot decode alpha %s: %v", oid, decode_err)
+				return 0, card(sizes)
+			}
+			alpha_picture = &alpha
+		}
 	case .PNG, .JPEG, .GIF, .WebP:
 		decoded, _ = media.decode_rgba(data)
 		if decoded.pixels == nil {
@@ -128,8 +154,6 @@ generate_image_thumbnails :: proc(
 	case:
 		return 0, 0
 	}
-	defer media.free_decoded(decoded)
-	defer media.free_decoded_dav1d(&yuv)
 	for size in sizes {
 		edge: c.int
 		#partial switch size {
@@ -142,7 +166,7 @@ generate_image_thumbnails :: proc(
 		}
 		ok: bool
 		if format == .AVIF {
-			ok = encode_thumbnail(s.library_path, oid, edge, yuv)
+			ok = encode_thumbnail(s.library_path, oid, edge, yuv, alpha_picture)
 		} else {
 			ok = encode_thumbnail(s.library_path, oid, edge, decoded)
 		}
@@ -179,9 +203,14 @@ force_generate_image_thumbnails :: proc(
 	defer delete(data)
 	decoded: media.Decoded_ARGB
 	yuv: media.Decoded_Dav1d_YUV
+	alpha: media.Decoded_Dav1d_YUV
+	alpha_picture: ^media.Decoded_Dav1d_YUV
+	defer media.free_decoded(decoded)
+	defer media.free_decoded_dav1d(&yuv)
+	defer media.free_decoded_dav1d(&alpha)
 	#partial switch format {
 	case .AVIF:
-		offset, length, ok := media.decode(data)
+		offset, length, alpha_offset, alpha_length, ok := media.decode(data)
 		if !ok {
 			fmt.eprintfln("thumbnail: cannot extract AVIF primary item: %s", oid)
 			return 0, card(sizes)
@@ -192,6 +221,17 @@ force_generate_image_thumbnails :: proc(
 			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
 		}
+		if alpha_length != 0 {
+			alpha, decode_err = media.decode_yuv_dav1d(
+				data[alpha_offset:alpha_offset + alpha_length],
+				.I400,
+			)
+			if decode_err != .None {
+				fmt.eprintfln("thumbnail: cannot decode alpha %s: %v", oid, decode_err)
+				return 0, card(sizes)
+			}
+			alpha_picture = &alpha
+		}
 	case .PNG, .JPEG, .GIF, .WebP:
 		decoded, _ = media.decode_rgba(data)
 		if decoded.pixels == nil {
@@ -201,8 +241,6 @@ force_generate_image_thumbnails :: proc(
 	case:
 		return 0, 0
 	}
-	defer media.free_decoded(decoded)
-	defer media.free_decoded_dav1d(&yuv)
 	for size in sizes {
 		edge: c.int
 		#partial switch size {
@@ -221,7 +259,7 @@ force_generate_image_thumbnails :: proc(
 		}
 		ok: bool
 		if format == .AVIF {
-			ok = encode_thumbnail(s.library_path, oid, edge, yuv)
+			ok = encode_thumbnail(s.library_path, oid, edge, yuv, alpha_picture)
 		} else {
 			ok = encode_thumbnail(s.library_path, oid, edge, decoded)
 		}

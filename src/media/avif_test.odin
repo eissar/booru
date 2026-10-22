@@ -104,7 +104,7 @@ avif_parser_fixture :: proc() -> [90]u8 {
 @(test)
 avif_primary_extent :: proc(t: ^testing.T) {
 	data := avif_parser_fixture()
-	offset, length, ok := decode(data[:])
+	offset, length, _, _, ok := decode(data[:])
 	testing.expect(t, ok && offset == 86 && length == 4, "select primary item, not first extent")
 }
 
@@ -112,7 +112,7 @@ avif_primary_extent :: proc(t: ^testing.T) {
 avif_invalid_extents :: proc(t: ^testing.T) {
 	data := avif_parser_fixture()
 	for n in 0 ..< len(data) {
-		_, _, ok := decode(data[:n])
+		_, _, _, _, ok := decode(data[:n])
 		testing.expectf(t, !ok, "reject truncated input at %d", n)
 	}
 
@@ -132,7 +132,7 @@ avif_invalid_extents :: proc(t: ^testing.T) {
 		case 5:
 			data[65] = 0 // No extent for the primary item.
 		}
-		_, _, ok := decode(data[:])
+		_, _, _, _, ok := decode(data[:])
 		testing.expectf(t, !ok, "reject invalid/unsupported extent case %d", case_index)
 	}
 
@@ -148,6 +148,6 @@ avif_invalid_extents :: proc(t: ^testing.T) {
 	endian.put_u32(multiple[66:70], .Big, 94)
 	endian.put_u32(multiple[74:78], .Big, 94)
 	endian.put_u32(multiple[78:82], .Big, 4)
-	_, _, ok := decode(multiple[:])
+	_, _, _, _, ok := decode(multiple[:])
 	testing.expect(t, !ok, "reject multiple primary extents")
 }
