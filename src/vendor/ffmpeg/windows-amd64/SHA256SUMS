@@ -1,0 +1,7 @@
+473df849c28f67d4920959262c73070dee5a10fa75ae35b918ffe2dcca0683f8  src/vendor/ffmpeg/windows-amd64/avcodec.lib
+8c28b9f2e74f5123f7ad0afe44ff287a5f3b5a7e7a966d4a3df1eaffab1865d1  src/vendor/ffmpeg/windows-amd64/avformat.lib
+48e4d5f9c2ce512bb4104393dac10e8cb684f6d318b01ab2dedecd6c34a913ab  src/vendor/ffmpeg/windows-amd64/avutil.lib
+df8758c313da7466a2c7990251e89726f98667b326bd7c7c0b112e68e612fa92  src/vendor/ffmpeg/windows-amd64/avcodec-63.dll
+42b72721d502bc1069f08c58a1ec72c688812e91c96ea7606a69bbcca34d3cfb  src/vendor/ffmpeg/windows-amd64/avformat-63.dll
+788c26b01189bcc969bffa6d4ad8f7e45dd7b2bd0ca86f9a3a80f3ee6e96f0b1  src/vendor/ffmpeg/windows-amd64/avutil-61.dll
+cf33156340e8f8879562309fd04f487d42e70ed6da599115e3c4a35b14f75943  src/vendor/ffmpeg/windows-amd64/swresample-7.dll
