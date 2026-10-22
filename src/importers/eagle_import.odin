@@ -277,6 +277,20 @@ eagle_import :: proc(
 			fmt.panicf("import: remediation queue make durable: %s", err)
 		}
 	}
+	// Sync each copied original once, after the loop. Opened for writing
+	// because FlushFileBuffers on Windows needs write access.
+	for e in events {
+		leaf := fmt.tprintf("%v.%v", e.id, e.ext)
+		original_path, _ := os.join_path({s.library_path, "images", leaf}, context.temp_allocator)
+		original, open_err := os.open(original_path, {.Write}, os.Permissions_Default)
+		if open_err != nil {
+			fmt.panicf("import: open original %s for syncing: %v", original_path, open_err)
+		}
+		if sync_err := os.sync(original); sync_err != nil {
+			fmt.panicf("import: sync original %s: %v", original_path, sync_err)
+		}
+		os.close(original)
+	}
 	// Originals have each been synced once. Persist their new filenames once
 	// for the completed batch before syncing the event log.
 	when ODIN_OS == .Linux {
@@ -416,10 +430,5 @@ copy_and_hash_and_determine_content_type :: proc(
 	sha2.final(&ctx, digest[:], finalize_clone = false)
 	hex_str := string(hex.encode(digest[:], context.temp_allocator))
 
-	if err == nil {
-		if sync_err := os.sync(dst); sync_err != nil {
-			panic("import: original sync failed")
-		}
-	}
 	return hex_str, fmt, err
 }
