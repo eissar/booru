@@ -26,6 +26,7 @@ Known_Headers :: struct {
 	content_length: int,
 	accept:         Accept,
 	hx_request:     bool,
+	hx_current_url: string, // page URL an htmx request was issued from
 }
 
 // bikeshed: store byte offsets/ lazy read somehow?
@@ -99,6 +100,9 @@ read_header :: proc(
 		}
 		if strings.equal_fold(label, "Hx-Request") {
 			req_header.known_headers.hx_request = value == "true"
+		}
+		if strings.equal_fold(label, "Hx-Current-Url") {
+			req_header.known_headers.hx_current_url = value
 		}
 
 		req_header.headers[label] = value
