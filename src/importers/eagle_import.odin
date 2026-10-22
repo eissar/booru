@@ -228,7 +228,7 @@ eagle_import :: proc(
 			fmt.panicf("import: sync images directory: %v", err)
 		}
 	}
-	if err := elog.events_append(s.event_log, events[:]); err != "" {
+	if err := elog.ev_append(s.event_log, events[:]); err != "" {
 		fmt.panicf("import: event log append failed: %s", err)
 	}
 	// Log first, then apply: a failed apply is recovered by the next replay.

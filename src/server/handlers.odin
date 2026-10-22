@@ -552,7 +552,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	ev.added_at = time.to_unix_nanoseconds(time.now()) / 1_000_000
 
 	// update the event log
-	append_err := elog.event_append(s.event_log, ev)
+	append_err := elog.ev_append(s.event_log, []elog.Event{ev})
 	if append_err != "" {
 		// TODO: delete any uploaded files
 
@@ -676,7 +676,7 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		return
 	}
 
-	append_err := elog.event_append(s.event_log, elog.Event{id = id, op = "delete"})
+	append_err := elog.ev_append(s.event_log, []elog.Event{{id = id, op = "delete"}})
 	if append_err != "" {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
@@ -769,7 +769,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		return
 	}
 
-	if elog.event_append(s.event_log, ev) != "" {
+	if elog.ev_append(s.event_log, []elog.Event{ev}) != "" {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
 			template.render_toast("could not write patch event", .Error),

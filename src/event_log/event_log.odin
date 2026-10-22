@@ -1,7 +1,9 @@
 package event_log
 
 import "core:c"
+import "core:encoding/json"
 import "core:fmt"
+import "core:io"
 import "core:strings"
 import "core:time"
 import "core:unicode/utf16"
@@ -133,4 +135,27 @@ save_cursor :: proc(tx: ^sqlite.Tx, cursor: Cursor) -> c.int {
 get_current_event_shard :: proc(allocator := context.allocator) -> string {
 	year, month, _ := time.date(time.now())
 	return fmt.aprintf("%04d-%02d.ndjson", year, int(month), allocator = allocator)
+}
+
+// Writes one newline-terminated record to w. Does not flush or sync.
+write_event :: proc(w: io.Writer, e: Event, loc := #caller_location) -> (err: string) {
+	opt := json.Marshal_Options {
+		spec   = .JSON,
+		pretty = false,
+	}
+	data, marshal_err := json.marshal(e, opt, context.allocator, loc)
+	if marshal_err != nil {return "could not marshal event"}
+	defer delete(data, context.allocator, loc)
+
+	ascii: strings.Builder
+	strings.builder_init(&ascii, context.allocator, loc)
+	defer strings.builder_destroy(&ascii)
+	encode_ascii_json(data, &ascii)
+
+	payload := transmute([]u8)strings.to_string(ascii)
+	if len(payload) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD", loc)}
+	written, write_err := io.write(w, payload, nil)
+	if write_err != nil || written != len(payload) {return "could not write event payload"}
+	if io.write_byte(w, '\n', nil) != nil {return "could not write event newline"}
+	return ""
 }
