@@ -735,11 +735,28 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		return
 	}
 
+	// Tags are lowercased with whitespace runs as '-'; anything else outside
+	// is_allowed_tag_char is rejected rather than canonicalized.
+	tags := make([dynamic]string)
+	for raw in form_tags(params["tags"]) {
+		tag := library.lowercase_and_dash_whitespace(raw)
+		if tag == "" || strings.index_proc(tag, elog.is_allowed_tag_char, false) != -1 {
+			res.headers["HX-Reswap"] = "beforeend"
+			http.res_html(
+				template.render_toast(fmt.tprintf("invalid tag %q", raw), .Error),
+				res,
+				.BadRequest,
+			)
+			return
+		}
+		if !slice.contains(tags[:], tag) {append(&tags, tag)}
+	}
+
 	// Full patch format: every field is optional; empty/zero leaves it alone.
 	ev := elog.Event {
 		id   = id,
 		op   = "patch",
-		tags = form_tags(params["tags"]),
+		tags = tags[:],
 	}
 	ok := true
 	ev.name = form_string(params, "name", &ok)
