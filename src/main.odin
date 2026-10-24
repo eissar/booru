@@ -5,12 +5,14 @@ import "core:log"
 import "core:net"
 import "core:os"
 import "core:strings"
+import "core:thread"
 import "core:time"
 
 import "cli"
 import elog "event_log"
 import "importers"
 import "library"
+import "progress"
 import "replay"
 import "server"
 import "store"
@@ -114,23 +116,30 @@ main :: proc() {
 		)
 	}
 
+	defer free_all(context.temp_allocator)
+
+	cb: progress.Callback : proc(prg: progress.Progress) {
+		fmt.println(prg)
+	}
+
+	scan_thread: ^thread.Thread
 	if cfg.scan_thumbnail {
-		scan_start := time.now()
-		log.info("thumbnails: generate missing start")
-		generated, failed := thumbnail.generate_missing_thumbnails(state)
-
-
-		log.infof(
-			"thumbnails: generated=%d, failed=%d in %v",
-			generated,
-			failed,
-			fmt_timestamp(time.since(scan_start)),
-		)
+		scan_thread = thread.create_and_start_with_poly_data(struct {
+				library_path:  string,
+				prog_callback: progress.Callback,
+			} {
+				library_path = cfg.library,
+				prog_callback = cb,
+			}, thumbnail.startup_threaded_generate_missing_thumbnails)
+		if scan_thread == nil {
+			log.error("thumbnails: could not create scan thread")
+		}
+	}
+	defer {
+		if scan_thread != nil {thread.destroy(scan_thread)}
 	}
 
 	log.infof("total startup time=%v", fmt_timestamp(time.since(load_start)))
-
-	defer free_all(context.temp_allocator)
 
 	server.Serve(&state, sock) // this should take an allocator
 }
