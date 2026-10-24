@@ -9,12 +9,20 @@ import win "core:sys/windows"
 
 import "../dirlist"
 import "../library"
+import "../progress"
 import "../store"
 import "../vendor/sqlite"
 
 
 // Generate only missing resolutions; failures are logged and do not prevent startup.
-generate_missing_thumbnails :: proc(s: library.State) -> (generated, failed: int) {
+generate_missing_thumbnails :: proc(
+	s: library.State,
+	prog_callback: progress.Callback = nil,
+) -> (
+	generated, failed: int,
+) {
+	if prog_callback != nil {prog_callback({phase = "thumbnail discovery"})}
+
 	missing := make(map[string]bit_set[LOD_RESOLUTION])
 	defer delete(missing)
 	find_missing_thumbnails(s, &missing)
@@ -25,12 +33,25 @@ generate_missing_thumbnails :: proc(s: library.State) -> (generated, failed: int
 		fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
 		return
 	}
+
+	finished, total: u64
+	if prog_callback != nil {
+		for img in images {
+			if sizes, exists := missing[img.oid]; exists && sizes != {} {total += 1}
+		}
+		prog_callback({phase = "thumbnail generation", total = total})
+	}
+
 	for img in images {
 		sizes, exists := missing[img.oid]
 		if !exists || sizes == {} {continue}
 		n, f := generate_image_thumbnails(s, img, sizes)
 		generated += n
 		failed += f
+		if prog_callback != nil {
+			finished += 1
+			prog_callback({phase = "thumbnail generation", finished = finished, total = total})
+		}
 	}
 	return
 }

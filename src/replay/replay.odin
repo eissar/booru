@@ -8,6 +8,7 @@ import "core:strings"
 
 import elog "../event_log"
 import "../library/"
+import "../progress"
 import "../store"
 import "../vendor/sqlite"
 
@@ -17,18 +18,28 @@ Error :: enum {
 	DATABASE_ERR,
 }
 
-replay :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> Error {
+replay :: proc(
+	s: ^library.State,
+	data: ^string,
+	alloc: mem.Allocator,
+	prog_callback: progress.Callback = nil,
+) -> Error {
+	finished: u64
+	if prog_callback != nil {prog_callback({phase = "replay events"})}
+
 	db := s.data_store
 	if !sqlite.run(db, "BEGIN") {return .DATABASE_ERR}
 	defer {
 		if sqlite.get_autocommit(db) == 0 {sqlite.run(db, "ROLLBACK")}
 	}
+
 	tx := sqlite.Tx {
 		db = db,
 	}
 	record: elog.Record
 	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
 	defer delete(record.fields)
+
 	for line in strings.split_lines_iterator(data) {
 		if strings.trim_space(line) == "" {continue}
 		item, op := parse_item(line, &record, alloc)
@@ -41,14 +52,16 @@ replay :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> Error 
 		case "delete":
 			rc = store.delete_item(&tx, item.id)
 		case "regen_thumbnail":
-			// basic event replay - validating derived artifact integrity is out of scope.
-			continue
+		// basic event replay - validating derived artifact integrity is out of scope.
 		case:
-			continue
 		}
 		if rc != sqlite.OK {return .DATABASE_ERR}
+		finished += 1
+		if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
 	}
+
 	if !sqlite.run(db, "COMMIT") {return .DATABASE_ERR}
+
 	return nil
 }
 
@@ -127,7 +140,9 @@ replay_flat_string :: proc(token: elog.Token, alloc: mem.Allocator) -> string {
 }
 
 // this calls replay for each ndjson file
-initiate_replay :: proc(s: ^library.State) {
+initiate_replay :: proc(s: ^library.State, prog_callback: progress.Callback = nil) {
+	finished: u64
+	if prog_callback != nil {prog_callback({phase = "replay files"})}
 	alloc := context.temp_allocator
 	events_dir := fmt.tprintf("%s/events", s.library_path)
 	dir_fi, _ := os.stat(events_dir, alloc)
@@ -154,8 +169,10 @@ initiate_replay :: proc(s: ^library.State) {
 			continue
 		}
 		text := string(data)
-		if replay_err := replay(s, &text, alloc); replay_err != nil {
+		if replay_err := replay(s, &text, alloc, prog_callback); replay_err != nil {
 			fmt.panicf("replay: %s: %v", entry.fullpath, replay_err)
 		}
+		finished += 1
+		if prog_callback != nil {prog_callback({phase = "replay files", finished = finished})}
 	}
 }
