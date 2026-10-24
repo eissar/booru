@@ -130,6 +130,8 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 			handle_fragment_gallery_content(s^, &res, req)
 		case req_header.path == "/fragment/items":
 			handle_fragment_items(s^, &res, req)
+		case req_header.path == "/events/progress":
+			handle_sse_progress(&res)
 		case req_header.path == "/regen-thumbnail":
 			handle_regen_thumbnail(s, &res, req)
 		case req_header.path == "/ingest":

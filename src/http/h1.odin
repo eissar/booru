@@ -15,6 +15,7 @@ Response :: struct {
 	// Optional streaming body; body remains empty when this is set.
 	body_stream:        proc(conn: ^net.TCP_Socket, data: rawptr) -> io.Error,
 	body_stream_data:   rawptr,
+	// Negative means unknown length: no Content-Length is sent.
 	body_stream_length: int,
 }
 
@@ -37,10 +38,14 @@ marshal :: proc(res: Response, alloc: runtime.Allocator) -> string {
 		assert(len(res.body) == 0)
 		strings.write_string(&builder, "\r\n")
 	} else {
-		length := res.body_stream != nil ? res.body_stream_length : len(res.body)
-		fmt.sbprintf(&builder, "Content-Length: %d\r\n\r\n", length)
-		if res.body_stream == nil {
-			strings.write_bytes(&builder, res.body)
+		if res.body_stream != nil && res.body_stream_length < 0 {
+			strings.write_string(&builder, "\r\n")
+		} else {
+			length := res.body_stream != nil ? res.body_stream_length : len(res.body)
+			fmt.sbprintf(&builder, "Content-Length: %d\r\n\r\n", length)
+			if res.body_stream == nil {
+				strings.write_bytes(&builder, res.body)
+			}
 		}
 	}
 	return strings.to_string(builder)
@@ -127,6 +132,40 @@ unit_smoke_res_helper :: proc(t: ^testing.T) {
 	reset(&res)
 	res_redirect("/gallery", &res)
 }
+// Streams until `stream` returns an error. Connection closes when it ends.
+res_event_stream :: proc(
+	stream: proc(conn: ^net.TCP_Socket, data: rawptr) -> io.Error,
+	data: rawptr,
+	res: ^Response,
+) {
+	when ODIN_DEBUG {assert_res_helper(res)}
+
+	res.headers["Content-Type"] = "text/event-stream"
+	res.headers["Cache-Control"] = "no-cache"
+	res.headers["X-Accel-Buffering"] = "no"
+	res.body_stream = stream
+	res.body_stream_data = data
+	res.body_stream_length = -1
+	res.status = .OK
+}
+
+// Writes one SSE event; multi-line data becomes one `data:` line per line.
+sse_event :: proc(conn: ^net.TCP_Socket, event, data: string) -> io.Error {
+	b := strings.builder_make(context.temp_allocator)
+	if event != "" {fmt.sbprintf(&b, "event: %s\n", event)}
+	rest := data
+	for line in strings.split_lines_iterator(&rest) {fmt.sbprintf(&b, "data: %s\n", line)}
+	strings.write_byte(&b, '\n')
+
+	remaining := transmute([]u8)strings.to_string(b)
+	for len(remaining) > 0 {
+		n, err := net.send_tcp(conn^, remaining)
+		if err != nil || n == 0 {return .Unknown}
+		remaining = remaining[n:]
+	}
+	return nil
+}
+
 assert_res_helper :: proc "contextless" (res: ^Response) {
 	context = runtime.default_context()
 	assert(res != nil)

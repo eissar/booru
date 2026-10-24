@@ -6,13 +6,15 @@ import "core:strings"
 
 // Filter state for the gallery content region.
 Gallery_Filter :: struct {
-	limit:        int,
-	sort:         string, // sort parameter name, e.g. "addedAtAsc"
-	tags:         []string,
-	offset:       int,
-	gallery_url:  string, // full remove-chip URL
-	fragment_url: string, // fragment remove-chip URL
-	extra_chips:  []Filter_Chip, // additional chips (deleted, etc.)
+	limit:              int,
+	sort:               string, // sort parameter name, e.g. "addedAtAsc"
+	tags:               []string,
+	offset:             int,
+	gallery_url:        string, // full remove-chip URL
+	fragment_url:       string, // fragment remove-chip URL
+	extra_chips:        []Filter_Chip, // additional chips (deleted, etc.)
+	// Thumbnail scan is running; the page shows a live progress indicator.
+	thumbnails_pending: bool,
 }
 
 // A single removable filter chip beyond the sort chip.
@@ -123,10 +125,16 @@ render_gallery_page :: proc(
 	}
 	wr(
 		&b,
-		"<script src=\"/static/htmx.min.js\"></script><script src=\"/static/htmx-response-targets.js\"></script><link href=\"/static/tailwind.css\" rel=\"stylesheet\"/><link href=\"/static/gallery.css\" rel=\"stylesheet\"/><script src=\"/static/gallery.js\"></script></head><body",
+		"<script src=\"/static/htmx.min.js\"></script><script src=\"/static/htmx-response-targets.js\"></script><script src=\"/static/htmx-sse.js\"></script><link href=\"/static/tailwind.css\" rel=\"stylesheet\"/><link href=\"/static/gallery.css\" rel=\"stylesheet\"/><script src=\"/static/gallery.js\"></script></head><body",
 	)
 	wr(&b, " class=\"antialiased\" hx-ext=\"response-targets\">")
 	write_toolbar(&b, filter)
+	if filter.thumbnails_pending {
+		wr(
+			&b,
+			"<div id=\"thumbnail-progress\" class=\"thumbnail-progress\" role=\"status\" aria-live=\"polite\" hx-ext=\"sse\" sse-connect=\"/events/progress\" sse-swap=\"progress\" sse-close=\"done\"></div>",
+		)
+	}
 	wr(
 		&b,
 		"<main id=\"gallery-main\" class=\"gallery-main main-scroll\"><script>try{if(localStorage.getItem('inspector-open')==='true')document.getElementById('gallery-main')?.classList.add('inspector-open')}catch(_){}</script>",

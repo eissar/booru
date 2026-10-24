@@ -120,6 +120,8 @@ main :: proc() {
 
 	cb: progress.Callback : proc(prg: progress.Progress) {
 		fmt.println(prg)
+		progress.current = prg
+		if total, ok := prg.total.?; ok && prg.finished == total {progress.done = true}
 	}
 
 	scan_thread: ^thread.Thread

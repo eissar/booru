@@ -917,3 +917,60 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
         transform: rotate(360deg);
     }
 }
+
+/* Thumbnail progress popover: pinned under the toolbar, top right. */
+.thumbnail-progress {
+    position: fixed;
+    top: 4.5rem;
+    right: 1rem;
+    z-index: 30;
+    width: 18rem;
+    padding: 1rem;
+    display: grid;
+    gap: 0.6rem;
+    border: 1px solid var(--border-color-light);
+    border-radius: 0.5rem;
+    background-color: var(--bg-surface);
+    box-shadow: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -4px var(--shadow-color);
+}
+
+.thumbnail-progress:empty {
+    display: none;
+}
+
+.thumbnail-progress-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.thumbnail-progress progress {
+    width: 100%;
+    height: 0.5rem;
+    border: 0;
+    border-radius: 9999px;
+    overflow: hidden;
+    appearance: none;
+}
+
+.thumbnail-progress progress::-webkit-progress-bar {
+    background: var(--border-color-light);
+    border-radius: 9999px;
+}
+
+.thumbnail-progress progress::-webkit-progress-value {
+    background: var(--accent-indigo);
+    border-radius: 9999px;
+}
+
+.thumbnail-progress progress::-moz-progress-bar {
+    background: var(--accent-indigo);
+    border-radius: 9999px;
+}
+
+.thumbnail-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
