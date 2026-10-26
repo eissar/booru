@@ -14,11 +14,10 @@ values for diagnostics. Release every created document.
 
 ## Normalization contract
 
-Keep the options in `test/html-fixture-tdd/compare_html.pl` unchanged:
+Keep the options in `src/template/normalize_html_test.odin` unchanged:
 `sort-attributes=alpha`, `wrap=0`, `indent=0`, `tidy-mark=0`,
-`merge-divs=0`, `merge-spans=0`. Pass these names to `OptParseValue`
-(the Perl wrapper spells option names with underscores). Do not enable body-only
-output or other cleanup options. Native default newlines differ across platforms;
+`merge-divs=0`, `merge-spans=0`. Pass these names to `OptParseValue`.
+Do not enable body-only output or other cleanup options. Native default newlines differ across platforms;
 callers comparing serialized bytes across platforms must account for this.
 
 ## Linux x64

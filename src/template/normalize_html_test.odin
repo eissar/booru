@@ -4,7 +4,7 @@ import "../vendor/tidy"
 import "core:c"
 import "core:strings"
 
-// Keep these options aligned with the former HTML::Tidy5 comparator.
+// Keep these options unchanged; fixtures depend on them.
 normalize_html :: proc(html: string) -> (normalized: string, ok: bool) {
 	doc := tidy.Create()
 	if doc == nil {return}

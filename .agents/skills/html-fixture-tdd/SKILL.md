@@ -25,9 +25,9 @@ description: "Fixture-first TDD for the libraryless Odin HTML pipeline in lfs-bo
    task test:render
    ```
 
-   (also included in `odin test test -all-packages` from the repo root; requires Perl and `HTML::Tidy5`, available on Debian as `libhtml-tidy5-perl`)
+  
 
-   Individual Odin tests in `src/template/fixture_test.odin` render each case and invoke `test/html-fixture-tdd/compare_html.pl` to compare HTML::Tidy5-normalized strings against fixtures (alphabetically sorted attributes and normalized formatting). Tidy can repair markup, so this is not identical to DOM structural comparison. Confirm the failing case is the one you edited, failing for the reason you expect.
+   Odin tests in `src/template/fixture_test.odin` render each case and compare Tidy-normalized strings (via the vendored libtidy in `src/vendor/tidy`, see `src/template/normalize_html_test.odin`) against fixtures (alphabetically sorted attributes and normalized formatting). Tidy can repair markup, so this is not identical to DOM structural comparison. Confirm the failing case is the one you edited, failing for the reason you expect.
 
 3. **Update the Odin code to match.** Change only the template file(s) mapped to that fixture. Shared escaping helpers live in `src/template/html.odin` (`write_text`, `write_attr`, `write_attr_bool`, `escape`). Prefer editing the smallest sibling; don't touch other fixtures.
 

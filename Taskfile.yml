@@ -92,7 +92,7 @@ tasks:
       - odin test -out:{{.BIN_DIR}}/test {{.CLI_ARGS}}
 
   test:render:
-    desc: 'Run HTML fixture tests (requires Perl and HTML::Tidy5; extra Odin flags after --)'
+    desc: 'Run HTML fixture tests (extra Odin flags after --)'
     deps: [hooks:check]
     cmds:
       - mkdir -p {{.BIN_DIR}}
