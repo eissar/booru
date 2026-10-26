@@ -129,12 +129,6 @@ render_gallery_page :: proc(
 	)
 	wr(&b, " class=\"antialiased\" hx-ext=\"response-targets\">")
 	write_toolbar(&b, filter)
-	if filter.thumbnails_pending {
-		wr(
-			&b,
-			"<div id=\"thumbnail-progress\" class=\"thumbnail-progress\" role=\"status\" aria-live=\"polite\" hx-ext=\"sse\" sse-connect=\"/events/progress\" sse-swap=\"progress\" sse-close=\"done\"></div>",
-		)
-	}
 	wr(
 		&b,
 		"<main id=\"gallery-main\" class=\"gallery-main main-scroll\"><script>try{if(localStorage.getItem('inspector-open')==='true')document.getElementById('gallery-main')?.classList.add('inspector-open')}catch(_){}</script>",
@@ -164,7 +158,24 @@ write_toolbar :: proc(b: ^strings.Builder, f: Gallery_Filter) {
 
 	wr(
 		b,
-		"<button type=\"submit\" class=\"h-full px-4 rounded bg-indigo-600 text-white font-medium hover:bg-indigo-700 focus-ring\" aria-label=\"Search\"><span class=\"desktop-search-icon\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"></circle><path d=\"m16 16 4 4\"></path></svg></span><span class=\"mobile-search-label\">Search</span></button></form></details><div class=\"relative inline-block\"><details class=\"relative\" name=\"header\"><summary id=\"settings-button\" class=\"toolbar-icon-button p-2 rounded cursor-pointer list-none hover-surface focus-ring\"><img src=\"/static/icons/cog.svg\" class=\"h-5 w-5\" style=\"filter: var(--icon-filter);\" alt=\"Settings\"/></summary><div class=\"absolute right-0 mt-2 w-64 rounded shadow-lg z-10 dropdown-container\" style=\"background-color: var(--bg-surface);\"><form id=\"preferences\" method=\"get\" action=\"/gallery\" hx-get=\"/fragment/gallery-content\" hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\" hx-include=\"#filter-bar\" class=\"p-4 rounded space-y-3\"><label class=\"block text-sm font-medium\" for=\"page-size-input\">Page size</label>",
+		"<button type=\"submit\" class=\"h-full px-4 rounded bg-indigo-600 text-white font-medium hover:bg-indigo-700 focus-ring\" aria-label=\"Search\"><span class=\"desktop-search-icon\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"></circle><path d=\"m16 16 4 4\"></path></svg></span><span class=\"mobile-search-label\">Search</span></button></form></details>",
+	)
+	wr(
+		b,
+		"<div class=\"relative inline-block\"><details class=\"relative\" name=\"header\"><summary id=\"jobs-button\" aria-label=\"Jobs\" class=\"toolbar-icon-button p-2 rounded cursor-pointer list-none hover-surface focus-ring\"><img src=\"/static/icons/rectangle-stack.svg\" class=\"h-5 w-5\" style=\"filter: var(--icon-filter);\" alt=\"Jobs\"/></summary><div id=\"jobs-panel\" class=\"absolute right-0 mt-2 w-72 p-4 rounded shadow-lg z-10 dropdown-container\" style=\"background-color: var(--bg-surface);\">",
+	)
+	if f.thumbnails_pending {
+		wr(
+			b,
+			"<div id=\"thumbnail-progress\" class=\"thumbnail-progress\" role=\"status\" aria-live=\"polite\" hx-ext=\"sse\" sse-connect=\"/events/progress\" sse-swap=\"progress\" sse-close=\"done\"></div>",
+		)
+	} else {
+		wr(b, "<div class=\"gallery-status\">No jobs</div>")
+	}
+	wr(b, "</div></details></div>")
+	wr(
+		b,
+		"<div class=\"relative inline-block\"><details class=\"relative\" name=\"header\"><summary id=\"settings-button\" class=\"toolbar-icon-button p-2 rounded cursor-pointer list-none hover-surface focus-ring\"><img src=\"/static/icons/cog.svg\" class=\"h-5 w-5\" style=\"filter: var(--icon-filter);\" alt=\"Settings\"/></summary><div class=\"absolute right-0 mt-2 w-64 rounded shadow-lg z-10 dropdown-container\" style=\"background-color: var(--bg-surface);\"><form id=\"preferences\" method=\"get\" action=\"/gallery\" hx-get=\"/fragment/gallery-content\" hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\" hx-include=\"#filter-bar\" class=\"p-4 rounded space-y-3\"><label class=\"block text-sm font-medium\" for=\"page-size-input\">Page size</label>",
 	)
 
 	write_select(

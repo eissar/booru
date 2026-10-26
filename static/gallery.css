@@ -918,22 +918,6 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
     }
 }
 
-/* Thumbnail progress popover: pinned under the toolbar, top right. */
-.thumbnail-progress {
-    position: fixed;
-    top: 4.5rem;
-    right: 1rem;
-    z-index: 30;
-    width: 18rem;
-    padding: 1rem;
-    display: grid;
-    gap: 0.6rem;
-    border: 1px solid var(--border-color-light);
-    border-radius: 0.5rem;
-    background-color: var(--bg-surface);
-    box-shadow: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -4px var(--shadow-color);
-}
-
 .thumbnail-progress:empty {
     display: none;
 }
