@@ -514,11 +514,11 @@ html[data-theme='dark'] input::placeholder {
     background-color: var(--bg-surface-hover);
 }
 
+#toolbar details[open] > summary.toolbar-icon-button,
 .gallery-view-controls:has(#gallery-view-masonry:checked) label[for='gallery-view-masonry'],
 .gallery-view-controls:has(#gallery-view-grid:checked) label[for='gallery-view-grid'],
 .gallery-view-controls:has(#gallery-view-list:checked) label[for='gallery-view-list'] {
     border-color: #6366f1;
-    background-color: #4f46e5;
 }
 
 .gallery-view-controls:has(#gallery-view-masonry:focus-visible) label[for='gallery-view-masonry'],
