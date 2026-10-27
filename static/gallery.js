@@ -792,6 +792,23 @@
     var state = main.classList.toggle("inspector-open", forceOpen);
     localStorage.setItem("inspector-open", String(state));
   };
+
+  // booruShowLocalToast appends a client-side toast to #toasts-log, cloned
+  // from #toast-template. level is a booru-toast-[level] modifier
+  // ("success", "error"); omit it for the default style.
+  globalThis.booruShowLocalToast = function (message, level) {
+    var template = document.getElementById("toast-template");
+    var log = document.getElementById("toasts-log");
+    if (!(template instanceof HTMLTemplateElement) || !log) return;
+    var fragment = template.content.cloneNode(true);
+    var toast = fragment.querySelector(".booru-toast");
+    if (level) toast.classList.add("booru-toast-" + level);
+    fragment.querySelector(".toast-message").textContent = message;
+    fragment.querySelector(".booru-toast-dismiss").addEventListener("click", function () {
+      toast.remove();
+    });
+    log.appendChild(fragment);
+  };
 })();
 
 document.addEventListener("click", function (event) {

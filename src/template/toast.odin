@@ -28,3 +28,13 @@ render_toast :: proc(message: string, variant: Toast_Variant) -> string {
 	)
 	return strings.to_string(b)
 }
+
+// write_toast_template writes the <template> client scripts clone for local
+// toasts (see booruShowLocalToast in static/gallery.js); the level modifier
+// class is added at clone time.
+write_toast_template :: proc(b: ^strings.Builder) {
+	wr(
+		b,
+		"<template id=\"toast-template\"><div class=\"booru-toast\" role=\"alert\"><span class=\"toast-message\"></span><button type=\"button\" class=\"booru-toast-dismiss rounded\">Dismiss</button></div></template>",
+	)
+}
