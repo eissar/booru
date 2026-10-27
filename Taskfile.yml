@@ -2,6 +2,9 @@ version: '3'
 
 vars:
   BIN_DIR: '{{.BIN_DIR | default "bin"}}'
+  # Resolves to the shared hooks dir even in a linked worktree, where .git is a file.
+  GIT_HOOKS:
+    sh: git rev-parse --git-path hooks
 
 tasks:
   default:
@@ -13,16 +16,16 @@ tasks:
   hooks:install:
     desc: Install the githooks/ scripts into .git/hooks
     status:
-      - cmp -s githooks/pre-commit .git/hooks/pre-commit
+      - cmp -s githooks/pre-commit "{{.GIT_HOOKS}}/pre-commit"
     cmds:
-      - cp githooks/pre-commit .git/hooks/pre-commit
-      - chmod +x .git/hooks/pre-commit
+      - cp githooks/pre-commit "{{.GIT_HOOKS}}/pre-commit"
+      - chmod +x "{{.GIT_HOOKS}}/pre-commit"
 
   hooks:check:
     desc: Abort unless the committed githooks are installed in .git/hooks
     silent: true
     status:
-      - cmp -s githooks/pre-commit .git/hooks/pre-commit
+      - cmp -s githooks/pre-commit "{{.GIT_HOOKS}}/pre-commit"
     cmds:
       - 'echo "githooks are not installed (or are stale); run: task hooks:install" >&2'
       - 'false'
