@@ -35,3 +35,18 @@ PY
 The alpha thumbnail test extracts and decodes both items, runs the thumbnail
 encoder at 64px and 128px, and uses webpinfo to verify valid WebP with alpha.
 Pillow is needed only to regenerate the fixture, not to run the test.
+
+## Video fixture
+
+`thumbnail.mp4` is a generated 192×128, 8-bit YUV420 H.264 clip (2 frames),
+not downloaded media. Recreate with:
+
+```sh
+ffmpeg -f lavfi -i 'testsrc2=size=192x128:rate=1' -frames:v 2 \
+  -c:v libx264 -pix_fmt yuv420p thumbnail.mp4
+```
+
+The video thumbnail test decodes the first frame through the FFmpeg bindings,
+rescales/encodes with libwebp at 64px and 128px, then decodes the resulting
+WebP to check its requested longest edge. Tests need only the fixture, not
+ffmpeg.

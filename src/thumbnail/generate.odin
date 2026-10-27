@@ -6,9 +6,25 @@ import "core:os"
 
 import "../library"
 import "../media"
+import ffmpeg "../vendor/ffmpeg"
 import libwebp "../vendor/libwebp"
 
-SUPPORTED_THUMBNAIL :: bit_set[media.Format]{.PNG, .JPEG, .GIF, .WebP, .AVIF}
+VIDEO_THUMBNAIL :: bit_set[media.Format] {
+	.MP4,
+	.MOV,
+	.M4V,
+	.ThreeGP,
+	.WebM,
+	.MKV,
+	.AVI,
+	.OGV,
+	.MPG,
+	.MPV,
+	.WMV,
+	.FLV,
+}
+
+SUPPORTED_THUMBNAIL :: bit_set[media.Format]{.PNG, .JPEG, .GIF, .WebP, .AVIF} | VIDEO_THUMBNAIL
 
 encode_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded_ARGB) -> bool {
 	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
@@ -92,6 +108,30 @@ encode_thumbnail :: proc {
 	encode_thumbnail_yuv,
 }
 
+// Decodes the first video frame of `path` and encodes it at `edge`, one WebP.
+encode_thumbnail_video :: proc(root, oid, path: string, edge: c.int) -> bool {
+	ff, ok := ffmpeg.first_frame(path)
+	if !ok {
+		fmt.eprintfln("thumbnail: cannot decode video %s", oid)
+		return false
+	}
+	defer ffmpeg.av_frame_free(&ff.frame)
+	if ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUV420P && ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUVJ420P {
+		fmt.eprintfln("thumbnail: unsupported video pixel format %s: %d", oid, ff.pix_fmt)
+		return false
+	}
+	img := media.Decoded_Dav1d_YUV {
+		y         = ff.y,
+		u         = ff.u,
+		v         = ff.v,
+		y_stride  = int(ff.y_stride),
+		uv_stride = int(ff.uv_stride),
+		width     = ff.width,
+		height    = ff.height,
+	}
+	return encode_thumbnail_yuv(root, oid, edge, img)
+}
+
 
 generate_image_thumbnails :: proc(
 	s: library.State,
@@ -108,6 +148,25 @@ generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	if format not_in SUPPORTED_THUMBNAIL {return 0, 0}
+	if format in VIDEO_THUMBNAIL {
+		for size in sizes {
+			edge: c.int
+			#partial switch size {
+			case .x64:
+				edge = 64
+			case .x128:
+				edge = 128
+			case:
+				continue
+			}
+			if encode_thumbnail_video(s.library_path, oid, img_path, edge) {
+				generated += 1
+			} else {
+				failed += 1
+			}
+		}
+		return
+	}
 	data, err := os.read_entire_file(img_path, context.allocator)
 	if err != nil {
 		fmt.eprintfln("thumbnail: read %s: %v", oid, err)
@@ -195,6 +254,31 @@ force_generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	if format not_in SUPPORTED_THUMBNAIL {return 0, 0}
+	if format in VIDEO_THUMBNAIL {
+		for size in sizes {
+			edge: c.int
+			#partial switch size {
+			case .x64:
+				edge = 64
+			case .x128:
+				edge = 128
+			case:
+				continue
+			}
+			path := fmt.tprintf("%s/thumbnails/%d/%s.webp", s.library_path, edge, oid)
+			if err := os.remove(path); err != nil && err != .Not_Exist {
+				fmt.eprintfln("thumbnail: remove %s: %v", path, err)
+				failed += 1
+				continue
+			}
+			if encode_thumbnail_video(s.library_path, oid, img_path, edge) {
+				generated += 1
+			} else {
+				failed += 1
+			}
+		}
+		return
+	}
 	data, err := os.read_entire_file(img_path, context.allocator)
 	if err != nil {
 		fmt.eprintfln("thumbnail: read %s: %v", oid, err)

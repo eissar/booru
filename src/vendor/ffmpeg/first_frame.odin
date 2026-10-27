@@ -4,6 +4,7 @@ import "core:c"
 import "core:strings"
 
 // Decoded first video frame. Planes point into `frame`; valid until close.
+@(private)
 First_Frame :: struct {
 	frame:         ^AVFrame,
 	width, height: c.int,
@@ -13,6 +14,7 @@ First_Frame :: struct {
 	uv_stride:     c.int,
 }
 
+@(private)
 first_frame_close :: proc(ff: ^First_Frame) {
 	if ff.frame != nil {av_frame_free(&ff.frame)}
 	ff^ = {}
