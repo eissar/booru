@@ -158,7 +158,7 @@ write_toolbar :: proc(b: ^strings.Builder, f: Gallery_Filter) {
 
 	wr(
 		b,
-		"<button type=\"submit\" class=\"h-full px-4 rounded bg-indigo-600 text-white font-medium hover:bg-indigo-700 focus-ring\" aria-label=\"Search\"><span class=\"desktop-search-icon\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"></circle><path d=\"m16 16 4 4\"></path></svg></span><span class=\"mobile-search-label\">Search</span></button></form></details>",
+		"<button type=\"submit\" class=\"h-full p-2 rounded bg-indigo-600 text-white font-medium hover:bg-indigo-700 focus-ring\" aria-label=\"Search\"><span class=\"desktop-search-icon\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"></circle><path d=\"m16 16 4 4\"></path></svg></span><span class=\"mobile-search-label\">Search</span></button></form></details>",
 	)
 	wr(
 		b,

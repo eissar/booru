@@ -427,7 +427,10 @@ html[data-theme='dark'] input::placeholder {
     min-width: 0;
 }
 
+/* Match the 2.5rem square box of the other toolbar icon buttons. */
 #search-form button[type='submit'] {
+    width: 2.5rem;
+    height: 2.5rem;
     flex-shrink: 0;
 }
 
