@@ -12,9 +12,13 @@ Prepare_Webp_X :: proc(files: []thumbnail.Thumb, p: ^Webp_Extended_Prefix) -> in
 		width, height, frame_bytes, ok := webp_frame_info(t.bytes)
 		if !ok {
 			if t.width == 128 {
-				t.bytes = transmute([]u8)thumbnail.UNSUPPORTED_FILETYPE_128_WEBP
+				t = thumbnail.Thumb {
+					transmute([]u8)thumbnail.UNSUPPORTED_FILETYPE_128_WEBP,
+					128,
+					128,
+				}
 			} else {
-				t.bytes = transmute([]u8)thumbnail.UNSUPPORTED_FILETYPE_64_WEBP
+				t = thumbnail.Thumb{transmute([]u8)thumbnail.UNSUPPORTED_FILETYPE_64_WEBP, 64, 64}
 			}
 			width, height, frame_bytes, ok = webp_frame_info(t.bytes)
 			assert(ok, "unsupported-thumbnail fixture must contain a valid VP8 frame")
