@@ -106,10 +106,11 @@ encode_thumbnail_yuv :: proc(
 encode_thumbnail :: proc {
 	encode_thumbnail_argb,
 	encode_thumbnail_yuv,
+	encode_thumbnail_video,
 }
 
 // Decodes the first video frame of `path` and encodes it at `edge`, one WebP.
-encode_thumbnail_video :: proc(root, oid, path: string, edge: c.int) -> bool {
+encode_thumbnail_video :: proc(root, oid: string, edge: c.int, path: string) -> bool {
 	ff, ok := ffmpeg.first_frame(path)
 	if !ok {
 		fmt.eprintfln("thumbnail: cannot decode video %s", oid)
@@ -148,7 +149,10 @@ generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	if format not_in SUPPORTED_THUMBNAIL {return 0, 0}
-	if format in VIDEO_THUMBNAIL {
+	#partial switch format {
+	case .MP4, .MOV, .M4V, .ThreeGP, .WebM, .MKV, .AVI, .OGV, .MPG, .MPV, .WMV, .FLV:
+		// Video formats generate their thumbnails inline: only the first
+		// frame is decoded, never read into memory whole.
 		for size in sizes {
 			edge: c.int
 			#partial switch size {
@@ -159,7 +163,7 @@ generate_image_thumbnails :: proc(
 			case:
 				continue
 			}
-			if encode_thumbnail_video(s.library_path, oid, img_path, edge) {
+			if encode_thumbnail(s.library_path, oid, edge, img_path) {
 				generated += 1
 			} else {
 				failed += 1
@@ -254,7 +258,10 @@ force_generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	if format not_in SUPPORTED_THUMBNAIL {return 0, 0}
-	if format in VIDEO_THUMBNAIL {
+	#partial switch format {
+	case .MP4, .MOV, .M4V, .ThreeGP, .WebM, .MKV, .AVI, .OGV, .MPG, .MPV, .WMV, .FLV:
+		// Video formats generate their thumbnails inline: only the first
+		// frame is decoded, never read into memory whole.
 		for size in sizes {
 			edge: c.int
 			#partial switch size {
@@ -271,7 +278,7 @@ force_generate_image_thumbnails :: proc(
 				failed += 1
 				continue
 			}
-			if encode_thumbnail_video(s.library_path, oid, img_path, edge) {
+			if encode_thumbnail(s.library_path, oid, edge, img_path) {
 				generated += 1
 			} else {
 				failed += 1
