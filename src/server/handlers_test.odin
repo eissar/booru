@@ -32,18 +32,6 @@ materialize_mipmap_for_test :: proc(t: ^testing.T, res: ^http.Response) {
 }
 
 @(test)
-sorting_filtered_images_preserves_library_order :: proc(t: ^testing.T) {
-	images := [?]library.Image{{id = 2, tags = {"match"}}, {id = 1, tags = {"match"}}}
-	for tags in ([]([]string){nil, {"match"}}) {
-		filtered := filter_images(images[:], tags)
-		sort_gallery(filtered, "idAsc")
-		testing.expect(t, filtered[0].id == 1 && filtered[1].id == 2)
-		testing.expect(t, images[0].id == 2 && images[1].id == 1, "source order remains unchanged")
-		delete(filtered)
-	}
-}
-
-@(test)
 image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer {

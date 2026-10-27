@@ -24,7 +24,7 @@ comment_round_trip :: proc(t: ^testing.T) {
 	if testing.expect(t, rc == sqlite.OK && len(images) == 1) {
 		testing.expect_value(t, images[0].comment, comment)
 	}
-	matches, search_rc := search_images(state.data_store, "match", alloc)
+	matches, _, search_rc := search_images(state.data_store, "match", nil, "idAsc", 0, 10, alloc)
 	if testing.expect(t, search_rc == sqlite.OK && len(matches) == 1) {
 		testing.expect_value(t, matches[0].comment, comment)
 	}

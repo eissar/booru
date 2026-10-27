@@ -4,7 +4,6 @@ import "core:c"
 import "core:fmt"
 import "core:mem"
 import "core:net"
-import "core:slice"
 import "core:strconv"
 import "core:strings"
 
@@ -171,78 +170,6 @@ parse_query_params :: proc(
 }
 
 //region: filtering + sorting
-
-// Returns an owned, shallow copy so sorting never reorders shared library state.
-// Tradeoff: even unfiltered requests allocate/copy all Image structs; strings and
-// tags stay shared and must not be mutated. Caller owns only the returned slice.
-filter_images :: proc(all: []library.Image, tags: []string) -> []library.Image {
-	if len(tags) == 0 {return slice.clone(all)}
-	out := make([dynamic]library.Image, 0, len(all))
-	for img in all {
-		matched := 0
-		for want in tags {
-			for tag in img.tags {
-				if tag == want {
-					matched += 1
-					break
-				}
-			}
-		}
-		if matched == len(tags) {
-			append(&out, img)
-		}
-	}
-	return out[:]
-}
-
-less_img :: proc(a, b: library.Image, sort: string) -> bool {
-	switch sort {
-	case "idAsc":
-		return a.id < b.id
-	case "idDesc":
-		return a.id > b.id
-	case "addedAtAsc":
-		return a.added_at < b.added_at
-	case "addedAtDesc":
-		return a.added_at > b.added_at
-	}
-	return a.id > b.id
-}
-
-// slop: fix
-// sort_gallery sorts the slice in place by the named sort parameter.
-sort_gallery :: proc(images: []library.Image, sort: string) {
-	sortProc: proc(a, b: library.Image) -> bool
-	switch sort {
-	case "idAsc":
-		sortProc = proc(a, b: library.Image) -> bool {return a.id < b.id}
-	case "addedAtAsc":
-		sortProc = proc(a, b: library.Image) -> bool {return a.added_at < b.added_at}
-	case "addedAtDesc":
-		sortProc = proc(a, b: library.Image) -> bool {return a.added_at > b.added_at}
-	case:
-		sortProc = proc(a, b: library.Image) -> bool {return a.id > b.id}
-	}
-	slice.stable_sort_by(images, sortProc)
-}
-
-// page_slice slices images[offset:offset+limit] and reports whether more
-// items follow the page.
-page_slice :: proc(
-	images: []library.Image,
-	offset, limit: int,
-) -> (
-	page: []library.Image,
-	has_more: bool,
-) {
-	if offset >= len(images) || offset < 0 {return images[:0], false}
-	end := offset + limit
-	if end < len(images) {
-		return images[offset:end], true
-	}
-	if end > len(images) {end = len(images)}
-	return images[offset:end], false
-}
 
 // filter_urls builds the canonical chip URLs for the filter bar.
 filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {

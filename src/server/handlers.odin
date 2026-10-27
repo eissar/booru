@@ -36,15 +36,19 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		http.res_error("", res, .BadRequest); return
 	}
 
-	images, rc := store.search_images(s.data_store, q.search, req.alloc)
+	page, has_more, rc := store.search_images(
+		s.data_store,
+		q.search,
+		q.tags[:],
+		q.sort,
+		q.offset,
+		q.limit,
+		req.alloc,
+	)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
 		return
 	}
-	filtered := filter_images(images, q.tags[:])
-	defer delete(filtered)
-	sort_gallery(filtered, q.sort)
-	page, has_more := page_slice(filtered, q.offset, q.limit)
 
 	gallery_url, fragment_url := filter_urls(q)
 	filter := template.Gallery_Filter {
@@ -70,15 +74,19 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		return
 	}
 
-	images, rc := store.search_images(s.data_store, q.search, req.alloc)
+	page, has_more, rc := store.search_images(
+		s.data_store,
+		q.search,
+		q.tags[:],
+		q.sort,
+		q.offset,
+		q.limit,
+		req.alloc,
+	)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
 		return
 	}
-	filtered := filter_images(images, q.tags[:])
-	defer delete(filtered)
-	sort_gallery(filtered, q.sort)
-	page, has_more := page_slice(filtered, q.offset, q.limit)
 
 	gallery_url, fragment_url := filter_urls(q)
 	filter := template.Gallery_Filter {
@@ -104,15 +112,19 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 		return
 	}
 
-	images, rc := store.search_images(s.data_store, q.search, req.alloc)
+	page, has_more, rc := store.search_images(
+		s.data_store,
+		q.search,
+		q.tags[:],
+		q.sort,
+		q.offset,
+		q.limit,
+		req.alloc,
+	)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
 		return
 	}
-	filtered := filter_images(images, q.tags[:])
-	defer delete(filtered)
-	sort_gallery(filtered, q.sort)
-	page, has_more := page_slice(filtered, q.offset, q.limit)
 
 	gallery_url, _ := filter_urls(q)
 	res.headers["Hx-Push-Url"] = gallery_url

@@ -2,7 +2,9 @@ package store
 
 import "core:c"
 import "core:encoding/json"
+import "core:fmt"
 import "core:mem"
+import "core:strings"
 
 import "../library"
 import "../vendor/sqlite"
@@ -35,20 +37,28 @@ read_images :: proc(db: ^sqlite.DB, alloc: mem.Allocator) -> (images: []library.
 
 // Search is a literal substring match over names and tags.
 // Case folding follows SQLite lower(): ASCII only.
-// Empty search preserves read_images behavior.
 search_images :: proc(
 	db: ^sqlite.DB,
 	search: string,
+	tags: []string,
+	sort: string,
+	offset: int,
+	limit: int,
 	alloc: mem.Allocator,
 ) -> (
-	images: []library.Image,
+	page: []library.Image,
+	has_more: bool,
 	rc: c.int,
 ) {
-	if search == "" {return read_images(db, alloc)}
-	return read_items(
+	quoted := make([]string, len(tags), alloc)
+	for tag, i in tags {
+		quoted[i] = fmt.tprintf("\"%s\"", tag)
+	}
+	tags_json := fmt.tprintf("[%s]", strings.join(quoted, ",", alloc))
+	stmt: ^sqlite.Stmt
+	rc = sqlite.prepare_v2(
 		db,
-		`
-		SELECT
+		`SELECT
 			i.id, i.oid, i.path, i.ext, i.width, i.height,
 			i.name, i.mtime, i.added_at, i.content_type, i.comment,
 			(
@@ -61,18 +71,74 @@ search_images :: proc(
 				)
 			) AS tags
 		FROM items AS i
-		WHERE instr(lower(i.name), lower(?1)) > 0
+		WHERE (instr(lower(i.name), lower(?1)) > 0
 		   OR EXISTS (
 				SELECT 1
 				FROM item_tags AS t
 				WHERE t.item_id = i.id
 				  AND instr(lower(t.tag), lower(?1)) > 0
-		   )
-		ORDER BY i.id
-		`,
-		alloc,
-		search = search,
+		   ))
+		  AND (SELECT COUNT(*) FROM json_each(?2) AS w
+		       WHERE EXISTS (
+				SELECT 1 FROM item_tags AS t WHERE t.item_id = i.id AND t.tag = w.value
+		       )) = (SELECT COUNT(*) FROM json_each(?2))
+		ORDER BY
+			CASE ?5 WHEN 'addedAtAsc'  THEN i.added_at END ASC,
+			CASE ?5 WHEN 'addedAtDesc' THEN i.added_at END DESC,
+			CASE ?5 WHEN 'idAsc'       THEN i.id      END ASC,
+			CASE ?5 WHEN 'idDesc'      THEN i.id      END DESC,
+			i.id ASC
+		LIMIT ?3 OFFSET ?4`,
+		-1,
+		&stmt,
+		nil,
 	)
+	defer {
+		if stmt != nil {sqlite.finalize(stmt)}
+	}
+	if rc != sqlite.OK {return nil, false, rc}
+	if !sqlite.bind_string(stmt, 1, search) {return nil, false, 1}
+	if !sqlite.bind_string(stmt, 2, tags_json) {return nil, false, 1}
+	rc = sqlite.bind_int64(stmt, 3, i64(limit + 1))
+	if rc != sqlite.OK {return nil, false, rc}
+	rc = sqlite.bind_int64(stmt, 4, i64(offset))
+	if rc != sqlite.OK {return nil, false, rc}
+	if !sqlite.bind_string(stmt, 5, sort) {return nil, false, 1}
+
+	out := make([dynamic]library.Image, alloc)
+	for {
+		row: Image_Row
+		ok, err, step_rc := sqlite.step_scan(stmt, &row, alloc)
+		if step_rc == sqlite.DONE {break}
+		if !ok {
+			if err == .Step {return nil, false, step_rc}
+			if err == .Alloc {return nil, false, 7} 	// SQLITE_NOMEM
+			return nil, false, 20 // SQLITE_MISMATCH
+		}
+		image := library.Image {
+			id           = row.id,
+			oid          = row.oid,
+			path         = row.path,
+			ext          = row.ext,
+			width        = row.width,
+			height       = row.height,
+			name         = row.name,
+			mtime        = row.mtime,
+			added_at     = row.added_at,
+			content_type = row.content_type,
+			comment      = row.comment,
+		}
+		if err := json.unmarshal(transmute([]u8)row.tags, &image.tags, allocator = alloc);
+		   err != nil {
+			return nil, false, 20 // SQLITE_MISMATCH
+		}
+		append(&out, image)
+	}
+	has_more = len(out) > limit
+	if has_more {
+		return out[:limit], true, sqlite.OK
+	}
+	return out[:], has_more, sqlite.OK
 }
 
 read_image_by_id :: proc(
