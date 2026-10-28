@@ -23,3 +23,6 @@ src/eagle-import.bin
 
 # downloaded test fixtures
 /.test-data/
+
+# Generated files within thumbnail size directories
+/test/fixture/library/thumbnails/*/*
