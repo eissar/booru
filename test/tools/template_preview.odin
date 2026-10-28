@@ -270,6 +270,16 @@ write_fragment_shell :: proc(b: ^strings.Builder, name, fragment, static_url: st
 		strings.write_string(b, fragment)
 		strings.write_string(b, "</div></div></aside></main>")
 
+	case "Item Card":
+		// An item card is styled for display inside a masonry grid column. In
+		// an unconstrained container, .masonry-item expands to full width.
+		strings.write_string(
+			b,
+			"<div class=\"p-6\"><div class=\"masonry-grid\" style=\"max-width: 320px;\">",
+		)
+		strings.write_string(b, fragment)
+		strings.write_string(b, "</div></div>")
+
 	case:
 		strings.write_string(b, "<div class=\"p-6\">")
 		strings.write_string(b, fragment)
@@ -882,6 +892,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
   //
   //   toast      .booru-toast is scoped to #toasts-log .booru-toast
   //   inspector  .inspector is width 0 without .gallery-main.inspector-open
+  //   item_card  .masonry-item requires .masonry-grid context to avoid expanding to full width
   var BASE_HEAD = "";
   (function buildHead() {
     var base = BASELINE.gallery_page || "";
@@ -898,6 +909,10 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
     inspector: {
       open: '<body class="antialiased"><main id="gallery-main" class="gallery-main inspector-open" style="display:flex; align-items:stretch; height:100vh;"><aside id="inspector" class="inspector shrink-0"><div class="inspector-inner flex h-full flex-col"><header class="inspector-header shrink-0"><div class="min-w-0"><h2 class="truncate text-sm font-semibold">Inspector</h2><p class="text-xs text-muted">Image details</p></div></header><div id="inspector-content" class="inspector-body min-h-0 flex-1 overflow-y-auto">',
       close: "</div></div></aside></main></body></html>"
+    },
+    item_card: {
+      open: '<body class="antialiased"><div class="p-6"><div class="masonry-grid" style="max-width: 320px;">',
+      close: "</div></div></body></html>"
     },
     _default: {
       open: '<body class="antialiased"><div class="p-6">',
