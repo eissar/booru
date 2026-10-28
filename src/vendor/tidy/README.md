@@ -12,6 +12,16 @@ probe with zero capacity returns -ENOMEM; allocate the reported size and retry.
 Parse/repair/save return negative values on failure, 0 on success, and positive
 values for diagnostics. Release every created document.
 
+The bindings also cover the diagnostic API used by
+`test/tools/template_preview.odin --check`: `RunDiagnostics`, `ErrorCount`,
+`WarningCount`, `SetMessageCallback` (a `TidyMessageCallback` taking an opaque
+`Message`), and the `GetMessage*` accessors (`GetMessageLevel`, `GetMessageLine`,
+`GetMessageColumn`, `GetMessageKey`, `GetMessage`). `ReportLevel` mirrors
+`TidyReportLevel` from `tidyenum.h` (`TidyInfo` = 350, then +1 each). The
+message callback runs on C's stack with no Odin `context`; establish
+`runtime.default_context()` inside it before any allocating call. Callback
+strings are only valid for the duration of the callback — clone what you keep.
+
 ## Normalization contract
 
 Keep the options in `src/template/normalize_html_test.odin` unchanged:

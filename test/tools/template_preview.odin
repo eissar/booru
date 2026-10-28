@@ -19,7 +19,8 @@ package main
 // Modes:
 //   template_preview                 -> serve the preview on 0.0.0.0:8971
 //   template_preview --cases         -> print <<<CASE>>> blocks (harness parity)
-//   template_preview --check         -> same, for diffing against the harness
+//   template_preview --check         -> parse every case with tidy and report
+//                                       malformed HTML; exit non-zero on errors
 //
 // Nothing is written to disk. The page is assembled in memory and served.
 //
@@ -28,6 +29,7 @@ package main
 // Run it from the repository root: paths to fixtures and static assets are
 // resolved relative to the process working directory.
 
+import "base:runtime"
 import "core:encoding/json"
 import "core:fmt"
 import "core:net"
@@ -37,6 +39,7 @@ import "core:time"
 
 import "../../src/library"
 import "../../src/template"
+import "../../src/vendor/tidy"
 
 // Case identifiers. Order drives the tab strip.
 CASE_NAMES := []string {
@@ -169,6 +172,221 @@ emit_cases :: proc(cases: map[string]string) {
 		if !ok {continue}
 		fmt.printf("<<<CASE %s>>>\n%s\n<<<END>>>\n", name, html)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// check mode
+// ---------------------------------------------------------------------------
+
+// Diagnostic is one tidy message captured for a case during --check.
+Diagnostic :: struct {
+	level: tidy.ReportLevel,
+	line:  int,
+	col:   int,
+	key:   string,
+	text:  string,
+}
+
+// advisory_key reports whether a tidy message key names an advisory note
+// (expected/intentional markup in this project) rather than malformed HTML:
+// htmx `hx-*` attributes (tidy calls them proprietary), optional attributes
+// (alt/doctype/title) on HTML fragments and thumbnails, and tidy's own benign
+// insertions that it silently repairs without the input being broken. Keys are
+// matched loosely because tidy's exact key spelling varies by version.
+advisory_key :: proc(key: string) -> bool {
+	for k in ADVISORY_KEY_FRAGMENTS {
+		if strings.contains(key, k) {
+			return true
+		}
+	}
+	return false
+}
+
+ADVISORY_KEY_FRAGMENTS := [?]string {
+	"PROPRIETARY",
+	"MISSING_ATTRIBUTE",
+	"MISSING_ATTR",
+	"MISSING_IMAGE_ATTR",
+	"MISSING_DOCTYPE",
+	"MISSING_TITLE",
+	"INSERTING_TAG",
+	"INSERTING_MISSING",
+	"INSERTING_IMPLIED",
+	"TRIM_EMPTY",
+	"CANT_BE_NESTED",
+	"SUSPECTED_PROPRIETARY",
+}
+
+// capture_globals hold the per-case diagnostic sink. A tidy message callback
+// runs on C's stack without Odin's thread-local context, so the callback
+// establishes one (runtime.default_context) and appends to this buffer.
+capture_globals :: struct {
+	msgs: [dynamic]Diagnostic,
+}
+@(private = "file")
+_capture: capture_globals
+
+// tidy_message_cb is the TidyMessageCallback. It records every diagnostic and
+// returns No so tidy does not also print it to stderr.
+@(private = "file")
+tidy_message_cb :: proc "c" (msg: tidy.Message) -> tidy.Bool {
+	context = runtime.default_context()
+	level := tidy.GetMessageLevel(msg)
+	key := tidy.GetMessageKey(msg)
+	text := tidy.GetMessage(msg)
+	append(
+		&_capture.msgs,
+		Diagnostic {
+			level = level,
+			line = int(tidy.GetMessageLine(msg)),
+			col = int(tidy.GetMessageColumn(msg)),
+			key = strings.clone(string(key)),
+			text = strings.clone(string(text)),
+		},
+	)
+	return .No
+}
+
+// collect_diagnostics runs tidy's parse/repair/diagnostics pipeline over one
+// rendered case and returns every diagnostic it emitted, plus the error and
+// warning tallies. ok is false if tidy could not even parse the input.
+collect_diagnostics :: proc(
+	html: string,
+) -> (
+	diags: []Diagnostic,
+	errors, warnings: u32,
+	ok: bool,
+) {
+	doc := tidy.Create()
+	if doc == nil {return nil, 0, 0, false}
+	defer tidy.Release(doc)
+
+	// Surface every diagnostic and suppress tidy's version banner. Sorting and
+	// formatting options are irrelevant here; we are inspecting, not
+	// normalizing. show-errors takes the number of errors to report, not a
+	// boolean.
+	options := [?][2]cstring {
+		{"show-warnings", "yes"},
+		{"show-errors", "9999"},
+		{"quiet", "yes"},
+		{"tidy-mark", "no"},
+	}
+	for option in options {
+		if tidy.OptParseValue(doc, option[0], option[1]) != .Yes {
+			return nil, 0, 0, false
+		}
+	}
+
+	tidy.SetMessageCallback(doc, tidy_message_cb)
+
+	input := strings.clone_to_cstring(html)
+	defer delete(input)
+	if tidy.ParseString(doc, input) < 0 {
+		return nil, 0, 0, false
+	}
+	_ = tidy.CleanAndRepair(doc)
+	_ = tidy.RunDiagnostics(doc)
+
+	errors = u32(tidy.ErrorCount(doc))
+	warnings = u32(tidy.WarningCount(doc))
+	diags = _capture.msgs[:]
+	_capture.msgs = {}
+	return diags, errors, warnings, true
+}
+
+// is_malformed reports whether a diagnostic describes broken markup (unclosed
+// tag, bad attribute, invalid structure) rather than an advisory note.
+is_malformed :: proc(d: Diagnostic) -> bool {
+	#partial switch d.level {
+	case .Error, .BadDocument, .Fatal:
+		return true
+	}
+	// Key-based classification for repair warnings that tidy downgrades to
+	// warning level because it can fix them. The text is the fallback when a
+	// key is unavailable.
+	if advisory_key(d.key) {
+		return false
+	}
+	text := strings.to_lower(d.text)
+	// Structural repairs of broken input.
+	if strings.contains(text, "missing </") ||
+	   strings.contains(text, "unclosed") ||
+	   strings.contains(text, "expected attribute name") ||
+	   strings.contains(text, "lacks value") ||
+	   strings.contains(text, "unexpected") ||
+	   strings.contains(text, "duplicate quote") ||
+	   strings.contains(text, "bad attribute") ||
+	   strings.contains(text, "is not recognized") ||
+	   strings.contains(text, "invalid") {
+		return true
+	}
+	return false
+}
+
+// check_cases validates every rendered case and reports any malformed HTML.
+// Returns true when no case reported malformed markup or a tidy error.
+check_cases :: proc(cases: map[string]string) -> bool {
+	failed := false
+	for name in CASE_NAMES {
+		html, ok := cases[name]
+		if !ok {continue}
+		diags, errors, warnings, parsed := collect_diagnostics(html)
+		if !parsed {
+			fmt.eprintf("%s: tidy could not parse the rendered HTML\n", name)
+			failed = true
+			continue
+		}
+		malformed := 0
+		for d in diags {
+			if is_malformed(d) {
+				malformed += 1
+			}
+		}
+		fmt.printf(
+			"%s: %d error(s), %d warning(s), %d malformed\n",
+			name,
+			errors,
+			warnings,
+			malformed,
+		)
+		for d in diags {
+			tag := level_name(d.level)
+			if is_malformed(d) {
+				fmt.printf("  %s line %d:%d  %s\n", tag, d.line, d.col, d.text)
+			}
+		}
+		for d in diags {
+			delete(d.key)
+			delete(d.text)
+		}
+		delete(diags)
+		if errors > 0 || malformed > 0 {
+			failed = true
+		}
+	}
+	return !failed
+}
+
+level_name :: proc(level: tidy.ReportLevel) -> string {
+	#partial switch level {
+	case .Info:
+		return "info"
+	case .Warning:
+		return "warning"
+	case .Config:
+		return "config"
+	case .Access:
+		return "access"
+	case .Error:
+		return "error"
+	case .BadDocument:
+		return "bad-document"
+	case .Fatal:
+		return "fatal"
+	case .DialogueSummary:
+		return "summary"
+	}
+	return "unknown"
 }
 
 // ---------------------------------------------------------------------------
@@ -1525,15 +1743,17 @@ serve :: proc(srv: Server, port: int) {
 // ---------------------------------------------------------------------------
 
 usage :: proc() {
-	fmt.eprintln("usage: template_preview [--serve|--cases] [fixtures_dir] [port]")
+	fmt.eprintln("usage: template_preview [--serve|--cases|--check] [fixtures_dir] [port]")
 	fmt.eprintln("")
 	fmt.eprintln("  --serve   serve the preview over HTTP (default)")
 	fmt.eprintln(
 		"  --cases   print <<<CASE>>> blocks, for comparing with test/html-fixture-tdd/fixture/*.expected.html",
 	)
-	fmt.eprintln("  --check   alias for --cases")
+	fmt.eprintln("  --check   parse each rendered case with tidy, report malformed HTML")
+	fmt.eprintln("            (unclosed tags, bad attributes, invalid structure), and exit")
+	fmt.eprintln("            non-zero on any malformed markup or tidy error")
 	fmt.eprintln("")
-	fmt.eprintln("Nothing is written to disk in either mode.")
+	fmt.eprintln("Nothing is written to disk in any mode.")
 }
 
 DEFAULT_PORT :: 8971
@@ -1546,8 +1766,10 @@ main :: proc() {
 	for arg, i in os.args {
 		if i == 0 {continue}
 		switch arg {
-		case "--cases", "--check":
+		case "--cases":
 			mode = "--cases"
+		case "--check":
+			mode = "--check"
 		case "--serve":
 			mode = "--serve"
 		case "--help", "-h":
@@ -1571,6 +1793,13 @@ main :: proc() {
 	if mode == "--cases" {
 		emit_cases(cases)
 		return
+	}
+	if mode == "--check" {
+		if check_cases(cases) {
+			fmt.println("template_preview: all cases are well-formed")
+			return
+		}
+		os.exit(1)
 	}
 
 	page := build_preview_page(cases, images, THUMB_URL, STATIC_URL)
