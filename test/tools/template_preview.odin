@@ -271,11 +271,11 @@ write_fragment_shell :: proc(b: ^strings.Builder, name, fragment, static_url: st
 		strings.write_string(b, "</div></div></aside></main>")
 
 	case "Item Card":
-		// An item card is styled for display inside a masonry grid column. In
-		// an unconstrained container, .masonry-item expands to full width.
+		// An item card is styled for display inside #photo-grid.masonry-grid.
+		// Wrapping it in #photo-grid matches the layout context on the gallery page.
 		strings.write_string(
 			b,
-			"<div class=\"p-6\"><div class=\"masonry-grid\" style=\"max-width: 320px;\">",
+			"<div class=\"p-6\"><div id=\"photo-grid\" class=\"masonry-grid\">",
 		)
 		strings.write_string(b, fragment)
 		strings.write_string(b, "</div></div>")
@@ -911,7 +911,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
       close: "</div></div></aside></main></body></html>"
     },
     item_card: {
-      open: '<body class="antialiased"><div class="p-6"><div class="masonry-grid" style="max-width: 320px;">',
+      open: '<body class="antialiased"><div class="p-6"><div id="photo-grid" class="masonry-grid">',
       close: "</div></div></body></html>"
     },
     _default: {
