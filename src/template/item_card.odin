@@ -88,10 +88,7 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	ia(&b, "width", image.width)
 	ia(&b, "height", image.height)
 	attr(&b, "style", aspect_ratio)
-	wr(
-		&b,
-		" class=\"gallery-card-image transition-transform duration-300 peer-hover:scale-105 order-1\"/></div></article>",
-	)
+	wr(&b, " class=\"gallery-card-image order-1\"/></div></article>")
 
 	return strings.to_string(b)
 }

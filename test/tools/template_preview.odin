@@ -761,7 +761,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
     s += (renderOrder >= 0 && renderOrder < 6) ? ' fetchpriority="high"' : ' fetchpriority="low"';
     s += ia("width", image.width) + ia("height", image.height);
     s += attr("style", aspectStyle(image.width, image.height));
-    s += ' class="gallery-card-image transition-transform duration-300 peer-hover:scale-105 order-1"/></div></article>';
+    s += ' class="gallery-card-image order-1"/></div></article>';
     return s;
   }
 
