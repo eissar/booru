@@ -72,6 +72,18 @@ tasks:
       - mkdir -p {{.BIN_DIR}}
       - odin run src -out:{{.BIN_DIR}}/booru {{.CLI_ARGS}}
 
+  worktree-proxy:
+    desc: 'Serve on bin/booru.sock and expose it on a free localhost port (URL printed); Ctrl-C stops both'
+    deps: [hooks:check, assets:css]
+    cmds:
+      - |
+        SOCK={{.BIN_DIR}}/booru.sock
+        mkdir -p {{.BIN_DIR}}
+        odin run src -out:{{.BIN_DIR}}/booru -- -socket:$SOCK -daemon >>{{.BIN_DIR}}/booru.log 2>&1 || exit 1
+        trap 'env kill $(lsof -t $SOCK)' EXIT
+        socat -d -d TCP-LISTEN:0,bind=localhost,fork,reuseaddr UNIX-CONNECT:$SOCK 2>&1 |
+          awk '/listening on/ {n = split($NF, a, ":"); print "http://localhost:" a[n] "/"} / [EF] / {print} {fflush()}'
+
   preview:
     desc: 'Run the template preview server (pass a port with --, e.g. task preview -- 9000)'
     deps: [hooks:check, assets:css]

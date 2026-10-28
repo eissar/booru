@@ -40,9 +40,16 @@ main :: proc() {
 
 
 	cfg := cli.getFlags()
+	ready_fd := daemonize() if cfg.daemon else {}
 
 	if err := library.init_new_library(cfg.library); err != nil {
 		log.fatal("library: initialize directory structure:", err)
+		os.exit(1)
+	}
+
+	// Fail before replay rather than sharing the library with a live server.
+	if cfg.socket != "" && server.unix_socket_in_use(cfg.socket) {
+		log.fatalf("listen on unix socket %s: already in use by a running server", cfg.socket)
 		os.exit(1)
 	}
 
@@ -53,17 +60,6 @@ main :: proc() {
 		library_path = cfg.library,
 		event_log    = &event_log,
 	}
-
-	ep := net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port})
-	// net.parse_address
-	sock, err := net.listen_tcp(ep)
-	if err != nil {
-		log.fatal(err)
-		os.exit(1)
-	}
-
-	defer net.close(sock)
-
 
 	db_c := fmt.aprintf(
 		"%v/%v",
@@ -143,5 +139,27 @@ main :: proc() {
 
 	log.infof("total startup time=%v", fmt_timestamp(time.since(load_start)))
 
-	server.Serve(&state, sock) // this should take an allocator
+	// Bind last: the socket existing means the server is ready.
+	sock: net.TCP_Socket
+	accept: server.Accept_Proc = server.accept_tcp
+	if cfg.socket != "" {
+		err: string
+		if sock, err = server.listen_unix(cfg.socket); err != "" {
+			log.fatalf("listen on unix socket %s: %s", cfg.socket, err)
+			os.exit(1)
+		}
+		accept = server.accept_unix
+	} else {
+		ep := net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port})
+		err: net.Network_Error
+		if sock, err = net.listen_tcp(ep); err != nil {
+			log.fatal(err)
+			os.exit(1)
+		}
+	}
+
+	defer net.close(sock)
+	if cfg.daemon {daemon_ready(ready_fd)}
+
+	server.Serve(&state, sock, accept) // this should take an allocator
 }

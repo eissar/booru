@@ -12,9 +12,16 @@ import "../template"
 
 REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte + http.MAX_BODY_SIZE
 
+Accept_Proc :: #type proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool)
+
+accept_tcp :: proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool) {
+	conn, _, err := net.accept_tcp(sock, net.DEFAULT_TCP_OPTIONS)
+	return conn, err == nil
+}
+
 // Serve handles requests on an already-listening socket until accept fails.
 // The caller owns the socket.
-Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
+Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = accept_tcp) {
 	backing, err := make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
 	assert(err == nil)
 	defer delete(backing, context.allocator)
@@ -23,14 +30,14 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket) {
 	// request scoped arena, we free_all explicitly before each conn
 	mem.arena_init(&arena, backing)
 	alloc := mem.arena_allocator(&arena)
-	if ep, endpoint_err := net.bound_endpoint(sock); endpoint_err == nil {
-		log.infof("server listening on %v", net.endpoint_to_string(ep))
+	if accept == accept_tcp {
+		if ep, endpoint_err := net.bound_endpoint(sock); endpoint_err == nil {
+			log.infof("server listening on %v", net.endpoint_to_string(ep))
+		}
 	}
 
 	// loop new client conns
-	for conn, src, err := net.accept_tcp(sock, net.DEFAULT_TCP_OPTIONS);
-	    err == nil;
-	    conn, src, err = net.accept_tcp(sock, net.DEFAULT_TCP_OPTIONS) {
+	for conn, accepted := accept(sock); accepted; conn, accepted = accept(sock) {
 
 		free_all(alloc)
 		free_all(context.temp_allocator) // TODO: fix

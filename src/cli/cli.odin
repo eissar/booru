@@ -5,8 +5,10 @@ import "core:fmt"
 import "core:os"
 
 Opts :: struct {
-	/* default 8080 */
-	port:           int `usage:"Port to bind."`,
+	/* default 8080 unless -socket is set */
+	port:           int `usage:"Port to bind. Mutually exclusive with -socket."`,
+	socket:         string `usage:"Listen on this Unix socket path instead of TCP."`,
+	daemon:         bool `usage:"Detach; return once the server is ready to serve."`,
 
 	/* default test/fixture/library */
 	library:        string `usage:"Path to the library root (contains events/ and images/)."`,
@@ -41,14 +43,25 @@ check_valid_port :: proc(
 	return
 }
 
+// Port has no struct default so an explicit -port is detectable.
+resolve_listen_mode :: proc(opts: ^Opts) -> (error: string) {
+	if opts.socket != "" && opts.port != 0 {
+		return "-socket and -port are mutually exclusive"
+	}
+	if opts.socket == "" && opts.port == 0 {opts.port = 8080}
+	return
+}
 
 getFlags :: proc() -> Opts {
 	opts: Opts = {
-		port           = 8080,
 		library        = "test/fixture/library",
 		scan_thumbnail = true,
 	}
 	flags.register_flag_checker(check_valid_port)
 	flags.parse_or_exit(&opts, os.args)
+	if msg := resolve_listen_mode(&opts); msg != "" {
+		fmt.eprintln("error:", msg)
+		os.exit(2)
+	}
 	return opts
 }
