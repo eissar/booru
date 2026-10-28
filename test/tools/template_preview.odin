@@ -595,6 +595,117 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
     ]
   };
 
+  // --- case registration ------------------------------------------------
+  // Prototype variants are added with registerCase() instead of growing the
+  // renderCase switch. A registered case gets a tab, a sidebar schema, an
+  // optional iframe wrapper, and a render(state) function. Variants have no
+  // fixture baseline and exist only in this previewer; they never touch
+  // src/template. Styles must be inline or in the wrapper's <style>, because
+  // static/tailwind.css only contains classes the real templates use.
+  var RENDERERS = {};
+  var VARIANT_WRAPPERS = {};
+  function registerCase(name, def) {
+    RENDERERS[name] = def.render;
+    SCHEMA[name] = def.schema || [];
+    if (def.wrapper) VARIANT_WRAPPERS[name] = def.wrapper;
+    TITLES[name] = def.title || name;
+    if (ORDER.indexOf(name) < 0) ORDER.push(name);
+  }
+
+  var CARD_SCHEMA = [
+    { key: "image", kind: "image", label: "image", def: 0 },
+    { key: "render_order", kind: "number", label: "render_order", def: 0, hint: "-1 omits data-render-order-id; 0-5 also sets fetchpriority=high" }
+  ];
+  function cardWrap(css) {
+    return {
+      open: "<body class=\"antialiased\"><style>" + css + "</style><div class=\"p-6\"><div id=\"photo-grid\" class=\"masonry-grid\">",
+      close: "</div></div></body></html>"
+    };
+  }
+  // Shared article/img skeleton so every variant keeps the real data hooks
+  // (data-image-id, hx-get inspect, lazy thumb, aspect-ratio).
+  function variantCard(cls, image, order, inner, imgFirst) {
+    var meta = '<div class="gallery-card-meta ' + cls + '-meta"' + attr("hx-get", "/fragment/inspect/" + image.id) +
+      ' hx-target="#inspector-content" hx-target-error="#toasts-log" hx-swap="innerHTML" data-hx-on-click="booruToggleInspector(true)">' + inner + "</div>";
+    var img = "<img" + attr("src", thumbSrc(image)) + ' loading="lazy"' +
+      ((order >= 0 && order < 6) ? ' fetchpriority="high"' : ' fetchpriority="low"') +
+      ia("width", image.width) + ia("height", image.height) +
+      attr("style", aspectStyle(image.width, image.height)) + ' class="gallery-card-image ' + cls + '-img"/>';
+    var s = '<article class="masonry-item group ' + cls + '"' + ia("data-image-id", image.id);
+    if (order >= 0) s += ia("data-render-order-id", order);
+    return s + '><div class="gallery-card ' + cls + '-box">' + (imgFirst ? img + meta : meta + img) + "</div></article>";
+  }
+  function pickImage(st) { return IMAGES[st.image] || IMAGES[0]; }
+  function miniTags(tags) {
+    return (tags || []).map(function (t) { return '<span class="v-tag">#' + escText(t) + "</span>"; }).join("");
+  }
+
+  // Variant A: caption overlaid on the image, revealed by a bottom gradient.
+  registerCase("item_card_overlay", {
+    title: "Card: Overlay",
+    schema: CARD_SCHEMA,
+    wrapper: cardWrap(
+      ".v-overlay-box{position:relative;overflow:hidden;border-radius:14px;display:block;background:var(--bg-surface)}" +
+      ".v-overlay-img{display:block;width:100%;height:auto;transition:transform .3s}" +
+      ".v-overlay-box:hover .v-overlay-img{transform:scale(1.05)}" +
+      ".v-overlay-meta{position:absolute;left:0;right:0;bottom:0;padding:28px 12px 10px;color:#fff;cursor:pointer;" +
+      "background:linear-gradient(to top,rgba(0,0,0,.78),rgba(0,0,0,0));opacity:0;transition:opacity .2s}" +
+      ".v-overlay-box:hover .v-overlay-meta{opacity:1}" +
+      ".v-name{display:block;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".v-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}" +
+      ".v-tag{font-size:11px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.2)}"),
+    render: function (st) {
+      var im = pickImage(st);
+      return variantCard("v-overlay", im, Number(st.render_order),
+        '<span class="v-name">' + escText(im.name) + '</span><div class="v-tags">' + miniTags(im.tags) + "</div>", true);
+    }
+  });
+
+  // Variant B: polaroid, image in a white mat with the name beneath.
+  registerCase("item_card_polaroid", {
+    title: "Card: Polaroid",
+    schema: CARD_SCHEMA,
+    wrapper: cardWrap(
+      ".v-polaroid-box{display:flex;flex-direction:column;background:#fff;padding:10px 10px 6px;border-radius:4px;" +
+      "box-shadow:0 2px 10px rgba(0,0,0,.25);transition:transform .2s}" +
+      ".v-polaroid:nth-child(odd) .v-polaroid-box{transform:rotate(-1deg)}" +
+      ".v-polaroid:nth-child(even) .v-polaroid-box{transform:rotate(1deg)}" +
+      ".v-polaroid-box:hover{transform:rotate(0) scale(1.03)}" +
+      ".v-polaroid-img{display:block;width:100%;height:auto;border-radius:2px}" +
+      ".v-polaroid-meta{padding:10px 2px 6px;color:#222;cursor:pointer;text-align:center}" +
+      ".v-name{display:block;font-family:Georgia,serif;font-style:italic;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".v-tags{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin-top:4px}" +
+      ".v-tag{font-size:10px;color:#666}"),
+    render: function (st) {
+      var im = pickImage(st);
+      return variantCard("v-polaroid", im, Number(st.render_order),
+        '<span class="v-name">' + escText(im.name) + '</span><div class="v-tags">' + miniTags(im.tags) + "</div>", true);
+    }
+  });
+
+  // Variant C: compact horizontal row, thumbnail left, text right.
+  registerCase("item_card_compact", {
+    title: "Card: Compact",
+    schema: CARD_SCHEMA,
+    wrapper: cardWrap(
+      ".masonry-grid{display:flex!important;flex-direction:column;gap:8px;max-width:420px}" +
+      ".v-compact-box{display:flex;align-items:center;gap:12px;padding:8px;border-radius:10px;background:var(--bg-surface);" +
+      "border:1px solid var(--border-color-light)}" +
+      ".v-compact-box:hover{border-color:#6366f1}" +
+      ".v-compact-img{width:64px;height:64px;object-fit:cover;border-radius:8px;flex:0 0 64px}" +
+      ".v-compact-meta{min-width:0;flex:1;cursor:pointer}" +
+      ".v-name{display:block;font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".v-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}" +
+      ".v-tag{font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--border-color-light);opacity:.8}"),
+    render: function (st) {
+      var im = pickImage(st);
+      // Fixed square thumb: override the intrinsic aspect-ratio style.
+      return variantCard("v-compact", im, Number(st.render_order),
+        '<span class="v-name">' + escText(im.name) + '</span><div class="v-tags">' + miniTags(im.tags) + "</div>", true)
+        .replace(/ style="aspect-ratio: [^"]*"/, "");
+    }
+  });
+
   var state = {};      // case -> { key: value }
   var active = null;
 
@@ -854,6 +965,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
     function pick(indices) {
       return (indices || []).map(function (i) { return IMAGES[i]; }).filter(Boolean);
     }
+    if (RENDERERS[name]) return RENDERERS[name](st);
     var filter;
     switch (name) {
       case "toast":
@@ -921,7 +1033,7 @@ PREVIEW_SHELL :: `<!DOCTYPE html>
   };
 
   function wrapperFor(name) {
-    return WRAPPERS[name] || WRAPPERS._default;
+    return VARIANT_WRAPPERS[name] || WRAPPERS[name] || WRAPPERS._default;
   }
 
   function wrapDocument(name, html) {
