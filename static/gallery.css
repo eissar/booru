@@ -188,7 +188,7 @@ body.dark-mode {
     transition: background-color 0.2s;
 }
 
-.card-action-btn::-webkit-details-marker {
+summary::-webkit-details-marker {
     display: none;
 }
 
@@ -490,11 +490,8 @@ html[data-theme='dark'] input::placeholder {
 }
 
 .toolbar-icon-button,
-.gallery-view-controls,
 .card-actions {
-    border: 1px solid var(--border-color-light);
     background-color: var(--bg-surface);
-    box-shadow: 0 1px 2px 0 var(--shadow-color);
 }
 
 .toolbar-icon-button {
@@ -503,17 +500,17 @@ html[data-theme='dark'] input::placeholder {
     justify-content: center;
     width: 2.5rem;
     height: 2.5rem;
+    flex-shrink: 0;
 }
 
-/* One form; distinct mobile toggle and desktop submit icon. */
+/* One search form; mobile uses a disclosure toggle. */
 .toolbar-search {
     width: 100%;
     max-width: 20rem;
     min-width: 0;
 }
 
-.toolbar-search > .mobile-search-toggle,
-.mobile-search-label {
+.toolbar-search > .mobile-search-toggle {
     display: none;
 }
 
@@ -525,13 +522,6 @@ html[data-theme='dark'] input::placeholder {
 #search-input {
     flex: 1;
     min-width: 0;
-}
-
-/* Match the 2.5rem square box of the other toolbar icon buttons. */
-#search-form button[type='submit'] {
-    width: 2.5rem;
-    height: 2.5rem;
-    flex-shrink: 0;
 }
 
 @media (width >= 768px) {
@@ -549,10 +539,6 @@ html[data-theme='dark'] input::placeholder {
         gap: 0 0.5rem;
     }
 
-    #toolbar .gallery-view-label {
-        padding-inline: 0.25rem;
-    }
-
     #toolbar .toolbar-actions {
         flex: 0 0 auto;
         gap: 0.25rem;
@@ -565,15 +551,6 @@ html[data-theme='dark'] input::placeholder {
 
     .toolbar-search > .mobile-search-toggle {
         display: inline-flex;
-    }
-
-    .mobile-search-toggle::-webkit-details-marker,
-    .desktop-search-icon {
-        display: none;
-    }
-
-    .mobile-search-label {
-        display: inline;
     }
 
     .toolbar-search:not([open]) > #search-form {
@@ -592,29 +569,8 @@ html[data-theme='dark'] input::placeholder {
     }
 }
 
-.gallery-view-controls {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 0.125rem;
-    height: 2.5rem;
-    padding: 0.25rem;
-}
-
-.gallery-view-controls .gallery-view-label {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 2rem;
-    cursor: pointer;
-    user-select: none;
+.gallery-view-label {
     border: 1px solid transparent;
-    padding: 0 0.5rem;
-    transition: background-color 0.2s, border-color 0.2s;
-}
-
-.gallery-view-controls .gallery-view-label:hover {
-    background-color: var(--bg-surface-hover);
 }
 
 #toolbar details[open] > summary.toolbar-icon-button,
@@ -627,6 +583,8 @@ html[data-theme='dark'] input::placeholder {
 .gallery-view-controls:has(#gallery-view-masonry:focus-visible) label[for='gallery-view-masonry'],
 .gallery-view-controls:has(#gallery-view-grid:focus-visible) label[for='gallery-view-grid'],
 .gallery-view-controls:has(#gallery-view-list:focus-visible) label[for='gallery-view-list'] {
+    position: relative;
+    z-index: 1;
     outline: 2px solid #6366f1;
     outline-offset: 2px;
 }
