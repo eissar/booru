@@ -84,13 +84,6 @@ tasks:
         socat -d -d TCP-LISTEN:0,bind=localhost,fork,reuseaddr UNIX-CONNECT:$SOCK 2>&1 |
           awk '/listening on/ {n = split($NF, a, ":"); print "http://localhost:" a[n] "/"} / [EF] / {print} {fflush()}'
 
-  preview:
-    desc: 'Run the template preview server (pass a port with --, e.g. task preview -- 9000)'
-    deps: [hooks:check, assets:css]
-    cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - odin run test/tools -out:{{.BIN_DIR}}/preview -- {{.CLI_ARGS}}
-
   check:
     desc: 'Type-check the project packages (pass extra odin flags with --, e.g. task check -- -error-pos-style:unix)'
     deps: [hooks:check]

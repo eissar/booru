@@ -21,6 +21,11 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 
 
 
+# Lua Hook TODO
+
+- [ ] Load every `lua/*.lua` in sorted order instead of the single `handlers.lua` (`src/server/lua_handle.odin`); later files win on conflicts.
+- [ ] Send a reload event (e.g. over SSE) when a Lua file changes, so open pages refresh on save.
+
 # Tag Remediation TODO
 
 - [ ] Test the remediation path: import a temporary library with tags like `Black Cat`, `cat2` and `fav🐕`; assert the item's tags are canonical, the `<uuid>-remediation.ndjson` queue holds flat records with the original tags, and replay still matches the import.

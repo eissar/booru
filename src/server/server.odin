@@ -10,6 +10,10 @@ import "../http"
 import "../library"
 import "../template"
 
+// TODO: put /dev/* behind a flag or a runtime global; enabled unconditionally
+// while prototyping.
+DEV_ROUTES :: true
+
 REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte + http.MAX_BODY_SIZE
 
 Accept_Proc :: #type proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool)
@@ -32,7 +36,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 	alloc := mem.arena_allocator(&arena)
 	if accept == accept_tcp {
 		if ep, endpoint_err := net.bound_endpoint(sock); endpoint_err == nil {
-			log.infof("server listening on %v", net.endpoint_to_string(ep))
+			log.infof("server listening on http://%v", net.endpoint_to_string(ep))
 		}
 	}
 
@@ -159,6 +163,10 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			handle_delete(s, &res, {req_header, alloc, rec_time}, body)
 		case req_header.path == "/update-metadata":
 			handle_update_metadata(s, &res, {req_header, alloc, rec_time}, body)
+		case DEV_ROUTES && req_header.path == "/dev/preview":
+			handle_dev_preview(s^, &res, req)
+		case DEV_ROUTES && req_header.path == "/dev/preview/mtime":
+			handle_dev_preview_mtime(&res, req)
 		case strings.starts_with(req_header.path, "/fragment/inspect/"):
 			handle_fragment_inspect(s^, &res, req)
 		case strings.starts_with(req_header.path, "/mipmap/"):

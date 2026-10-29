@@ -12,8 +12,7 @@ probe with zero capacity returns -ENOMEM; allocate the reported size and retry.
 Parse/repair/save return negative values on failure, 0 on success, and positive
 values for diagnostics. Release every created document.
 
-The bindings also cover the diagnostic API used by
-`test/tools/template_preview.odin --check`: `RunDiagnostics`, `ErrorCount`,
+The bindings also cover the diagnostic API: `RunDiagnostics`, `ErrorCount`,
 `WarningCount`, `SetMessageCallback` (a `TidyMessageCallback` taking an opaque
 `Message`), and the `GetMessage*` accessors (`GetMessageLevel`, `GetMessageLine`,
 `GetMessageColumn`, `GetMessageKey`, `GetMessage`). `ReportLevel` mirrors

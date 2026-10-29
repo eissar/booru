@@ -3,6 +3,7 @@ package server
 import "core:log"
 import "core:os"
 import "core:strings"
+import "core:time"
 
 import lua "vendor:lua/5.4"
 
@@ -47,6 +48,14 @@ lua_handle :: proc(res: ^http.Response, req: http.Req, body: []u8) -> bool {
 	html := strings.clone(string(lua.tostring(L, -2)), req.alloc)
 	http.res_html(html, res, status)
 	return true
+}
+
+// lua_mtime returns the handler script's modification time in unix
+// nanoseconds, or 0 when the script is absent.
+lua_mtime :: proc() -> i64 {
+	fi, err := os.stat(LUA_HANDLER_PATH, context.temp_allocator)
+	if err != nil {return 0}
+	return time.to_unix_nanoseconds(fi.modification_time)
 }
 
 @(private = "file")
