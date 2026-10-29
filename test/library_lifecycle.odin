@@ -29,8 +29,11 @@ import_browse_delete_replay :: proc(t: ^testing.T) {
 
 	ids: [3]int
 	{
+		cursor: elog.Cursor
+		defer delete(cursor.shard)
 		log := elog.EventLog {
-			root = root,
+			root   = root,
+			cursor = &cursor,
 		}
 		state := library.State {
 			library_path = root,

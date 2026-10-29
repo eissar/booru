@@ -53,8 +53,11 @@ main :: proc() {
 		os.exit(1)
 	}
 
+	cursor: elog.Cursor
+	defer delete(cursor.shard)
 	event_log := elog.EventLog {
-		root = cfg.library,
+		root   = cfg.library,
+		cursor = &cursor,
 	}
 	state := library.State {
 		library_path = cfg.library,

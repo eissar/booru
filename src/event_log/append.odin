@@ -4,6 +4,7 @@ import "core:bufio"
 import "core:fmt"
 import "core:io"
 import "core:os"
+import "core:strings"
 
 ev_append :: proc {
 	append_records,
@@ -43,9 +44,18 @@ append_records :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 		}
 	}
 
+	end, seek_err := os.seek(ev_handle, 0, .Current)
+	if seek_err != nil {return "could not get event log position"}
+
 	if err := make_durable(ev_handle); err != "" {
 		return fmt.tprintf("make durable: %v", err)
 	}
+
+	if log.cursor.shard != shard {
+		delete(log.cursor.shard)
+		log.cursor.shard = strings.clone(shard)
+	}
+	log.cursor.offset = end
 
 	return ""
 }

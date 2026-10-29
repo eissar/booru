@@ -34,8 +34,9 @@ Op :: enum {
 
 // One writer owns the filesystem log. SQLite owns derived replay progress.
 EventLog :: struct {
-	root: string,
-	db:   ^sqlite.DB,
+	root:   string,
+	db:     ^sqlite.DB,
+	cursor: ^Cursor,
 }
 
 Event :: struct {

@@ -62,8 +62,11 @@ eagle_items_import_into_sqlite_with_correct_amount_of_items :: proc(t: ^testing.
 	init_err := library.init_new_library(root)
 	if !testing.expectf(t, init_err == nil, "init library: %v", init_err) {return}
 
+	cursor: elog.Cursor
+	defer delete(cursor.shard)
 	log := elog.EventLog {
-		root = root,
+		root   = root,
+		cursor = &cursor,
 	}
 	imported := library.State {
 		library_path = root,

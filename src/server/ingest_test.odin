@@ -26,8 +26,11 @@ ingest_inserts_epoch_ms_row_immediately :: proc(t: ^testing.T) {
 	defer os.remove_all(root)
 	if !testing.expect(t, library.init_new_library(root) == nil) {return}
 
+	cursor: elog.Cursor
+	defer delete(cursor.shard)
 	log := elog.EventLog {
-		root = root,
+		root   = root,
+		cursor = &cursor,
 	}
 	state := library.State {
 		library_path = root,
