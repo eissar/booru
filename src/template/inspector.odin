@@ -147,7 +147,7 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 		&b,
 		" class=\"hidden flex-1 min-w-0 input-focus-underline text-xs text-muted\" type=\"text\" name=\"tags\"",
 	)
-	attr(&b, "value", strings.join(image.tags, " "))
+	attr(&b, "value", strings.join(image.tags, ", "))
 	wr(&b, " autocomplete=\"off\" spellcheck=\"false\"/></li>")
 
 	write_detail_row(&b, "OID", image.oid, true)

@@ -132,7 +132,8 @@ body.dark-mode {
     transition: background-color 0.2s;
 }
 
-.hover-surface:hover {
+.hover-surface:hover,
+.card-action-btn:hover {
     background-color: var(--bg-surface-hover);
 }
 
@@ -146,7 +147,103 @@ body.dark-mode {
     box-shadow: 0 20px 25px -5px var(--shadow-color-hover), 0 10px 10px -5px var(--shadow-color);
 }
 
-.dropdown-container {
+.card-actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 4px;
+    z-index: 10;
+    border-radius: 0.25rem;
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.gallery-card:hover .card-actions,
+.gallery-card:focus-within .card-actions,
+.card-actions:has(.card-action-popover-anchor[open]) {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.card-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.2rem;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    list-style: none;
+    transition: background-color 0.2s;
+}
+
+.card-action-btn::-webkit-details-marker {
+    display: none;
+}
+
+/* .masonry-item img forces width:100%. */
+.card-actions .card-action-btn img {
+    width: 1rem;
+    height: 1rem;
+    flex: none;
+}
+
+.card-action-popover-anchor {
+    position: relative;
+    display: flex;
+}
+
+.card-action-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: 200px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    z-index: 20;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: default;
+}
+
+.card-action-popover-input {
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 6px;
+    padding: 4px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.card-action-popover-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+
+.card-action-popover-save {
+    padding: 2px 8px;
+    border: none;
+    border-radius: 4px;
+    background-color: var(--accent-indigo);
+    color: #fff;
+    font-size: 10px;
+}
+
+.dropdown-container,
+.card-action-popover {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
     box-shadow: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -2px var(--shadow-color);
@@ -157,13 +254,15 @@ body.dark-mode {
     outline-offset: 2px;
 }
 
-.input-field {
+.input-field,
+.card-action-popover-input {
     background-color: var(--bg-input);
     color: var(--text-primary);
     transition: background-color 0.2s;
 }
 
-.input-field:focus {
+.input-field:focus,
+.card-action-popover-input:focus {
     background-color: var(--bg-input-focus);
 }
 
@@ -391,7 +490,8 @@ html[data-theme='dark'] input::placeholder {
 }
 
 .toolbar-icon-button,
-.gallery-view-controls {
+.gallery-view-controls,
+.card-actions {
     border: 1px solid var(--border-color-light);
     background-color: var(--bg-surface);
     box-shadow: 0 1px 2px 0 var(--shadow-color);

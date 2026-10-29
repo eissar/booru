@@ -43,6 +43,41 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 	}
 }
 
+// render_card_actions writes the hover-revealed top-right action bar:
+// a tag-edit popover and a download link.
+render_card_actions :: proc(b: ^strings.Builder, image: library.Image) {
+	id_buf: [20]u8
+	id := fmt.bprintf(id_buf[:], "%d", image.id)
+
+	wr(
+		b,
+		"<div class=\"card-actions\"><details class=\"card-action-popover-anchor\"><summary class=\"card-action-btn\" title=\"Edit tags\">",
+	)
+	inspector_icon(b, "hashtag", "Edit tags")
+	wr(
+		b,
+		"</summary><div class=\"card-action-popover\"><form hx-post=\"/update-metadata\" hx-target=\"#toasts-log\" hx-target-error=\"#toasts-log\" hx-swap=\"beforeend\"",
+	)
+	wr(
+		b,
+		" data-hx-on-htmx:after-request=\"if(event.detail.successful)this.closest(&#39;details&#39;).open=false\"><input type=\"hidden\" name=\"id\"",
+	)
+	attr(b, "value", id)
+	wr(b, "/><input class=\"card-action-popover-input\" type=\"text\" name=\"tags\"")
+	attr(b, "value", strings.join(image.tags, ", "))
+	wr(
+		b,
+		" placeholder=\"tag1, tag2...\" autocomplete=\"off\" spellcheck=\"false\"/><div class=\"card-action-popover-row\"><button type=\"submit\" class=\"card-action-popover-save\">Save</button></div></form></div></details>",
+	)
+
+	wr(b, "<a class=\"card-action-btn\" title=\"Download\"")
+	attrf(b, "href", "/image/%s", image.oid)
+	attr(b, "download", image.name)
+	wr(b, ">")
+	inspector_icon(b, "arrow-down-tray", "Download")
+	wr(b, "</a></div>")
+}
+
 // render_item_card renders a single masonry image card. render_order is the
 // positional index in the listing; the first six load with high priority.
 render_item_card :: proc(image: library.Image, render_order: int) -> string {
@@ -88,7 +123,9 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	ia(&b, "width", image.width)
 	ia(&b, "height", image.height)
 	attr(&b, "style", aspect_ratio)
-	wr(&b, " class=\"gallery-card-image order-1\"/></div></article>")
+	wr(&b, " class=\"gallery-card-image order-1\"/>")
+	render_card_actions(&b, image)
+	wr(&b, "</div></article>")
 
 	return strings.to_string(b)
 }
