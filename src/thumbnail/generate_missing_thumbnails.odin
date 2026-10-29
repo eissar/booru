@@ -23,16 +23,16 @@ generate_missing_thumbnails :: proc(
 ) {
 	if prog_callback != nil {prog_callback({phase = "thumbnail discovery"})}
 
-	missing := make(map[string]bit_set[LOD_RESOLUTION])
-	defer delete(missing)
-	find_missing_thumbnails(s, &missing)
-	log.info("thumbnails: generate missing start")
-	// Intentionally naive: SELECT everything and loop over the rows.
 	images, rc := store.read_images(s.data_store, context.temp_allocator)
 	if rc != sqlite.OK {
 		fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
 		return
 	}
+
+	missing := make(map[string]bit_set[LOD_RESOLUTION])
+	defer delete(missing)
+	find_missing_thumbnails(s, images, &missing)
+	log.info("thumbnails: generate missing start")
 
 	finished, total: u64
 	if prog_callback != nil {
@@ -86,17 +86,12 @@ name_for_r := #partial [LOD_RESOLUTION]string {
 	.x128 = "128",
 }
 
-// Seeds candidate OIDs from the store, then excludes existing thumbnail sizes.
 find_missing_thumbnails :: proc(
 	s: library.State,
+	images: []library.Image,
 	check: ^map[string]bit_set[LOD_RESOLUTION],
 	resolutions: bit_set[LOD_RESOLUTION] = {.x64, .x128},
 ) {
-	images, rc := store.read_images(s.data_store, context.temp_allocator)
-	if rc != sqlite.OK {
-		fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
-		return
-	}
 	for img in images {
 		check[img.oid] = resolutions
 	}
