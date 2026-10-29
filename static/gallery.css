@@ -1,10 +1,10 @@
-/* Inter 4.1, SIL Open Font License: /static/fonts/LICENSE.txt */
+/* Paper Mono, SIL Open Font License: /static/fonts/PaperMono-LICENSE.txt */
 @font-face {
-    font-family: Inter;
+    font-family: "Paper Mono";
     font-style: normal;
-    font-weight: 100 900;
+    font-weight: 100 800;
     font-display: swap;
-    src: url("/static/fonts/InterVariable.woff2") format("woff2");
+    src: url("/static/fonts/PaperMonoVariable.woff2") format("woff2");
 }
 
 /* Base document styles */
@@ -16,7 +16,7 @@ html, body {
 }
 
 body {
-    font-family: Inter, sans-serif;
+    font-family: "Paper Mono", ui-monospace, monospace;
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-weight: 400;
@@ -56,8 +56,6 @@ body.light-mode {
     --text-muted: #6b7280;
     --border-color: #cbd5e1;
     --border-color-light: #e2e8f0;
-    --shadow-color: rgb(0 0 0 / 8%);
-    --shadow-color-hover: rgb(0 0 0 / 15%);
     --accent-indigo: #6366f1;
     --icon-filter: brightness(0) saturate(100%) invert(20%) sepia(15%) saturate(1200%) hue-rotate(174deg) brightness(
         90%
@@ -77,8 +75,6 @@ body.dark-mode {
     --text-muted: #94a3b8;
     --border-color: #475569;
     --border-color-light: #334155;
-    --shadow-color: rgb(0 0 0 / 30%);
-    --shadow-color-hover: rgb(0 0 0 / 50%);
     --accent-indigo: #818cf8;
     --icon-filter: brightness(0) saturate(100%) invert(64%) sepia(11%) saturate(1015%) hue-rotate(174deg) brightness(
         95%
@@ -98,8 +94,6 @@ body.light-mode {
     --text-muted: #6b7280;
     --border-color: #cbd5e1;
     --border-color-light: #e2e8f0;
-    --shadow-color: rgb(0 0 0 / 8%);
-    --shadow-color-hover: rgb(0 0 0 / 15%);
     --icon-filter: brightness(0) saturate(100%) invert(20%) sepia(15%) saturate(1200%) hue-rotate(174deg) brightness(
         90%
     ) contrast(95%);
@@ -118,8 +112,6 @@ body.dark-mode {
     --text-muted: #94a3b8;
     --border-color: #475569;
     --border-color-light: #334155;
-    --shadow-color: rgb(0 0 0 / 30%);
-    --shadow-color-hover: rgb(0 0 0 / 50%);
     --accent-indigo: #818cf8;
     --icon-filter: brightness(0) saturate(100%) invert(64%) sepia(11%) saturate(1015%) hue-rotate(174deg) brightness(
         95%
@@ -129,6 +121,7 @@ body.dark-mode {
 /* Reusable Component Classes */
 .hover-surface {
     background-color: var(--bg-surface);
+    border-radius: 0;
     transition: background-color 0.2s;
 }
 
@@ -139,12 +132,6 @@ body.dark-mode {
 
 .hover-card {
     background-color: var(--bg-surface);
-    box-shadow: 0 4px 6px -1px var(--shadow-color), 0 2px 4px -1px var(--shadow-color);
-    transition: box-shadow 0.3s;
-}
-
-.hover-card:hover {
-    box-shadow: 0 20px 25px -5px var(--shadow-color-hover), 0 10px 10px -5px var(--shadow-color);
 }
 
 .card-actions {
@@ -180,7 +167,6 @@ body.dark-mode {
     height: 2rem;
     padding: 0;
     border: 0;
-    border-radius: 0.2rem;
     background: transparent;
     color: var(--text-primary);
     cursor: pointer;
@@ -246,12 +232,18 @@ summary::-webkit-details-marker {
 .card-action-popover {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
-    box-shadow: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -2px var(--shadow-color);
 }
 
 .focus-ring:focus-visible {
     outline: 2px solid var(--accent-indigo, #6366f1);
     outline-offset: 2px;
+}
+
+.toolbar-icon-button.focus-ring:focus-visible,
+.search-submit.focus-ring:focus-visible {
+    border-radius: 0.25rem;
+    background-color: var(--bg-surface);
+    transition: none;
 }
 
 .input-field,
@@ -269,7 +261,6 @@ summary::-webkit-details-marker {
 #search-input.input-field {
     border-color: var(--border-color-light);
     background-color: var(--bg-surface);
-    box-shadow: 0 1px 2px 0 var(--shadow-color);
 }
 
 #search-input.input-field:focus {
@@ -284,12 +275,14 @@ summary::-webkit-details-marker {
 
 .tag-badge {
     cursor: pointer;
+    border-radius: 0;
     color: var(--text-secondary);
     text-decoration: underline;
-    transition: color 0.2s;
+    transition: background-color 0.2s, color 0.2s;
 }
 
 .tag-badge:hover {
+    background-color: var(--bg-surface-hover);
     color: var(--text-primary);
 }
 
@@ -315,7 +308,6 @@ summary::-webkit-details-marker {
     border: 1px solid var(--border-color-light);
     border-radius: 0.75rem;
     background-color: var(--bg-surface);
-    box-shadow: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -2px var(--shadow-color);
     color: var(--text-primary);
     pointer-events: auto;
 }
@@ -409,7 +401,7 @@ body.light-mode select {
     border: 1px solid var(--border-color) !important;
 }
 
-/* Improve card borders and shadows */
+/* Improve card borders */
 body.light-mode .masonry-item > div {
     border: 1px solid var(--border-color-light);
 }
@@ -456,6 +448,8 @@ html[data-theme='dark'] input::placeholder {
 .filter-chip {
     display: inline-flex;
     align-items: center;
+    padding: 0;
+    margin: 0.25rem 0.5rem;
 }
 
 .filter-chip[data-filter-key='tags'] > a::before {
@@ -524,7 +518,6 @@ html[data-theme='dark'] input::placeholder {
     height: 2rem;
     padding: 0;
     border: 0;
-    border-radius: 0.25rem;
     background: transparent;
     cursor: pointer;
     opacity: 0;
@@ -614,11 +607,14 @@ html[data-theme='dark'] input::placeholder {
     height: 1.2rem;
 }
 
-#toolbar details[open] > summary.toolbar-icon-button,
+#toolbar details[open] > summary.toolbar-icon-button {
+    border-color: #6366f1;
+}
+
 .gallery-view-controls:has(#gallery-view-masonry:checked) label[for='gallery-view-masonry'],
 .gallery-view-controls:has(#gallery-view-grid:checked) label[for='gallery-view-grid'],
 .gallery-view-controls:has(#gallery-view-list:checked) label[for='gallery-view-list'] {
-    border-color: #6366f1;
+    --icon-filter: brightness(0) saturate(100%) invert(42%) sepia(93%) saturate(1845%) hue-rotate(222deg) brightness(97%) contrast(96%);
 }
 
 .gallery-view-controls:has(#gallery-view-masonry:focus-visible) label[for='gallery-view-masonry'],
@@ -630,9 +626,23 @@ html[data-theme='dark'] input::placeholder {
     outline-offset: 2px;
 }
 
+.gallery-card-meta {
+    padding: 0.625rem;
+    font-size: 0.875rem;
+}
+
+.gallery-card-meta > .flex {
+    gap: 0.25rem 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.gallery-card-meta .tag-badge {
+    padding: 0;
+}
+
 .masonry-grid {
     --masonry-columns: 2;
-    --masonry-gap: 1.25rem;
+    --masonry-gap: 0.75rem;
 
     display: grid;
     grid-template-columns: repeat(var(--masonry-columns), minmax(0, 1fr));
@@ -749,7 +759,6 @@ body:has(#gallery-view-grid:checked) .gallery-card-image {
 
 body:has(#gallery-view-grid:checked) .gallery-card-meta {
     position: static;
-    padding: 0.625rem;
 }
 
 body:has(#gallery-view-grid:checked) .gallery-card-meta .tag-badge {
