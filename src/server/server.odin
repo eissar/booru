@@ -130,6 +130,18 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			continue
 		}
 
+		// TODO: put behind a flag or a runtime global that switches on dynamic
+		// Lua loading; enabled unconditionally while prototyping.
+		when true {
+			if lua_handle(&res, req, body) {
+				if err := http.marshal_and_send(conn, res, alloc); err != nil {
+					log.error("send response:", err)
+				}
+				net.close(conn)
+				continue
+			}
+		}
+
 		switch {
 		case req_header.path == "/" || req_header.path == "/gallery":
 			handle_gallery(s^, &res, req)
