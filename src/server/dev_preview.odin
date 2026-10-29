@@ -53,7 +53,7 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 
 	template.wr(
 		&b,
-		"<main class=\"main-content\"><form id=\"dev-preview-controls\" hx-get=\"/dev/preview\" hx-trigger=\"change\" hx-target=\"#dev-preview-cases\" hx-select=\"#dev-preview-cases\" hx-swap=\"outerHTML\" hx-push-url=\"true\"><label>image <select name=\"image\">",
+		"<main class=\"main-content\" style=\"height: 100vh\"><form id=\"dev-preview-controls\" hx-get=\"/dev/preview\" hx-trigger=\"change\" hx-target=\"#dev-preview-cases\" hx-select=\"#dev-preview-cases\" hx-swap=\"outerHTML\" hx-push-url=\"true\"><label>image <select name=\"image\">",
 	)
 	for image, i in images {
 		template.wr(&b, "<option")
@@ -81,7 +81,19 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 			gallery_url  = "/gallery",
 			fragment_url = "/fragment/gallery-content",
 		}
-		section(&b, "toast", template.render_toast("Library imported", .Success))
+		// Toast styles are scoped to #toasts-log; render it in the page's one
+		// toasts log, made static so it sits in the flow.
+		section(
+			&b,
+			"toast",
+			strings.concatenate(
+				{
+					"<div id=\"toasts-log\" style=\"position: static; width: auto\">",
+					template.render_toast("Library imported", .Success),
+					"</div>",
+				},
+			),
+		)
 		section(
 			&b,
 			"item_card",
@@ -99,15 +111,15 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 			"inspector",
 			strings.concatenate(
 				{
-					"<div class=\"inspector-body\" style=\"max-width: 24rem\">",
+					"<aside class=\"inspector\" style=\"width: 24rem; height: auto; border-left-width: 1px\"><div class=\"inspector-body\">",
 					template.render_inspector(image),
-					"</div>",
+					"</div></aside>",
 				},
 			),
 		)
 		section(&b, "gallery_content", template.render_gallery_content(filter, pair, true))
 	}
-	template.wr(&b, "</div></main><div id=\"toasts-log\"></div></body></html>")
+	template.wr(&b, "</div></main></body></html>")
 	http.res_html(strings.to_string(b), res)
 }
 
