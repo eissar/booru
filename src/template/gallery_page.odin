@@ -158,7 +158,7 @@ Select_Option :: struct {
 write_toolbar :: proc(b: ^strings.Builder, f: Gallery_Filter) {
 	wr(
 		b,
-		"<header id=\"toolbar\" class=\"sticky top-0 z-20 backdrop-blur-lg\" style=\"background-color: var(--bg-surface); border-bottom: 1px solid var(--border-color-light);\"><div class=\"toolbar-row px-4 sm:px-6 lg:px-8 flex items-center h-16\"><div class=\"toolbar-actions flex items-center gap-4 text-sm flex-1 min-w-0\">",
+		"<header id=\"toolbar\" class=\"sticky top-0 z-20 backdrop-blur-lg\" style=\"background-color: var(--bg-surface); border-bottom: 1px solid var(--border-color-light);\"><div class=\"toolbar-row flex items-center h-16\"><div class=\"toolbar-actions flex items-center gap-4 text-sm flex-1 min-w-0\">",
 	)
 
 	wr(

@@ -9,6 +9,7 @@
 
 /* Base document styles */
 html, body {
+    --app-gutter: 1rem;
     height: 100%;
     margin: 0;
     max-height: 100vh;
@@ -136,8 +137,8 @@ body.dark-mode {
 
 .card-actions {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 0;
+    right: 0.625rem;
     display: inline-flex;
     align-items: stretch;
     gap: 2px;
@@ -549,7 +550,7 @@ html[data-theme='dark'] input::placeholder {
     }
 
     #toolbar .toolbar-actions {
-        flex: 0 0 auto;
+        flex: 1 1 auto;
         gap: 0.25rem;
     }
 
@@ -568,7 +569,7 @@ html[data-theme='dark'] input::placeholder {
 
     .toolbar-search[open] > #search-form {
         position: absolute;
-        inset: 4rem 1rem auto;
+        inset: 4rem var(--app-gutter) auto;
         width: auto;
     }
 
@@ -623,14 +624,31 @@ html[data-theme='dark'] input::placeholder {
 
 .gallery-card-meta {
     position: relative;
-    padding: 0.625rem;
-    padding-right: 5rem;
+    padding: 0 0.625rem;
     font-size: 0.875rem;
+}
+
+.gallery-card-meta > .truncate {
+    display: block;
+    box-sizing: border-box;
+    height: 2.5rem;
+    line-height: 1.25rem;
+    padding-block: 0.625rem;
+    padding-right: 5rem;
+}
+
+.gallery-card-meta:hover > .truncate::after {
+    content: ' →';
 }
 
 .gallery-card-meta > .flex {
     gap: 0.25rem 0.5rem;
-    margin-top: 0.25rem;
+    margin-top: 0;
+    padding-bottom: 0.625rem;
+}
+
+.gallery-card-meta > .flex:empty {
+    padding-bottom: 0;
 }
 
 .gallery-card-meta .tag-badge {
@@ -809,27 +827,17 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
     overflow: hidden;
 }
 
+.toolbar-row {
+    padding-inline: var(--app-gutter);
+}
+
 /* Main content area; padding scrolls with the filters and cards. */
 .main-content {
     flex: 1 1 auto;
     min-width: 0;
-    padding: 0.5rem 1.25rem 1.25rem;
+    padding: 0.5rem var(--app-gutter) var(--app-gutter);
     overflow: auto;
     scrollbar-gutter: stable;
-}
-
-@media (width >= 640px) {
-    .main-content {
-        padding-inline: 1.5rem;
-        padding-bottom: 1.5rem;
-    }
-}
-
-@media (width >= 1024px) {
-    .main-content {
-        padding-inline: 2rem;
-        padding-bottom: 2rem;
-    }
 }
 
 /* Inspector panel */
