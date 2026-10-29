@@ -838,6 +838,14 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		http.res_error("", res, .InternalServerError)
 		return
 	}
+	// Card tag forms target their own tag list; inspector forms (and plain
+	// POSTs without HX-Target) retain the existing full-inspector response.
+	for name, target in req.header.headers {
+		if strings.equal_fold(name, "HX-Target") && target != "" && target != "inspector-content" {
+			http.res_html(template.render_card_tags(img.tags), res)
+			return
+		}
+	}
 	http.res_html(template.render_inspector(img, 0), res)
 }
 

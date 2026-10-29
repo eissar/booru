@@ -44,7 +44,13 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 	}
 }
 
-// render_card_actions writes the hover-revealed top-right action bar:
+render_card_tags :: proc(tags: []string) -> string {
+	b := strings.builder_make()
+	write_tag_badges(&b, tags, "image-card-tags")
+	return strings.to_string(b)
+}
+
+// render_card_actions writes the metadata action bar:
 // a tag-edit popover and a download link.
 render_card_actions :: proc(b: ^strings.Builder, image: library.Image) {
 	id_buf: [20]u8
@@ -52,23 +58,29 @@ render_card_actions :: proc(b: ^strings.Builder, image: library.Image) {
 
 	wr(
 		b,
-		"<div class=\"card-actions\"><details class=\"card-action-popover-anchor\"><summary class=\"card-action-btn\" title=\"Edit tags\">",
+		"<div class=\"card-actions\" data-hx-on-click=\"event.stopPropagation()\"><button type=\"button\" class=\"card-action-btn\" title=\"Edit tags\"",
 	)
+	attrf(b, "popovertarget", "card-tags-%s", id)
+	attrf(b, "style", "anchor-name: --card-tags-%s;", id)
+	wr(b, ">")
 	inspector_icon(b, "hashtag", "Edit tags")
+	wr(b, "</button><div")
+	attrf(b, "id", "card-tags-%s", id)
+	wr(b, " class=\"card-action-popover\" popover")
+	attrf(b, "style", "position-anchor: --card-tags-%s;", id)
+	wr(b, "><form hx-post=\"/update-metadata\"")
+	attrf(b, "hx-target", "#card-tags-list-%s", id)
+	wr(b, " hx-target-error=\"#toasts-log\" hx-swap=\"innerHTML\"")
 	wr(
 		b,
-		"</summary><div class=\"card-action-popover\"><form hx-post=\"/update-metadata\" hx-target=\"#toasts-log\" hx-target-error=\"#toasts-log\" hx-swap=\"beforeend\"",
-	)
-	wr(
-		b,
-		" data-hx-on-htmx:after-request=\"if(event.detail.successful)this.closest(&#39;details&#39;).open=false\"><input type=\"hidden\" name=\"id\"",
+		" data-hx-on-htmx:after-request=\"if(event.detail.successful)this.closest(&#39;[popover]&#39;).hidePopover()\"><input type=\"hidden\" name=\"id\"",
 	)
 	attr(b, "value", id)
 	wr(b, "/><input class=\"card-action-popover-input\" type=\"text\" name=\"tags\"")
 	attr(b, "value", strings.join(image.tags, ", "))
 	wr(
 		b,
-		" placeholder=\"tag1, tag2...\" autocomplete=\"off\" spellcheck=\"false\"/><div class=\"card-action-popover-row\"><button type=\"submit\" class=\"card-action-popover-save\">Save</button></div></form></div></details>",
+		" placeholder=\"tag1, tag2...\" autocomplete=\"off\" spellcheck=\"false\"/><div class=\"card-action-popover-row\"><button type=\"submit\" class=\"card-action-popover-save\">Save</button></div></form></div>",
 	)
 
 	wr(b, "<a class=\"card-action-btn\" title=\"Download\"")
@@ -112,9 +124,13 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 		" hx-target=\"#inspector-content\" hx-target-error=\"#toasts-log\" hx-swap=\"innerHTML\"><span class=\"font-medium truncate\">",
 	)
 	escape_text(&b, image.name)
-	wr(&b, "</span><div class=\"flex flex-wrap gap-2 text-xs mt-2\">")
+	wr(&b, "</span><div")
+	attrf(&b, "id", "card-tags-list-%d", image.id)
+	wr(&b, " class=\"flex flex-wrap gap-2 text-xs mt-2\">")
 	write_tag_badges(&b, image.tags, "image-card-tags")
-	wr(&b, "</div></div><img")
+	wr(&b, "</div>")
+	render_card_actions(&b, image)
+	wr(&b, "</div><img")
 	attrf(&b, "src", "/image/%s", thumb_src)
 	wr(&b, " loading=\"lazy\"")
 	wr(
@@ -125,7 +141,6 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	ia(&b, "height", image.height)
 	attr(&b, "style", aspect_ratio)
 	wr(&b, " class=\"gallery-card-image order-1\"/>")
-	render_card_actions(&b, image)
 	wr(&b, "</div></article>")
 
 	return strings.to_string(b)
