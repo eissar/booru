@@ -63,13 +63,11 @@ init_Id_Giver :: proc "contextless" () {
 
 // Only loaded images are considered; originals without event-log entries are
 // invisible here after restart. Keep exclusive file creation to avoid overwrites.
-// Call after loading the library, before accepting uploads. Never move backwards.
-seed_ids_from_library :: proc(images: []Image) {
+// Call after replay, before accepting uploads. Never move backwards.
+seed_ids_from_library :: proc(max_id: int) {
 	sync.guard(&Id_Giver.mu)
-	for img in images {
-		if img.id >= Id_Giver.i {
-			Id_Giver.i = img.id + 1
-		}
+	if max_id >= Id_Giver.i {
+		Id_Giver.i = max_id + 1
 	}
 }
 
