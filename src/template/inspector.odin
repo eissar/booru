@@ -33,7 +33,7 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	attr(&b, "alt", image.name)
 	wr(
 		&b,
-		" class=\"aspect-square w-full rounded-lg object-cover\"/><div class=\"flex\"><p class=\"text-xs text-muted w-full\">",
+		" class=\"aspect-square w-full rounded-lg object-cover\"/><div class=\"flex\"><p class=\"text-muted w-full\">",
 	)
 	textf(&b, "%d × %d\t|\t%s", image.width, image.height, image.content_type)
 	wr(&b, "</p>")
@@ -87,14 +87,14 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	attrf(&b, "hx-indicator", "#inspector-name-save-%s", id)
 	wr(
 		&b,
-		"><ul class=\"space-y-4\"><li class=\"flex flex-col gap-1\"><span class=\"relative self-start inline-block font-medium text-sm\">Name</span><div class=\"flex items-center gap-2\"><input type=\"hidden\" name=\"id\"",
+		"><ul class=\"inspector-fields\"><li class=\"flex flex-col gap-1\"><span class=\"relative self-start inline-block font-medium\">Name</span><div class=\"flex items-center gap-2\"><input type=\"hidden\" name=\"id\"",
 	)
 	attr(&b, "value", id)
 	wr(&b, "/><input")
 	attrf(&b, "id", "image-name-%s", id)
 	wr(
 		&b,
-		" class=\"flex-1 min-w-0 input-focus-underline text-xs text-muted\" type=\"text\" name=\"name\"",
+		" class=\"flex-1 min-w-0 input-focus-underline text-muted\" type=\"text\" name=\"name\"",
 	)
 	attr(&b, "value", image.name)
 	wr(&b, " required autocomplete=\"off\" spellcheck=\"false\"/><button type=\"submit\"")
@@ -104,18 +104,6 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 		&b,
 		"<img src=\"/static/icons/check.svg\" alt=\"Save\" class=\"h-4 w-4\" style=\"filter: var(--icon-filter);\"/></button></div></li>",
 	)
-
-	// comment row shares the metadata form's save button.
-	wr(&b, "<li class=\"flex flex-col gap-1\"><label")
-	attrf(&b, "for", "image-comment-%s", id)
-	wr(&b, " class=\"font-medium text-sm\">Comment</label><textarea")
-	attrf(&b, "id", "image-comment-%s", id)
-	wr(
-		&b,
-		" name=\"comment\" rows=\"4\" class=\"w-full input-focus-underline text-xs text-muted\">",
-	)
-	escape_text(&b, image.comment)
-	wr(&b, "</textarea></li>")
 
 	// tags row
 	wr(
@@ -137,7 +125,7 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 		"<img src=\"/static/icons/pencil.svg\" class=\"h-3 w-3\" style=\"filter: var(--icon-filter);\" alt=\"Edit tags\"/></button></span><div class=\"flex flex-wrap gap-2\">",
 	)
 	if len(image.tags) == 0 {
-		wr(&b, "<span class=\"text-xs text-muted\">No tags</span>")
+		wr(&b, "<span class=\"text-muted\">No tags</span>")
 	} else {
 		write_tag_badges(&b, image.tags, "")
 	}
@@ -145,15 +133,25 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	attrf(&b, "id", "image-tags-%s", id)
 	wr(
 		&b,
-		" class=\"hidden flex-1 min-w-0 input-focus-underline text-xs text-muted\" type=\"text\" name=\"tags\"",
+		" class=\"hidden flex-1 min-w-0 input-focus-underline text-muted\" type=\"text\" name=\"tags\"",
 	)
 	attr(&b, "value", strings.join(image.tags, ", "))
 	wr(&b, " autocomplete=\"off\" spellcheck=\"false\"/></li>")
 
+	// comment row shares the metadata form's save button.
+	wr(&b, "<li class=\"flex flex-col gap-1\"><label")
+	attrf(&b, "for", "image-comment-%s", id)
+	wr(&b, " class=\"font-medium\">Comment</label><textarea")
+	attrf(&b, "id", "image-comment-%s", id)
+	wr(&b, " name=\"comment\" rows=\"4\" class=\"w-full input-focus-underline text-muted\">")
+	escape_text(&b, image.comment)
+	wr(&b, "</textarea></li>")
+
+	wr(&b, "<li class=\"inspector-detail-divider\" role=\"separator\"></li>")
 	write_detail_row(&b, "OID", image.oid, true)
 	write_detail_row(&b, "Path", image.path, true)
 	write_detail_row(&b, "Added", format_timestamp_ms(image.added_at), false)
-	write_detail_row(&b, "Modified", format_timestamp_ms(image.mtime), false)
+	write_detail_row(&b, "Mod", format_timestamp_ms(image.mtime), false)
 
 	wr(&b, "</ul></form></section>")
 	return strings.to_string(b)
@@ -179,9 +177,9 @@ format_timestamp_ms :: proc(ms: i64) -> string {
 // write_detail_row writes a read-only inspector label/value row. break_all is
 // used for long values like the OID and path.
 write_detail_row :: proc(b: ^strings.Builder, label, value: string, break_all: bool) {
-	wr(b, "<li class=\"flex flex-col gap-2\"><span class=\"font-medium shrink-0\">")
+	wr(b, "<li class=\"inspector-detail-row\"><span class=\"font-medium\">")
 	escape_text(b, label)
-	wr(b, "</span><span class=\"text-xs ")
+	wr(b, "</span><span class=\"")
 	wr(b, break_all ? "break-all " : "")
 	wr(b, "text-muted\">")
 	escape_text(b, value)

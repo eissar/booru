@@ -24,10 +24,9 @@ tag_fragment_href :: proc(tag: string) -> string {
 // inspector. `link_class` optionally adds a class to each anchor.
 write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string) {
 	for tag in tags {
-		wr(
-			b,
-			"<span class=\"text-xs font-medium px-2 py-1 rounded backdrop-blur-sm tag-badge\"><a",
-		)
+		wr(b, "<span class=\"")
+		if link_class != "" {wr(b, "text-xs ")}
+		wr(b, "font-medium px-2 py-1 rounded backdrop-blur-sm tag-badge\"><a")
 		if link_class != "" {
 			attr(b, "class", link_class)
 			attr(b, "tabindex", "-1")
