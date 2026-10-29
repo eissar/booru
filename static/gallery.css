@@ -278,24 +278,18 @@ summary::-webkit-details-marker {
     outline-offset: 2px;
 }
 
-#search-form button[type='submit'] {
-    height: 100%;
-}
-
 .text-muted {
     color: var(--text-muted);
 }
 
 .tag-badge {
     cursor: pointer;
-    background-color: var(--bg-surface-hover);
     color: var(--text-secondary);
-    border: 1px solid var(--border-color-light);
-    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+    text-decoration: underline;
+    transition: color 0.2s;
 }
 
 .tag-badge:hover {
-    background-color: var(--bg-surface);
     color: var(--text-primary);
 }
 
@@ -427,18 +421,6 @@ body.light-mode input::placeholder {
 }
 
 /* Dark mode specific styles */
-body.dark-mode .tag-badge {
-    background-color: var(--bg-surface);
-    color: var(--text-secondary);
-    border-color: var(--border-color);
-}
-
-body.dark-mode .tag-badge:hover {
-    background-color: var(--bg-surface-hover);
-    color: var(--text-primary);
-    border-color: var(--border-color-light);
-}
-
 /* Improve form element appearance in dark mode */
 body.dark-mode select option {
     background-color: var(--bg-surface);
@@ -465,6 +447,7 @@ html[data-theme='dark'] input::placeholder {
     flex: 0 0 auto;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.5rem;
     min-height: 2.25rem;
     padding: 0.125rem 0 1rem;
@@ -505,6 +488,7 @@ html[data-theme='dark'] input::placeholder {
 
 /* One search form; mobile uses a disclosure toggle. */
 .toolbar-search {
+    margin-left: auto;
     width: 100%;
     max-width: 20rem;
     min-width: 0;
@@ -515,6 +499,7 @@ html[data-theme='dark'] input::placeholder {
 }
 
 .toolbar-search > #search-form {
+    position: relative;
     display: flex;
     max-width: none;
 }
@@ -522,6 +507,42 @@ html[data-theme='dark'] input::placeholder {
 #search-input {
     flex: 1;
     min-width: 0;
+    padding-right: 2.5rem;
+}
+
+/* Inset the 2rem button evenly within the 2.5rem search field. */
+.search-submit {
+    position: absolute;
+    right: 0.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.25rem;
+    background: transparent;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+#search-form:hover .search-submit,
+#search-form:focus-within .search-submit {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+@media (hover: none) {
+    .search-submit {
+        opacity: 1;
+        pointer-events: auto;
+    }
 }
 
 @media (width >= 768px) {
@@ -569,8 +590,28 @@ html[data-theme='dark'] input::placeholder {
     }
 }
 
+.gallery-view-controls {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.125rem;
+    margin-right: auto;
+}
+
 .gallery-view-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 2rem;
+    height: 2rem;
+    padding: 0.25rem;
     border: 1px solid transparent;
+}
+
+.gallery-view-icon {
+    width: 1.2rem;
+    height: 1.2rem;
 }
 
 #toolbar details[open] > summary.toolbar-icon-button,
@@ -770,20 +811,22 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
 .main-content {
     flex: 1 1 auto;
     min-width: 0;
-    padding: 1.25rem;
+    padding: 0.5rem 1.25rem 1.25rem;
     overflow: auto;
     scrollbar-gutter: stable;
 }
 
 @media (width >= 640px) {
     .main-content {
-        padding: 1.5rem;
+        padding-inline: 1.5rem;
+        padding-bottom: 1.5rem;
     }
 }
 
 @media (width >= 1024px) {
     .main-content {
-        padding: 2rem;
+        padding-inline: 2rem;
+        padding-bottom: 2rem;
     }
 }
 

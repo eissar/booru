@@ -26,10 +26,11 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 	for tag in tags {
 		wr(
 			b,
-			"<span class=\"text-xs font-medium px-2 py-1 rounded-full backdrop-blur-sm tag-badge\"><a",
+			"<span class=\"text-xs font-medium px-2 py-1 rounded backdrop-blur-sm tag-badge\"><a",
 		)
 		if link_class != "" {
 			attr(b, "class", link_class)
+			attr(b, "tabindex", "-1")
 			attr(b, "hx-trigger", "click consume")
 		}
 		attr(b, "href", tag_href(tag))
