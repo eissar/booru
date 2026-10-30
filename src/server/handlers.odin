@@ -338,32 +338,32 @@ handle_mipmap :: proc(
 	}
 	requested_count := strings.count(img_ids_raw, ",") + 1
 
-	// Reject malformed IDs before touching the store.
-	validate := img_ids_raw
-	for raw_str_id in strings.split_iterator(&validate, ",") {
+	// Parse and validate IDs before touching the store.
+	requested := make([dynamic]int, 0, requested_count, req.alloc)
+	for raw_str_id in strings.split_iterator(&img_ids_raw, ",") {
 		if raw_str_id == "" {continue}
-		if _, ok := strconv.parse_int(raw_str_id); !ok {
+		id, ok := strconv.parse_int(raw_str_id)
+		if !ok {
 			http.res_error("", res, status = .BadRequest)
 			return
 		}
+		append(&requested, id)
 	}
 
-	thumbnails := make([dynamic]thumbnail.Thumb, requested_count, req.alloc)
-	defer delete(thumbnails)
+	if len(requested) == 0 {
+		http.res_error("", res, status = .NotFound)
+		return
+	}
 
-	idx := 0
-	for raw_str_id in strings.split_iterator(&img_ids_raw, ",") {
-		if raw_str_id == "" {continue}
-		slot := idx
-		idx += 1
-		id, _ := strconv.parse_int(raw_str_id)
+	oids, rc := store.read_oids_by_ids(s.data_store, requested[:], req.alloc)
+	if rc != sqlite.OK {
+		http.res_error("", res, status = .InternalServerError)
+		return
+	}
 
-		oid, found, rc := lookup_thumbnail_oid_by_id(s, id, req.alloc)
-		if rc != sqlite.OK {
-			http.res_error("", res, status = .InternalServerError)
-			return
-		}
-		if !found {
+	thumbnails := make([]thumbnail.Thumb, len(oids), req.alloc)
+	for oid, slot in oids {
+		if oid == "" {
 			thumbnails[slot] = thumbnail.new_not_found_thumb(req_resolution)
 			continue
 		}
@@ -382,21 +382,14 @@ handle_mipmap :: proc(
 			continue
 		}
 
-		// TODO: enrich output of lookup_thumbnail_oid_by_id
-		// or something; need to retrieve actual thumbnail dims;
 		thumbnails[slot] = thumbnail.Thumb{t_bytes, req_resolution, req_resolution}
 	}
 
-	if idx == 0 {
-		http.res_error("", res, status = .NotFound)
-		return
-	}
 	prefix: webpx.Webp_Extended_Prefix
-	length := webpx.Prepare_Webp_X(thumbnails[:idx], &prefix)
+	length := webpx.Prepare_Webp_X(thumbnails, &prefix)
 	// Retain the frames in the request allocator until the response is sent.
 	data := new(Mipmap_Stream, req.alloc)
-	data.files = make([]thumbnail.Thumb, idx, req.alloc)
-	copy(data.files, thumbnails[:idx])
+	data.files = thumbnails
 	data.prefix = prefix
 	res.body = nil
 	res.body_stream = send_mipmap_stream

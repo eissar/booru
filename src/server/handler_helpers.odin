@@ -1,31 +1,11 @@
 package server
 
-import "core:c"
 import "core:fmt"
-import "core:mem"
 import "core:net"
 import "core:strconv"
 import "core:strings"
 
-import "../library"
-import "../store"
 import "../template"
-import "../vendor/sqlite"
-
-lookup_thumbnail_oid_by_id :: proc(
-	s: library.State,
-	id: int,
-	alloc: mem.Allocator,
-) -> (
-	oid: string,
-	found: bool,
-	rc: c.int,
-) {
-	img: library.Image
-	img, found, rc = store.read_image_by_id(s.data_store, id, alloc)
-	if rc != sqlite.OK || !found {return "", false, rc}
-	return img.oid, true, sqlite.OK
-}
 
 
 MIN_LIMIT :: 10

@@ -174,6 +174,49 @@ read_image_by_id :: proc(
 	return images[0], true, sqlite.OK
 }
 
+// Batch OID lookup for thumbnail serving. LEFT JOIN from VALUES keeps the
+// bound parameter order (including duplicates) and yields NULL for missing IDs.
+read_oids_by_ids :: proc(
+	db: ^sqlite.DB,
+	ids: []int,
+	alloc: mem.Allocator,
+) -> (
+	out: []string,
+	rc: c.int,
+) {
+	if len(ids) == 0 {return nil, sqlite.OK}
+
+	sql_str := fmt.caprintf(
+		"SELECT items.oid FROM (VALUES %s) LEFT JOIN items ON items.id = column1",
+		strings.trim_suffix(strings.repeat("(?),", len(ids), alloc), ","),
+		allocator = alloc,
+	)
+
+	stmt: ^sqlite.Stmt
+	rc = sqlite.prepare_v2(db, sql_str, -1, &stmt, nil)
+	defer {
+		if stmt != nil {sqlite.finalize(stmt)}
+	}
+	if rc != sqlite.OK {return nil, rc}
+
+	for id, i in ids {
+		if sqlite.bind_int64(stmt, c.int(i) + 1, i64(id)) != sqlite.OK {return nil, sqlite.MISUSE}
+	}
+
+	out = make([]string, len(ids), alloc)
+	for i in 0 ..< len(ids) {
+		step_rc := sqlite.step(stmt)
+		if step_rc != sqlite.ROW {return nil, step_rc}
+		if sqlite.column_type(stmt, 0) != .Null {
+			oid, err := strings.clone(sqlite.column_string(stmt, 0), alloc)
+			if err != nil {return nil, 7} 	// SQLITE_NOMEM
+			out[i] = oid
+		}
+	}
+	if step_rc := sqlite.step(stmt); step_rc != sqlite.DONE {return nil, step_rc}
+	return out, sqlite.OK
+}
+
 // oid is not unique in the schema. Match the first image in id order.
 read_image_by_oid :: proc(
 	db: ^sqlite.DB,

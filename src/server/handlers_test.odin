@@ -82,7 +82,12 @@ image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 @(test)
 mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 	oid :: "4ef24abe584d4358473279073cc0a35150802774bb97f5fea35e24d661668ce6"
-	images := [2]library.Image{{id = 1, oid = oid}, {id = 3, oid = "missing-file"}}
+	oid5 :: "9c2efc8f0c7cde25eb24ee5a589b919731e6a125793c05de070910d6ac2a5f8c"
+	images := [3]library.Image {
+		{id = 1, oid = oid},
+		{id = 3, oid = "missing-file"},
+		{id = 5, oid = oid5},
+	}
 	root, temp_err := os.make_directory_temp("", "booru-mipmap-*", context.allocator)
 	if !testing.expect(t, temp_err == nil) {return}
 	defer delete(root)
@@ -100,6 +105,11 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 		context.temp_allocator,
 	)
 	if !testing.expect(t, err == nil, "read thumbnail fixture") {return}
+	source5, err5 := os.read_entire_file(
+		"test/fixture/library/thumbnails/" + oid5 + ".webp",
+		context.temp_allocator,
+	)
+	if !testing.expect(t, err5 == nil, "read second thumbnail fixture") {return}
 	if !testing.expect(
 		t,
 		os.mkdir_all(fmt.tprintf("%s/thumbnails/64", root), os.Permissions_Default_Directory) ==
@@ -108,6 +118,10 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 	if !testing.expect(
 		t,
 		os.write_entire_file(fmt.tprintf("%s/thumbnails/64/%s.webp", root, oid), source) == nil,
+	) {return}
+	if !testing.expect(
+		t,
+		os.write_entire_file(fmt.tprintf("%s/thumbnails/64/%s.webp", root, oid5), source5) == nil,
 	) {return}
 	res := http.Response {
 		headers = make(map[string]string),
@@ -139,21 +153,28 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 		"serialized response includes the complete body",
 	)
 
-	// Unknown IDs and an existing ID with no thumbnail must each retain a slot.
+	// Out-of-order IDs, unknown IDs, and an existing ID with no thumbnail on disk
+	// must each retain a slot in request order.
 	handle_mipmap(
 		s,
 		&res,
 		http.Req{{path = "/mipmap/64"}, context.temp_allocator, time.now()},
-		transmute([]u8)string("2,1,3,4"),
+		transmute([]u8)string("5,2,1,3,4"),
 	)
 	materialize_mipmap_for_test(t, &res)
 	testing.expect(t, res.status == .OK, "missing thumbnails do not crash the batch")
 	testing.expect(
 		t,
-		strings.count(string(res.body), "ANMF") == 4,
+		strings.count(string(res.body), "ANMF") == 5,
 		"each requested ID retains a frame, including missing thumbnails",
 	)
-	testing.expect(t, bytes.contains(res.body, source[12:]), "batch retains the valid thumbnail")
+	pos5 := bytes.index(res.body, source5[12:])
+	pos1 := bytes.index(res.body, source[12:])
+	testing.expect(
+		t,
+		pos5 >= 0 && pos1 > pos5,
+		"frames preserve out-of-order request order (5 before 1)",
+	)
 
 	// GET with ?ids= returns the same batch as the POST body.
 	post_body := res.body
@@ -165,7 +186,7 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 		s,
 		&get_res,
 		http.Req {
-			{path = "/mipmap/64", query = "ids=2%2C1,3,4"},
+			{path = "/mipmap/64", query = "ids=5,2%2C1,3,4"},
 			context.temp_allocator,
 			time.now(),
 		},
@@ -173,4 +194,24 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 	materialize_mipmap_for_test(t, &get_res)
 	testing.expect(t, get_res.status == .OK, "GET with ids returns 200")
 	testing.expect(t, bytes.equal(get_res.body, post_body), "GET body matches POST body")
+
+	// Duplicate IDs keep a frame per requested slot.
+	handle_mipmap(
+		s,
+		&res,
+		http.Req{{path = "/mipmap/64"}, context.temp_allocator, time.now()},
+		transmute([]u8)string("1,1,3"),
+	)
+	materialize_mipmap_for_test(t, &res)
+	testing.expect(t, res.status == .OK, "duplicate IDs do not crash the batch")
+	testing.expect(
+		t,
+		strings.count(string(res.body), "ANMF") == 3,
+		"each duplicate requested ID retains its own frame",
+	)
+	testing.expect(
+		t,
+		bytes.count(res.body, source[12:]) == 2,
+		"duplicate ID emits its thumbnail frame twice",
+	)
 }

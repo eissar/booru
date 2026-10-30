@@ -125,6 +125,16 @@ bench_handlers :: proc(t: ^testing.T) {
 			},
 		},
 		{
+			// Batch OID lookup in one query, including duplicate/out-of-order IDs.
+			"mipmap (batch 64)",
+			"/mipmap/64",
+			"ids=1,2,3,1,2,3,1",
+			.OK,
+			proc(s: ^library.State, res: ^http.Response, req: http.Req) {
+				server.handle_mipmap(s^, res, req)
+			},
+		},
+		{
 			"regen-thumbnail (stub, 501)",
 			"/regen-thumbnail",
 			"id=1&order=0",
