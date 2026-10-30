@@ -133,7 +133,9 @@ import_browse_delete_replay :: proc(t: ^testing.T) {
 	restarted := library.State {
 		library_path = root,
 	}
-	if !testing.expect(t, store.Init(&restarted, ":memory:") == sqlite.OK) {return}
+	if !testing.expect(t, store.Init(&restarted, ":memory:", defer_indexes = true) == sqlite.OK) {
+		return
+	}
 	defer store.Close(&restarted)
 	replay.initiate_replay(&restarted)
 	remaining, rc := store.read_images(restarted.data_store, context.temp_allocator)

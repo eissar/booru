@@ -72,7 +72,7 @@ main :: proc() {
 	)
 	db_c_str := strings.clone_to_cstring(db_c, context.temp_allocator)
 
-	rc := store.Init(&state, db_c_str)
+	rc := store.Init(&state, db_c_str, defer_indexes = true)
 	if rc != 0 {
 		log.fatal("datastore type=sqlite open: failed w/ error code:", rc)
 		os.exit(1)

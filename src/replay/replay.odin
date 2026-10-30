@@ -175,4 +175,8 @@ initiate_replay :: proc(s: ^library.State, prog_callback: progress.Callback = ni
 		finished += 1
 		if prog_callback != nil {prog_callback({phase = "replay files", finished = finished})}
 	}
+
+	if rc := store.create_indexes(s.data_store); rc != sqlite.OK {
+		fmt.panicf("replay: create indexes: %d", rc)
+	}
 }

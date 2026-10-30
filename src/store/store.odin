@@ -7,7 +7,7 @@ import "core:fmt"
 import "core:os"
 
 // Init assigns data_store only on success. Close an existing connection first.
-Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
+Init :: proc(state: ^library.State, path: cstring, defer_indexes := false) -> (rc: c.int) {
 	// TODO: (v1) incremental replay not implemented
 	if path != ":memory:" {
 		clear_error := os.remove(string(path))
@@ -36,7 +36,22 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 	rc = sqlite.exec(db, "PRAGMA foreign_keys = ON", nil, nil, nil)
 	if rc != sqlite.OK {return rc}
 
-	rc = sqlite.exec(
+	rc = create_tables(db)
+	if rc != sqlite.OK {return rc}
+
+	if !defer_indexes {
+		rc = create_indexes(db)
+		if rc != sqlite.OK {return rc}
+	}
+
+	state.data_store = db
+	if state.event_log != nil {state.event_log.db = db}
+	success = true
+	return sqlite.OK
+}
+
+create_tables :: proc(db: ^sqlite.DB) -> c.int {
+	return sqlite.exec(
 		db,
 		`
 		BEGIN;
@@ -53,13 +68,11 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 			mtime INTEGER NOT NULL,
 			added_at INTEGER NOT NULL
 		);
-		CREATE INDEX IF NOT EXISTS items_added_at ON items(added_at, id);
 		CREATE TABLE IF NOT EXISTS item_tags (
 			item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
 			tag TEXT NOT NULL,
 			PRIMARY KEY (item_id, tag)
 		) WITHOUT ROWID;
-		CREATE INDEX IF NOT EXISTS item_tags_by_tag ON item_tags(tag, item_id);
 		CREATE TABLE IF NOT EXISTS replay_cursors (
 			shard TEXT PRIMARY KEY,
 			byte_offset INTEGER NOT NULL CHECK (byte_offset >= 0)
@@ -70,12 +83,21 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 		nil,
 		nil,
 	)
-	if rc != sqlite.OK {return rc}
+}
 
-	state.data_store = db
-	if state.event_log != nil {state.event_log.db = db}
-	success = true
-	return sqlite.OK
+create_indexes :: proc(db: ^sqlite.DB) -> c.int {
+	return sqlite.exec(
+		db,
+		`
+		BEGIN;
+		CREATE INDEX IF NOT EXISTS items_added_at ON items(added_at, id);
+		CREATE INDEX IF NOT EXISTS item_tags_by_tag ON item_tags(tag, item_id);
+		COMMIT;
+	`,
+		nil,
+		nil,
+		nil,
+	)
 }
 
 Close :: proc(state: ^library.State) {
