@@ -126,9 +126,11 @@ body.dark-mode {
     transition: background-color 0.2s;
 }
 
-.hover-surface:hover,
-.card-action-btn:hover {
-    background-color: var(--bg-surface-hover);
+@media (hover: hover) {
+    .hover-surface:hover,
+    .card-action-btn:hover {
+        background-color: var(--bg-surface-hover);
+    }
 }
 
 .hover-card {
@@ -829,6 +831,33 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
 
 .toolbar-row {
     padding-inline: var(--app-gutter);
+}
+
+/* Keep each native disclosure's dropdown within the viewport. */
+@supports (anchor-name: --toolbar-anchor) and (anchor-scope: --toolbar-anchor) and (position-try-fallbacks: flip-inline) {
+    #toolbar details:has(> summary.toolbar-icon-button) {
+        anchor-scope: --toolbar-anchor;
+    }
+
+    #toolbar summary.toolbar-icon-button {
+        anchor-name: --toolbar-anchor;
+    }
+
+    #toolbar details > .dropdown-container {
+        position: fixed;
+        position-anchor: --toolbar-anchor;
+        right: auto;
+        left: clamp(1rem, anchor(left), max(1rem, calc(100vw - min(var(--dropdown-width), 100vw - 2rem) - 1rem)));
+        top: anchor(bottom);
+        max-width: calc(100vw - 2rem);
+        max-height: calc(100vh - 5rem);
+        overflow: auto;
+        position-try-fallbacks: flip-inline;
+    }
+
+    #toolbar .dropdown-container.w-64 { --dropdown-width: 16rem; }
+    #toolbar .dropdown-container.w-72 { --dropdown-width: 18rem; }
+    #toolbar .dropdown-container.w-96 { --dropdown-width: 24rem; }
 }
 
 /* Main content area; padding scrolls with the filters and cards. */
