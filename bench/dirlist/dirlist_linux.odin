@@ -28,6 +28,17 @@ m_core_os :: proc(dir: string) -> (n: int) {
 	return
 }
 
+m_walker :: proc(dir: string) -> (n: int) {
+	w := os.walker_create(dir)
+	defer os.walker_destroy(&w)
+	for entry in os.walker_walk(&w) {
+		if _, err := os.walker_error(&w); err != nil {return -1}
+		check_name(entry.name, &n)
+	}
+	if _, err := os.walker_error(&w); err != nil {return -1}
+	return
+}
+
 getdents_n :: proc(dir: string, $SIZE: int) -> (n: int) {
 	fd, errno := linux.open(
 		strings.clone_to_cstring(dir, context.temp_allocator),
@@ -92,6 +103,7 @@ main :: proc() {
 
 	methods := []Method {
 		{"A core:os iterator", m_core_os},
+		{"B core:os walker", m_walker},
 		{"L1 getdents 32K (current)", m_getdents_32k},
 		{"L2 getdents 64K", m_getdents_64k},
 		{"L3 libc readdir", m_readdir},
