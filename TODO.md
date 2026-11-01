@@ -3,17 +3,8 @@ high level tasks
 - [ ] Move platform-specific `when ODIN_OS` branches that depend on platform-only imports into suffixed files such as `_windows.odin` and `_linux.odin`. Keep those imports in their platform files so `odin check -vet` does not flag imports needed only by another target. Cover `src/dirlist`, `src/importers/eagle_import.odin`, and `src/thumbnail/generate_missing_thumbnails.odin`, and audit for other occurrences.
 
 Harden flat parser: validation, boundaries, tests/fuzzing.
-Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
 
-# Store Write Path TODO
-
-- [ ] Add `store.apply(tx, event)` as the only public store write proc; make `insert_*`, `patch_item`, `delete_item` in `src/store/store.odin` `@(private = "package")`. Move the op `switch` out of `replay.replay` (`src/replay/replay.odin`) so replay just loops `apply`. Unknown ops should error, not `continue`.
-- [ ] Route runtime upload/delete and Eagle import store writes through `store.apply`. Keep log-first ordering: a failed apply is recovered by replay.
-- [ ] `apply` advances the per-shard replay cursor in the same SQLite tx as the state change, so store and cursor can't drift (lfs-booru: `applyEvent(event, nextCursor)` in `src/index_store.ts`).
-- [ ] Serialize runtime applies (and `add` id allocation) if handlers run concurrently (lfs-booru: `this.mu` + `nextIdMutex`).
-- [ ] Keep a batch path: replay/import open one tx and `apply` every line (lfs-booru: `applyEventsFromFile`).
-- [ ] Rebuild path: defer secondary indexes (`items_added_at`, `item_tags_by_tag`) and the FK check during full replay. Create the indexes after the bulk insert, then run `PRAGMA foreign_key_check`. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
-- [ ] Optional: CI/pre-commit check that nothing outside `store` writes to the DB directly.
+Event semantics, replay, and store write path: `events.md`.
 - [ ] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
 - [ ] Remove `core:log` (still used in `src/main.odin` and `src/server/server.odin`); use `fmt.eprint*` instead.
@@ -181,3 +172,5 @@ FS_Heuristics :: struct {
    mount_nobarrier:  bool,
    syncfs_reports_errors: bool, // kernel >= 5.8
 }
+
+// TODO: merge changes from chip-remove-urls branch (drop per-chip remove URLs, -tags exclude_tags parsing, Vary: HX-Current-URL on gallery-content fragment); update templates/fixtures accordingly
