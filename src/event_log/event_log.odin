@@ -20,6 +20,9 @@ import "../vendor/sqlite"
 // at a database level as well.
 MAX_RECORD :: 2048
 
+// Events without a version field are version 0. Replay refuses newer versions.
+MAX_SUPPORTED_EVENT_VERSION :: 0
+
 // Replay progress: offset is the byte immediately after a committed newline.
 Cursor :: struct {
 	shard:  string,
@@ -161,8 +164,23 @@ encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -
 	switch event in e {
 	case Event:
 		if err := validate_tags_xor(event.tags_xor); err != "" {return err}
+		if event.op == "delete" || event.op == "regen_thumbnail" {
+			if len(event.tags_xor) != 0 ||
+			   event.oid != "" ||
+			   event.path != "" ||
+			   event.ext != "" ||
+			   event.name != "" ||
+			   event.comment != "" ||
+			   event.content_type != "" ||
+			   event.mtime != 0 ||
+			   event.added_at != 0 ||
+			   event.width != 0 ||
+			   event.height != 0 {return "delete and regen_thumbnail events carry only id"}
+		}
 	case EventRemediation:
 		if err := validate_tags_xor(event.tags_xor); err != "" {return err}
+	case:
+		return "unsupported event type"
 	}
 	opt := json.Marshal_Options {
 		spec   = .JSON,

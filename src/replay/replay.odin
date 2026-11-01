@@ -17,6 +17,9 @@ Error :: enum {
 	None,
 	BadEvent,
 	Corrupted,
+	UnsupportedVersion,
+	// Writers omit empty strings; explicit string clears are not implemented yet.
+	NotImplemented,
 	DATABASE_ERR,
 }
 
@@ -107,6 +110,16 @@ scan_events :: proc(
 		item, op, tags, err := parse_item(line, &record, alloc)
 		if err != nil {return err}
 		if item.id <= 0 {return .BadEvent}
+		if op == "delete" || op == "regen_thumbnail" {
+			for field in record.fields {
+				if field.key == "op" || field.key == "id" || field.key == "version" {continue}
+				// Odin json omitempty still writes integer zeros; treat them as absent.
+				if !field.is_array &&
+				   field.values[0].kind == .Integer &&
+				   field.values[0].text == "0" {continue}
+				return .BadEvent
+			}
+		}
 		rc: i32 = sqlite.OK
 		switch op {
 		case "add":
@@ -118,11 +131,11 @@ scan_events :: proc(
 			if !scan.seen_ids[item.id] {return .BadEvent}
 			rc = store.patch_item(tx, item)
 		case "delete":
-			if len(tags) != 0 || !scan.seen_ids[item.id] {return .BadEvent}
+			if !scan.seen_ids[item.id] {return .BadEvent}
 			rc = store.delete_item(tx, item.id)
 			scan.seen_ids[item.id] = false
 		case "regen_thumbnail":
-			if len(tags) != 0 {return .BadEvent}
+			if !scan.seen_ids[item.id] {return .BadEvent}
 		// Derived artifact integrity is outside replay's scope.
 		case:
 			return .BadEvent
@@ -163,6 +176,15 @@ parse_item :: proc(
 		}
 		if field.is_array || len(field.values) != 1 {return item, op, tags, .BadEvent}
 		token := field.values[0]
+		// Absent version means version 0.
+		if field.key == "version" {
+			if token.kind != .Integer {return item, op, tags, .BadEvent}
+			value, ok := strconv.parse_int(token.text)
+			if !ok || value < 0 {return item, op, tags, .BadEvent}
+			if value >
+			   elog.MAX_SUPPORTED_EVENT_VERSION {return item, op, tags, .UnsupportedVersion}
+			continue
+		}
 		if field.key == "id" || field.key == "width" || field.key == "height" {
 			if token.kind != .Integer {return item, op, tags, .BadEvent}
 			value, ok := strconv.parse_int(token.text)
@@ -185,6 +207,7 @@ parse_item :: proc(
 		   field.key == "name" ||
 		   field.key == "content_type" {
 			if token.kind != .String {return item, op, tags, .BadEvent}
+			if token.text == `""` && field.key != "op" {return item, op, tags, .NotImplemented}
 		}
 		switch field.key {
 		case "op":
@@ -211,6 +234,8 @@ parse_item :: proc(
 			value, ok := strconv.parse_i64(token.text)
 			if !ok {return item, op, tags, .BadEvent}
 			item.added_at = value
+		case:
+			return item, op, tags, .BadEvent
 		}
 	}
 	return

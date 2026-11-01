@@ -85,6 +85,10 @@ validate_event_tags :: proc(t: ^testing.T) {
 	}
 	testing.expect(t, validate_events({Event{tags_xor = {"lower-case", "other", "-"}}}) == "")
 	testing.expect(t, validate_events({Event{}}) == "")
+	testing.expect(t, validate_events({Event{id = 1, op = "delete"}}) == "")
+	testing.expect(t, validate_events({Event{id = 1, op = "delete", name = "x"}}) != "")
+	testing.expect(t, validate_events({Event{id = 1, op = "regen_thumbnail", width = 5}}) != "")
+	testing.expect(t, validate_events({Event{id = 1, op = "delete", tags_xor = {"cat"}}}) != "")
 	testing.expect(t, validate_events(nil) == "")
 }
 

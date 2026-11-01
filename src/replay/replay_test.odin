@@ -130,6 +130,12 @@ reject_bad_events_and_creation_reuse_atomically :: proc(t: ^testing.T) {
 		`{"op":"delete","id":1,"tags_xor":["cat"]}`,
 		`{"op":"regen_thumbnail","id":1,"tags_xor":["cat"]}`,
 		`{"op":"add","id":1}`,
+		`{"op":"patch","id":1,"color":"red"}`,
+		`{"op":"delete","id":1,"name":"x"}`,
+		`{"op":"regen_thumbnail","id":1,"width":5}`,
+		`{"op":"regen_thumbnail","id":2}`,
+		`{"op":"delete","id":1}
+{"op":"regen_thumbnail","id":1}`,
 		`{"op":"delete","id":1}
 {"op":"add","id":1}`,
 	}
@@ -144,6 +150,20 @@ reject_bad_events_and_creation_reuse_atomically :: proc(t: ^testing.T) {
 		images, rc := store.read_images(s.data_store, alloc)
 		testing.expect(t, rc == sqlite.OK && len(images) == 0)
 		testing.expect(t, sqlite.get_autocommit(s.data_store) != 0)
+		store.Close(&s)
+	}
+}
+
+@(test)
+explicit_empty_scalars_are_not_implemented :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	cleared := []string{`{"op":"patch","id":1,"comment":""}`, `{"op":"patch","id":1,"name":""}`}
+	for event in cleared {
+		s: library.State
+		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+		text := strings.concatenate({"{\"op\":\"add\",\"id\":1}\n", event, "\n"}, alloc)
+		testing.expect_value(t, replay(&s, &text, context.allocator), Error.NotImplemented)
 		store.Close(&s)
 	}
 }
@@ -214,7 +234,7 @@ parsed_tags_own_strings_and_duplicate_patch_delivery_cancels :: proc(t: ^testing
 	text := `{"op":"add","id":1,"tags_xor":["cat"]}
 {"op":"patch","id":1,"tags_xor":["cat","dog"]}
 {"op":"patch","id":1,"tags_xor":["cat","dog"]}
-{"op":"regen_thumbnail","id":1}
+{"op":"regen_thumbnail","id":1,"width":0,"mtime":0}
 `
 	testing.expect(t, replay(&s, &text, context.allocator) == nil)
 	images, rc := store.read_images(s.data_store, alloc)
