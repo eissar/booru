@@ -2,6 +2,7 @@ package importers
 
 import "core:os"
 import "core:reflect"
+import "core:slice"
 import "core:testing"
 
 import elog "../event_log"
@@ -97,4 +98,14 @@ eagle_items_import_into_sqlite_with_correct_amount_of_items :: proc(t: ^testing.
 		len(from_import) == 3 && len(from_replay) == 3,
 		"3 eagle items in the import store and in a store replayed from its event log",
 	)
+	if len(from_import) != len(from_replay) {return}
+	for item, i in from_import {
+		testing.expect(t, len(item.tags) > 0, "initial tags applied once")
+		testing.expect(t, item.id == from_replay[i].id)
+		testing.expect(
+			t,
+			slice.equal(item.tags, from_replay[i].tags),
+			"live and rebuilt membership agree",
+		)
+	}
 }

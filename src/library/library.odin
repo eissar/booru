@@ -61,8 +61,8 @@ init_Id_Giver :: proc "contextless" () {
 	Id_Giver.i = 1
 }
 
-// Only loaded images are considered; originals without event-log entries are
-// invisible here after restart. Keep exclusive file creation to avoid overwrites.
+// Replay supplies the maximum creation ID, including deleted items, so IDs are
+// never reused. Keep exclusive file creation for originals without log entries.
 // Call after replay, before accepting uploads. Never move backwards.
 seed_ids_from_library :: proc(max_id: int) {
 	sync.guard(&Id_Giver.mu)

@@ -53,19 +53,19 @@ Event :: struct {
 	oid:          string `json:"oid,omitempty"`,
 	op:           string `json:"op,omitempty"`,
 	path:         string `json:"path,omitempty"`,
-	tags:         []string `json:"tags,omitempty"`,
+	tags_xor:     []string `json:"tags_xor,omitempty"`,
 	width:        int `json:"width,omitempty"`,
 }
 
 
 // Preserve JSON syntax and existing escapes; encode only raw non-ASCII runes.
 @(private)
-encode_ascii_json :: proc(data: []u8, out: ^strings.Builder) {
+encode_ascii_json :: proc(data: []u8, out: ^strings.Builder) -> string {
 	hex := "0123456789abcdef"
 	text := string(data)
 	for offset := 0; offset < len(text); {
 		r, width := utf8.decode_rune_in_string(text[offset:])
-		if r == utf8.RUNE_ERROR && width == 1 {panic("invalid UTF-8 in marshaled event")}
+		if r == utf8.RUNE_ERROR && width == 1 {return "invalid UTF-8 in marshaled event"}
 		offset += width
 		if r < 128 {
 			strings.write_byte(out, u8(r))
@@ -85,6 +85,7 @@ encode_ascii_json :: proc(data: []u8, out: ^strings.Builder) {
 			}
 		}
 	}
+	return ""
 }
 
 // Missing shards start at offset zero. Cursor.shard borrows the input string.
@@ -140,8 +141,29 @@ get_current_event_shard :: proc(allocator := context.allocator) -> string {
 	return fmt.aprintf("%04d-%02d.ndjson", year, int(month), allocator = allocator)
 }
 
-// Writes one newline-terminated record to w. Does not flush or sync.
-write_event :: proc(w: io.Writer, e: any, loc := #caller_location) -> (err: string) {
+validate_tags_xor :: proc(tags: []string) -> string {
+	for tag, i in tags {
+		if len(tag) == 0 {return "event tag must not be empty"}
+		for c in tag {
+			if !is_allowed_tag_char(
+				c,
+			) {return "event tags must contain only lowercase ASCII letters and hyphens"}
+		}
+		for previous in tags[:i] {
+			if previous == tag {return "event tags must be unique"}
+		}
+	}
+	return ""
+}
+
+@(private)
+encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -> string {
+	switch event in e {
+	case Event:
+		if err := validate_tags_xor(event.tags_xor); err != "" {return err}
+	case EventRemediation:
+		if err := validate_tags_xor(event.tags_xor); err != "" {return err}
+	}
 	opt := json.Marshal_Options {
 		spec   = .JSON,
 		pretty = false,
@@ -150,13 +172,31 @@ write_event :: proc(w: io.Writer, e: any, loc := #caller_location) -> (err: stri
 	if marshal_err != nil {return "could not marshal event"}
 	defer delete(data, context.allocator, loc)
 
+	if err := encode_ascii_json(data, ascii); err != "" {return err}
+	if len(strings.to_string(ascii^)) >=
+	   MAX_RECORD {return "event must be smaller than MAX_RECORD"}
+	return ""
+}
+
+// Prechecks tags and encoded size without touching the log. Append failures after
+// a successful precheck may still mean records were written; callers must fail-stop.
+validate_events :: proc(events: []Event) -> string {
+	for e in events {
+		ascii: strings.Builder
+		strings.builder_init(&ascii)
+		defer strings.builder_destroy(&ascii)
+		if err := encode_event(e, &ascii); err != "" {return err}
+	}
+	return ""
+}
+
+// Writes one newline-terminated record to w. Does not flush or sync.
+write_event :: proc(w: io.Writer, e: any, loc := #caller_location) -> (err: string) {
 	ascii: strings.Builder
 	strings.builder_init(&ascii, context.allocator, loc)
 	defer strings.builder_destroy(&ascii)
-	encode_ascii_json(data, &ascii)
-
+	if err := encode_event(e, &ascii, loc); err != "" {return err}
 	payload := transmute([]u8)strings.to_string(ascii)
-	if len(payload) >= MAX_RECORD {panic("event must be smaller than MAX_RECORD", loc)}
 	written, write_err := io.write(w, payload, nil)
 	if write_err != nil || written != len(payload) {return "could not write event payload"}
 	if io.write_byte(w, '\n', nil) != nil {return "could not write event newline"}
@@ -169,5 +209,5 @@ EventRemediation :: struct {
 }
 
 is_allowed_tag_char :: proc(c: rune) -> bool {
-	return ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z') || c == '-'
+	return ('a' <= c && c <= 'z') || c == '-'
 }

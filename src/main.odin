@@ -17,7 +17,6 @@ import "replay"
 import "server"
 import "store"
 import "thumbnail"
-import "vendor/sqlite"
 
 fmt_timestamp :: proc(elapsed: time.Duration) -> string {
 	if elapsed < time.Second {
@@ -83,24 +82,6 @@ main :: proc() {
 	// replay events from the event log
 	replay.initiate_replay(&state)
 
-	stmt: ^sqlite.Stmt
-	read_rc := sqlite.prepare_v2(
-		state.data_store,
-		`SELECT COALESCE(MAX(id), 0) FROM items`,
-		-1,
-		&stmt,
-		nil,
-	)
-	if read_rc == sqlite.OK {
-		read_rc = sqlite.step(stmt)
-	}
-	if read_rc != sqlite.ROW {
-		sqlite.finalize(stmt)
-		log.fatal("datastore type=sqlite read max ID: failed w/ error code:", read_rc)
-		os.exit(1)
-	}
-	library.seed_ids_from_library(int(sqlite.column_int64(stmt, 0)))
-	sqlite.finalize(stmt)
 	log.infof(
 		"Library initialized in %.2f ms: %s",
 		time.duration_milliseconds(time.since(load_start)),

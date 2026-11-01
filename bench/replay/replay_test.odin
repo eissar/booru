@@ -37,6 +37,8 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 		}
 	}
 
+	rows := make([dynamic]store.Tag_Row, alloc)
+	defer delete(rows)
 	for line in strings.split_lines_iterator(data) {
 		if strings.trim_space(line) == "" {continue}
 
@@ -47,10 +49,8 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 			continue
 		}
 
-		// both 'add' and 'patch'
-		// are just Event & op
+		for tag in ev.tags_xor {append(&rows, store.Tag_Row{ev.id, tag})}
 
-		// switch
 		switch ev.op {
 		case "add":
 			item := library.Image {
@@ -58,7 +58,6 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 				oid          = ev.oid,
 				path         = ev.path,
 				ext          = ev.ext,
-				tags         = ev.tags,
 				width        = ev.width,
 				height       = ev.height,
 				name         = ev.name,
@@ -76,7 +75,6 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 				oid          = ev.oid,
 				path         = ev.path,
 				ext          = ev.ext,
-				tags         = ev.tags,
 				width        = ev.width,
 				height       = ev.height,
 				name         = ev.name,
@@ -97,6 +95,8 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 			continue
 		}
 	}
+	if store.insert_reduced_tags(&tx, replay.reduce_tags(rows[:])) !=
+	   sqlite.OK {return .DATABASE_ERR}
 	commit_rc := sqlite.exec(db, "COMMIT", nil, nil, nil)
 	if commit_rc != 0 {
 		return .DATABASE_ERR

@@ -14,6 +14,17 @@ ev_append :: proc {
 @(private)
 append_records :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 	if len(events) == 0 {return ""}
+	// Finish all validation and encoding before opening or writing the shard.
+	records := make([]strings.Builder, len(events))
+	defer {
+		for &record in records {strings.builder_destroy(&record)}
+		delete(records)
+	}
+	for e, i in events {
+		strings.builder_init(&records[i])
+		if err := encode_event(e, &records[i]); err != "" {return err}
+		strings.write_byte(&records[i], '\n')
+	}
 	shard := get_current_event_shard(context.temp_allocator)
 
 	path, join_err := os.join_path({log.root, "events", shard}, context.temp_allocator)
@@ -29,19 +40,11 @@ append_records :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 	defer os.close(ev_handle)
 
 	input_stream := os.to_writer(ev_handle)
-
-	buf: [MAX_RECORD + 1]u8
-	bw: bufio.Writer
-	bufio.writer_init_with_buf(&bw, input_stream, buf[:])
-
-	buffered_stream := bufio.writer_to_stream(&bw)
-	// Flush per record: the buffer (MAX_RECORD + 1) always holds one whole
-	// record plus newline, so each record is exactly one write and never split.
-	for e in events {
-		if err := write_event(buffered_stream, e); err != "" {return err}
-		if bufio.writer_flush(&bw) != nil {
-			return "could not flush event log"
-		}
+	// One write per complete record. An I/O error can leave an uncertain append.
+	for record in records {
+		payload := transmute([]u8)strings.to_string(record)
+		written, write_err := io.write(input_stream, payload)
+		if write_err != nil || written != len(payload) {return "could not write event record"}
 	}
 
 	end, seek_err := os.seek(ev_handle, 0, .Current)

@@ -18,7 +18,7 @@ EagleItem_Event :: struct {
 	oid:          string `json:"-"`,
 	op:           string `json:"-"`,
 	path:         string `json:"-"`,
-	tags:         []string,
+	tags_xor:     []string `json:"tags"`,
 	width:        int,
 }
 
@@ -57,7 +57,7 @@ run :: proc(input: string, count: int) -> (elapsed: f64, checksum: int) {
 			append(&events, ev^)
 		}
 		for ev in events {
-			checksum += ev.id + len(ev.tags) + len(ev.tags[0])
+			checksum += ev.id + len(ev.tags_xor) + len(ev.tags_xor[0])
 		}
 		free_all(alloc)
 	}

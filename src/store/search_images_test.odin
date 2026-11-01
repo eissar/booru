@@ -2,6 +2,7 @@ package store
 
 import "../library"
 import "../vendor/sqlite"
+import "core:c"
 import "core:testing"
 
 @(test)
@@ -20,7 +21,19 @@ search_images_filters_sorts_and_pages :: proc(t: ^testing.T) {
 		{id = 6, oid = "o", name = "alpha", added_at = 100, tags = {"hot"}},
 	}
 	for image in images {
-		if !testing.expect(t, insert_into_items(state.data_store, image) == sqlite.OK) {return}
+		if !testing.expect(
+			t,
+			sqlite.with_transaction(
+				state.data_store,
+				image,
+				proc(tx: ^sqlite.Tx, image: library.Image) -> c.int {
+					rc := insert_into_items(tx, image)
+					if rc != sqlite.OK {return rc}
+					return toggle_tags(tx, image.id, image.tags)
+				},
+			) ==
+			sqlite.OK,
+		) {return}
 	}
 	tags := []string{"cat", "hot"}
 

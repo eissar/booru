@@ -6,7 +6,7 @@ import elog "../event_log"
 //
 // A valid tag is non-empty and contains only lowercase ASCII letters and
 // '-'. Uppercase ASCII letters are accepted on input and lowercased
-// (see event_log.is_allowed_tag_char for the allowed set).
+// before checking event_log.is_allowed_tag_char.
 //
 // canonicalize_tag is a single byte scan:
 //   - 'A'..'Z' are lowercased
