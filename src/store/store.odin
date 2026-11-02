@@ -111,18 +111,6 @@ Close :: proc(state: ^library.State) {
 	}
 }
 
-// events are currently unversioned.
-// during event replay we check:
-/*
-max_event_version:= 0
-max_event_version = max(max_event_version, ev.version)
-*/
-// so no version is 0
-// we panic on replay if max_event version gt:
-MAX_SUPPORTED_EVENT_VERSION :: 0
-
-// probe_compatibility_check :: proc() {}
-
 // Uses the caller's transaction. Foreign-key cascade removes item_tags.
 delete_item :: proc(tx: ^sqlite.Tx, id: int) -> c.int {
 	stmt: ^sqlite.Stmt
@@ -138,8 +126,8 @@ delete_item :: proc(tx: ^sqlite.Tx, id: int) -> c.int {
 	return sqlite.OK
 }
 
-// Uses the caller's transaction. Empty/zero fields leave existing values alone;
-// tags are added, never removed.
+// Uses the caller's transaction. Empty/zero fields leave existing values alone.
+// Tags are never changed here; apply explicit deltas with toggle_tags.
 patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 	stmt: ^sqlite.Stmt
 	rc := sqlite.prepare_v2(
@@ -182,29 +170,6 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 	if rc != sqlite.OK {return rc}
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return rc}
-
-	tag_stmt: ^sqlite.Stmt
-	rc = sqlite.prepare_v2(
-		tx.db,
-		"INSERT OR IGNORE INTO item_tags (item_id, tag) VALUES (?, ?)",
-		-1,
-		&tag_stmt,
-		nil,
-	)
-	defer {
-		if tag_stmt != nil {sqlite.finalize(tag_stmt)}
-	}
-	if rc != sqlite.OK {return rc}
-
-	for tag in item.tags {
-		rc = sqlite.bind_int64(tag_stmt, 1, i64(item.id))
-		if rc != sqlite.OK {return rc}
-		if !sqlite.bind_string(tag_stmt, 2, tag) {return 1} 	// SQLITE_ERROR
-		rc = sqlite.step(tag_stmt)
-		if rc != sqlite.DONE {return rc}
-		rc = sqlite.reset(tag_stmt)
-		if rc != sqlite.OK {return rc}
-	}
 	return sqlite.OK
 }
 
@@ -271,28 +236,5 @@ insert_item_tx :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return rc}
-
-	tag_stmt: ^sqlite.Stmt
-	rc = sqlite.prepare_v2(
-		tx.db,
-		"INSERT OR IGNORE INTO item_tags (item_id, tag) VALUES (?, ?)",
-		-1,
-		&tag_stmt,
-		nil,
-	)
-	defer {
-		if tag_stmt != nil {sqlite.finalize(tag_stmt)}
-	}
-	if rc != sqlite.OK {return rc}
-
-	for tag in item.tags {
-		rc = sqlite.bind_int64(tag_stmt, 1, i64(item.id))
-		if rc != sqlite.OK {return rc}
-		if !sqlite.bind_string(tag_stmt, 2, tag) {return 1} 	// SQLITE_ERROR
-		rc = sqlite.step(tag_stmt)
-		if rc != sqlite.DONE {return rc}
-		rc = sqlite.reset(tag_stmt)
-		if rc != sqlite.OK {return rc}
-	}
 	return sqlite.OK
 }

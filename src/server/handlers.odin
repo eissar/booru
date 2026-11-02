@@ -1,6 +1,7 @@
 package server
 
 import "core:bufio"
+import "core:c"
 import "core:crypto/sha2"
 import "core:encoding/hex"
 import "core:fmt"
@@ -589,23 +590,24 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		}
 	}
 
-	item := library.Image {
-		id           = ev.id,
-		oid          = ev.oid,
-		path         = ev.path,
-		ext          = ev.ext,
-		tags         = ev.tags,
-		width        = ev.width,
-		height       = ev.height,
-		name         = ev.name,
-		comment      = ev.comment,
-		mtime        = ev.mtime,
-		added_at     = ev.added_at,
-		content_type = ev.content_type,
-	}
-	if rc := store.insert_into_items(s.data_store, item); rc != sqlite.OK {
-		fmt.panicf("ingest: apply event to store: rc=%v", rc)
-	}
+	rc := sqlite.with_transaction(s.data_store, ev, proc(tx: ^sqlite.Tx, ev: elog.Event) -> c.int {
+		item := library.Image {
+			id           = ev.id,
+			oid          = ev.oid,
+			path         = ev.path,
+			ext          = ev.ext,
+			width        = ev.width,
+			height       = ev.height,
+			name         = ev.name,
+			comment      = ev.comment,
+			mtime        = ev.mtime,
+			added_at     = ev.added_at,
+			content_type = ev.content_type,
+		}
+		if rc := store.insert_into_items(tx, item); rc != sqlite.OK {return rc}
+		return store.toggle_tags(tx, ev.id, ev.tags_xor)
+	})
+	if rc != sqlite.OK {fmt.panicf("ingest: apply event to store: rc=%v", rc)}
 
 	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
 }
@@ -759,11 +761,10 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		if !slice.contains(tags[:], tag) {append(&tags, tag)}
 	}
 
-	// Full patch format: every field is optional; empty/zero leaves it alone.
+	// Scalar empty/zero values leave fields alone. Tags are desired membership.
 	ev := elog.Event {
-		id   = id,
-		op   = "patch",
-		tags = tags[:],
+		id = id,
+		op = "patch",
 	}
 	ok := true
 	ev.name = form_string(params, "name", &ok)
@@ -782,7 +783,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		return
 	}
 
-	_, found, rc := store.read_image_by_id(s.data_store, id, req.alloc)
+	current, found, rc := store.read_image_by_id(s.data_store, id, req.alloc)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
 		return
@@ -793,37 +794,70 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		return
 	}
 
-	if elog.ev_append(s.event_log, []elog.Event{ev}) != "" {
-		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(
-			template.render_toast("could not write patch event", .Error),
-			res,
-			.InternalServerError,
-		)
-		return
+	// Serve is synchronous: no other writer can interleave this read/append/apply.
+	// Missing tags leave membership alone; an explicit empty list clears it.
+	delta := make([dynamic]string)
+	if _, present := params["tags"]; present {
+		for tag in current.tags {
+			if !slice.contains(tags[:], tag) {append(&delta, tag)}
+		}
+		for tag in tags {
+			if !slice.contains(current.tags, tag) {append(&delta, tag)}
+		}
 	}
-	patch := library.Image {
-		id           = id,
-		oid          = ev.oid,
-		path         = ev.path,
-		ext          = ev.ext,
-		name         = ev.name,
-		comment      = ev.comment,
-		content_type = ev.content_type,
-		mtime        = ev.mtime,
-		added_at     = ev.added_at,
-		width        = ev.width,
-		height       = ev.height,
-		tags         = ev.tags,
-	}
-	if sqlite.with_transaction(s.data_store, patch, store.patch_item) != sqlite.OK {
-		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(
-			template.render_toast("could not apply patch event", .Error),
-			res,
-			.InternalServerError,
+	ev.tags_xor = delta[:]
+	changed :=
+		len(delta) != 0 ||
+		(ev.name != "" && ev.name != current.name) ||
+		(ev.comment != "" && ev.comment != current.comment) ||
+		(ev.oid != "" && ev.oid != current.oid) ||
+		(ev.path != "" && ev.path != current.path) ||
+		(ev.ext != "" && ev.ext != current.ext) ||
+		(ev.content_type != "" && ev.content_type != current.content_type) ||
+		(ev.mtime != 0 && ev.mtime != current.mtime) ||
+		(ev.added_at != 0 && ev.added_at != current.added_at) ||
+		(ev.width != 0 && ev.width != current.width) ||
+		(ev.height != 0 && ev.height != current.height)
+	if changed {
+		if err := elog.ev_append(s.event_log, []elog.Event{ev}); err != "" {
+			res.headers["HX-Reswap"] = "beforeend"
+			http.res_html(
+				template.render_toast("could not write patch event", .Error),
+				res,
+				.BadRequest,
+			)
+			return
+		}
+		rc := sqlite.with_transaction(
+			s.data_store,
+			ev,
+			proc(tx: ^sqlite.Tx, ev: elog.Event) -> c.int {
+				patch := library.Image {
+					id           = ev.id,
+					oid          = ev.oid,
+					path         = ev.path,
+					ext          = ev.ext,
+					name         = ev.name,
+					comment      = ev.comment,
+					content_type = ev.content_type,
+					mtime        = ev.mtime,
+					added_at     = ev.added_at,
+					width        = ev.width,
+					height       = ev.height,
+				}
+				if rc := store.patch_item(tx, patch); rc != sqlite.OK {return rc}
+				return store.toggle_tags(tx, ev.id, ev.tags_xor)
+			},
 		)
-		return
+		if rc != sqlite.OK {
+			res.headers["HX-Reswap"] = "beforeend"
+			http.res_html(
+				template.render_toast("could not apply patch event", .Error),
+				res,
+				.InternalServerError,
+			)
+			return
+		}
 	}
 
 	img, _, rc2 := store.read_image_by_id(s.data_store, id, req.alloc)

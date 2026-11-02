@@ -140,7 +140,7 @@ ensure_events_file :: proc() -> bool {
 		oid_hex := hex.encode(digest[:], context.temp_allocator)
 		fmt.sbprintf(
 			&b,
-			`{{"added_at":%d,"content_type":"%s","ext":"%s","height":%d,"id":%d,"mtime":%d,"name":"%s %s %s #%d","oid":"%s","op":"add","path":"","tags":[`,
+			`{{"added_at":%d,"content_type":"%s","ext":"%s","height":%d,"id":%d,"mtime":%d,"name":"%s %s %s #%d","oid":"%s","op":"add","path":"","tags_xor":[`,
 			added,
 			f[1],
 			f[0],

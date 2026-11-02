@@ -79,7 +79,7 @@ EagleItem_Event :: struct {
 	oid:          string `json:"-"`,
 	op:           string `json:"-"`,
 	path:         string `json:"-"`,
-	tags:         []string,
+	tags_xor:     []string `json:"tags"`, // Initial membership toggles from empty.
 	width:        int,
 }
 
@@ -243,8 +243,8 @@ eagle_import :: proc(
 
 			remediate_tags := make([dynamic]string, allocator = event_alloc)
 
-			kept := make([dynamic]string, 0, len(item.tags), event_alloc)
-			for raw in item.tags {
+			kept := make([dynamic]string, 0, len(item.tags_xor), event_alloc)
+			for raw in item.tags_xor {
 				tag := library.lowercase_and_dash_whitespace(raw, event_alloc)
 
 				// if there are still bad chars
@@ -256,7 +256,7 @@ eagle_import :: proc(
 				if tag == "" || slice.contains(kept[:], tag) {continue}
 				append(&kept, tag)
 			}
-			item.tags = kept[:]
+			item.tags_xor = kept[:]
 			// need more complex condition
 			// for other importers
 			ev_needs_remediation := len(remediate_tags) > 0
@@ -322,7 +322,6 @@ eagle_import :: proc(
 					oid          = ev.oid,
 					path         = ev.path,
 					ext          = ev.ext,
-					tags         = ev.tags,
 					width        = ev.width,
 					height       = ev.height,
 					name         = ev.name,
@@ -332,6 +331,7 @@ eagle_import :: proc(
 					content_type = ev.content_type,
 				}
 				if rc := store.insert_into_items(tx, item); rc != sqlite.OK {return rc}
+				if rc := store.toggle_tags(tx, ev.id, ev.tags_xor); rc != sqlite.OK {return rc}
 			}
 			return sqlite.OK
 		},

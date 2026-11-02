@@ -27,29 +27,40 @@ replay :: proc(
 	backing_alloc: mem.Allocator,
 	prog_callback: progress.Callback = nil,
 ) -> Error {
+	// Own decoded strings until replay ends, including tags retained across shards.
+	arena: mem.Dynamic_Arena
+	mem.dynamic_arena_init(&arena, backing_alloc, backing_alloc)
+	defer mem.dynamic_arena_destroy(&arena)
+	alloc := mem.dynamic_arena_allocator(&arena)
+	// First-seen positions are deterministic for the ordered event stream.
+	tag_indexes := make(map[string]int, alloc)
+	dictionary := make([dynamic]string, alloc)
+	// TODO: Migrate to packed bitsets eventually to reduce memory.
+	memberships := make(map[int][dynamic]u8, backing_alloc)
+	defer {
+		for _, membership in memberships {delete(membership)}
+		delete(memberships)
+	}
 	seen_ids := make(map[int]bool, backing_alloc)
 	defer delete(seen_ids)
 	max_id: int
 	finished: u64
-	if prog_callback != nil {prog_callback({phase = "replay events"})}
-
 	db := s.data_store
 	if !sqlite.run(db, "BEGIN") {return .DATABASE_ERR}
 	defer {if sqlite.get_autocommit(db) == 0 {sqlite.run(db, "ROLLBACK")}}
-
 	tx := sqlite.Tx {
 		db = db,
 	}
+	if prog_callback != nil {prog_callback({phase = "replay events"})}
 	record: elog.Record
-	record.fields = make([dynamic]elog.Field, 0, 16, backing_alloc)
+	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
 	defer delete(record.fields)
-
 	for stream, i in streams {
 		text := stream
 		data := &text
 		for line in strings.split_lines_iterator(data) {
 			if strings.trim_space(line) == "" {continue}
-			item, op := parse_item(line, &record, backing_alloc)
+			item, op, tags := parse_item(line, &record, alloc)
 			rc: i32 = sqlite.OK
 			switch op {
 			case "add":
@@ -69,19 +80,54 @@ replay :: proc(
 			case:
 			}
 			if rc != sqlite.OK {return .DATABASE_ERR}
+			for tag in tags {
+				index, known := tag_indexes[tag]
+				if !known {
+					owned_tag := strings.clone(tag, alloc)
+					index = len(dictionary)
+					tag_indexes[owned_tag] = index
+					append(&dictionary, owned_tag)
+				}
+				membership := memberships[item.id]
+				if membership.allocator.procedure ==
+				   nil {membership = make([dynamic]u8, backing_alloc)}
+				if len(membership) <= index {resize(&membership, index + 1)}
+				membership[index] ~= 1
+				memberships[item.id] = membership
+			}
 			finished += 1
 			if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
 		}
 		if prog_callback != nil {prog_callback({phase = "replay files", finished = u64(i + 1)})}
 	}
-
+	stmt: ^sqlite.Stmt
+	defer {if stmt != nil {sqlite.finalize(stmt)}}
+	rc := sqlite.prepare_v2(
+		db,
+		"INSERT INTO item_tags (item_id, tag) SELECT id, ?2 FROM items WHERE id = ?1",
+		-1,
+		&stmt,
+		nil,
+	)
+	if rc != sqlite.OK {return .DATABASE_ERR}
+	for id, membership in memberships {
+		for present, index in membership {
+			if present == 0 {continue}
+			rc = sqlite.bind_int64(stmt, 1, i64(id))
+			if rc != sqlite.OK {return .DATABASE_ERR}
+			if !sqlite.bind_string(stmt, 2, dictionary[index]) {return .DATABASE_ERR}
+			rc = sqlite.step(stmt)
+			if rc != sqlite.DONE {return .DATABASE_ERR}
+			rc = sqlite.reset(stmt)
+			if rc != sqlite.OK {return .DATABASE_ERR}
+		}
+	}
 	if !sqlite.run(db, "COMMIT") {return .DATABASE_ERR}
 	// Historical maximum includes creations subsequently deleted.
 	library.seed_ids_from_library(max_id)
 	return nil
 }
-
-@(private = "file")
+@(private)
 parse_item :: proc(
 	line: string,
 	record: ^elog.Record,
@@ -89,14 +135,15 @@ parse_item :: proc(
 ) -> (
 	item: library.Image,
 	op: string,
+	tags: []string,
 ) {
 	elog.parse_flat(line, record)
 	for field in record.fields {
-		if field.key == "tags" {
+		if field.key == "tags_xor" {
 			assert(field.is_array)
-			item.tags = make([]string, len(field.values), alloc)
+			tags = make([]string, len(field.values), alloc)
 			for token, i in field.values {
-				item.tags[i] = replay_flat_string(token, alloc)
+				tags[i] = replay_flat_string(token, alloc)
 			}
 			continue
 		}
@@ -143,7 +190,6 @@ parse_item :: proc(
 			item.added_at = value
 		}
 	}
-
 	return
 }
 

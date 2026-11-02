@@ -37,6 +37,15 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 		}
 	}
 
+	// First-seen positions are deterministic for the ordered event stream.
+	tag_indexes := make(map[string]int, alloc)
+	dictionary := make([dynamic]string, alloc)
+	// TODO: Migrate to packed bitsets eventually to reduce memory.
+	memberships := make(map[int][dynamic]u8, alloc)
+	defer {
+		for _, membership in memberships {delete(membership)}
+		delete(memberships)
+	}
 	for line in strings.split_lines_iterator(data) {
 		if strings.trim_space(line) == "" {continue}
 
@@ -47,10 +56,20 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 			continue
 		}
 
-		// both 'add' and 'patch'
-		// are just Event & op
+		for tag in ev.tags_xor {
+			index, known := tag_indexes[tag]
+			if !known {
+				index = len(dictionary)
+				tag_indexes[tag] = index
+				append(&dictionary, tag)
+			}
+			membership := memberships[ev.id]
+			if membership.allocator.procedure == nil {membership = make([dynamic]u8, alloc)}
+			if len(membership) <= index {resize(&membership, index + 1)}
+			membership[index] ~= 1
+			memberships[ev.id] = membership
+		}
 
-		// switch
 		switch ev.op {
 		case "add":
 			item := library.Image {
@@ -58,7 +77,6 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 				oid          = ev.oid,
 				path         = ev.path,
 				ext          = ev.ext,
-				tags         = ev.tags,
 				width        = ev.width,
 				height       = ev.height,
 				name         = ev.name,
@@ -76,7 +94,6 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 				oid          = ev.oid,
 				path         = ev.path,
 				ext          = ev.ext,
-				tags         = ev.tags,
 				width        = ev.width,
 				height       = ev.height,
 				name         = ev.name,
@@ -95,6 +112,28 @@ replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (
 				ev.op,
 			)
 			continue
+		}
+	}
+	stmt: ^sqlite.Stmt
+	defer {if stmt != nil {sqlite.finalize(stmt)}}
+	rc = sqlite.prepare_v2(
+		db,
+		"INSERT INTO item_tags (item_id, tag) SELECT id, ?2 FROM items WHERE id = ?1",
+		-1,
+		&stmt,
+		nil,
+	)
+	if rc != sqlite.OK {return .DATABASE_ERR}
+	for id, membership in memberships {
+		for present, index in membership {
+			if present == 0 {continue}
+			rc = sqlite.bind_int64(stmt, 1, i64(id))
+			if rc != sqlite.OK {return .DATABASE_ERR}
+			if !sqlite.bind_string(stmt, 2, dictionary[index]) {return .DATABASE_ERR}
+			rc = sqlite.step(stmt)
+			if rc != sqlite.DONE {return .DATABASE_ERR}
+			rc = sqlite.reset(stmt)
+			if rc != sqlite.OK {return .DATABASE_ERR}
 		}
 	}
 	commit_rc := sqlite.exec(db, "COMMIT", nil, nil, nil)

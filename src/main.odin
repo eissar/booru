@@ -79,6 +79,7 @@ main :: proc() {
 
 	// replay events from the event log
 	replay.initiate_replay(&state)
+
 	log.infof(
 		"Library initialized in %.2f ms: %s",
 		time.duration_milliseconds(time.since(load_start)),
