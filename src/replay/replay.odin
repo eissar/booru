@@ -3,6 +3,7 @@ package replay
 import "core:fmt"
 import "core:mem"
 import "core:os"
+import "core:slice"
 import "core:strconv"
 import "core:strings"
 
@@ -13,55 +14,70 @@ import "../store"
 import "../vendor/sqlite"
 
 Error :: enum {
+	None,
 	BadEvent,
 	Corrupted,
 	DATABASE_ERR,
 }
 
+// Full replay of an ordered slice of event streams.
 replay :: proc(
 	s: ^library.State,
-	data: ^string,
-	alloc: mem.Allocator,
+	streams: []string,
+	backing_alloc: mem.Allocator,
 	prog_callback: progress.Callback = nil,
 ) -> Error {
+	seen_ids := make(map[int]bool, backing_alloc)
+	defer delete(seen_ids)
+	max_id: int
 	finished: u64
 	if prog_callback != nil {prog_callback({phase = "replay events"})}
 
 	db := s.data_store
 	if !sqlite.run(db, "BEGIN") {return .DATABASE_ERR}
-	defer {
-		if sqlite.get_autocommit(db) == 0 {sqlite.run(db, "ROLLBACK")}
-	}
+	defer {if sqlite.get_autocommit(db) == 0 {sqlite.run(db, "ROLLBACK")}}
 
 	tx := sqlite.Tx {
 		db = db,
 	}
 	record: elog.Record
-	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
+	record.fields = make([dynamic]elog.Field, 0, 16, backing_alloc)
 	defer delete(record.fields)
 
-	for line in strings.split_lines_iterator(data) {
-		if strings.trim_space(line) == "" {continue}
-		item, op := parse_item(line, &record, alloc)
-		rc: i32 = sqlite.OK
-		switch op {
-		case "add":
-			rc = store.insert_into_items(&tx, item)
-		case "patch":
-			rc = store.patch_item(&tx, item)
-		case "delete":
-			rc = store.delete_item(&tx, item.id)
-		case "regen_thumbnail":
-		// basic event replay - validating derived artifact integrity is out of scope.
-		case:
+	for stream, i in streams {
+		text := stream
+		data := &text
+		for line in strings.split_lines_iterator(data) {
+			if strings.trim_space(line) == "" {continue}
+			item, op := parse_item(line, &record, backing_alloc)
+			rc: i32 = sqlite.OK
+			switch op {
+			case "add":
+				if _, seen := seen_ids[item.id]; seen {return .BadEvent}
+				seen_ids[item.id] = true
+				max_id = max(max_id, item.id)
+				rc = store.insert_into_items(&tx, item)
+			case "patch":
+				if !seen_ids[item.id] {return .BadEvent}
+				rc = store.patch_item(&tx, item)
+			case "delete":
+				if !seen_ids[item.id] {return .BadEvent}
+				rc = store.delete_item(&tx, item.id)
+				seen_ids[item.id] = false
+			case "regen_thumbnail":
+			// Derived artifact integrity is outside replay's scope.
+			case:
+			}
+			if rc != sqlite.OK {return .DATABASE_ERR}
+			finished += 1
+			if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
 		}
-		if rc != sqlite.OK {return .DATABASE_ERR}
-		finished += 1
-		if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
+		if prog_callback != nil {prog_callback({phase = "replay files", finished = u64(i + 1)})}
 	}
 
 	if !sqlite.run(db, "COMMIT") {return .DATABASE_ERR}
-
+	// Historical maximum includes creations subsequently deleted.
+	library.seed_ids_from_library(max_id)
 	return nil
 }
 
@@ -139,42 +155,42 @@ replay_flat_string :: proc(token: elog.Token, alloc: mem.Allocator) -> string {
 	return value
 }
 
-// this calls replay for each ndjson file
 initiate_replay :: proc(s: ^library.State, prog_callback: progress.Callback = nil) {
-	finished: u64
 	if prog_callback != nil {prog_callback({phase = "replay files"})}
 	alloc := context.temp_allocator
 	events_dir := fmt.tprintf("%s/events", s.library_path)
-	dir_fi, _ := os.stat(events_dir, alloc)
-	if dir_fi.type != .Directory {fmt.eprintln("library: cannot open events dir", events_dir)}
+	dir_fi, stat_err := os.stat(events_dir, alloc)
+	if stat_err != nil ||
+	   dir_fi.type !=
+		   .Directory {fmt.panicf("replay: cannot open events dir %s: %v", events_dir, stat_err)}
 	os.file_info_delete(dir_fi, alloc)
-
+	paths := make([dynamic]string, alloc)
+	defer {
+		for path in paths {delete(path, alloc)}
+		delete(paths)
+	}
 	w := os.walker_create(events_dir)
 	defer os.walker_destroy(&w)
-
 	for entry in os.walker_walk(&w) {
-		if _, err := os.walker_error(&w); err != nil {
-			continue
-		}
-
-		if !strings.has_suffix(entry.name, ".ndjson") {
-			continue
-		}
-
-		data, err := os.read_entire_file(entry.fullpath, alloc)
-		defer delete(data, alloc)
-
-		if err != nil {
-			fmt.eprintln("library: cannot read", entry.fullpath)
-			continue
-		}
-		text := string(data)
-		if replay_err := replay(s, &text, alloc, prog_callback); replay_err != nil {
-			fmt.panicf("replay: %s: %v", entry.fullpath, replay_err)
-		}
-		finished += 1
-		if prog_callback != nil {prog_callback({phase = "replay files", finished = finished})}
+		if _, err := os.walker_error(&w);
+		   err != nil {fmt.panicf("replay: cannot walk %s: %v", events_dir, err)}
+		if entry.type == .Directory || !strings.has_suffix(entry.name, ".ndjson") {continue}
+		append(&paths, strings.clone(entry.fullpath, alloc))
 	}
+	if _, err := os.walker_error(&w);
+	   err != nil {fmt.panicf("replay: cannot walk %s: %v", events_dir, err)}
+	slice.sort(paths[:])
+	streams := make([]string, len(paths), alloc)
+	defer {
+		for stream in streams {delete(stream, alloc)}
+		delete(streams, alloc)
+	}
+	for path, i in paths {
+		bytes, read_err := os.read_entire_file(path, alloc)
+		if read_err != nil {fmt.panicf("replay: cannot read %s: %v", path, read_err)}
+		streams[i] = string(bytes)
+	}
+	if err := replay(s, streams, alloc, prog_callback); err != nil {fmt.panicf("replay: %v", err)}
 
 	if rc := store.create_indexes(s.data_store); rc != sqlite.OK {
 		fmt.panicf("replay: create indexes: %d", rc)

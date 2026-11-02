@@ -515,7 +515,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		return
 	}
 
-	// Seeded from loaded images at startup; exclusive creation still protects
+	// Seeded from all historical creations at startup; exclusive creation still protects
 	// originals without event-log entries from being overwritten after restart.
 	ev: elog.Event
 	library.new_add_event(&ev)

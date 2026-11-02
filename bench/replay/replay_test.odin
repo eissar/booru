@@ -171,7 +171,7 @@ benchmark_replay :: proc(t: ^testing.T, flat: bool) {
 				run := cast(^Run)options.user_data
 				text := string(options.input)
 				if run.flat {
-					run.result = replay.replay(run.state, &text, alloc)
+					run.result = replay.replay(run.state, {text}, alloc)
 				} else {
 					run.result = replay_json(run.state, &text, alloc)
 				}
