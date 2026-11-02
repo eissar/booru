@@ -54,7 +54,6 @@ main :: proc() {
 	}
 
 	cursor: elog.Cursor
-	defer delete(cursor.shard)
 	event_log := elog.EventLog {
 		root   = cfg.library,
 		cursor = &cursor,

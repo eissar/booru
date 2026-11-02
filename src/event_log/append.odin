@@ -51,9 +51,8 @@ append_records :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 		return fmt.tprintf("make durable: %v", err)
 	}
 
-	if log.cursor.shard != shard {
-		delete(log.cursor.shard)
-		log.cursor.shard = strings.clone(shard)
+	if string(log.cursor.shard[:]) != shard {
+		copy(log.cursor.shard[:], shard)
 	}
 	log.cursor.offset = end
 

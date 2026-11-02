@@ -27,7 +27,6 @@ ingest_inserts_epoch_ms_row_immediately :: proc(t: ^testing.T) {
 	if !testing.expect(t, library.init_new_library(root) == nil) {return}
 
 	cursor: elog.Cursor
-	defer delete(cursor.shard)
 	log := elog.EventLog {
 		root   = root,
 		cursor = &cursor,

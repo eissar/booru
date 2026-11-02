@@ -21,7 +21,7 @@ MAX_RECORD :: 2048
 
 // Replay progress: offset is the byte immediately after a committed newline.
 Cursor :: struct {
-	shard:  string,
+	shard:  [14]u8, // "YYYY-MM.ndjson"
 	offset: i64,
 }
 
@@ -85,9 +85,9 @@ encode_ascii_json :: proc(data: []u8, out: ^strings.Builder) {
 	}
 }
 
-// Missing shards start at offset zero. Cursor.shard borrows the input string.
+// Missing shards start at offset zero.
 load_cursor :: proc(log: ^EventLog, shard: string) -> (cursor: Cursor, rc: c.int) {
-	cursor.shard = shard
+	copy(cursor.shard[:], shard)
 	stmt: ^sqlite.Stmt
 	rc = sqlite.prepare_v2(
 		log.db,
@@ -110,7 +110,7 @@ load_cursor :: proc(log: ^EventLog, shard: string) -> (cursor: Cursor, rc: c.int
 
 // Caller must apply events and save their cursor in this same transaction.
 // Never commits or rolls back; filesystem appends are not protected by SQLite.
-save_cursor :: proc(tx: ^sqlite.Tx, cursor: Cursor) -> c.int {
+save_cursor :: proc(tx: ^sqlite.Tx, cursor: ^Cursor) -> c.int {
 	if cursor.offset < 0 || sqlite.get_autocommit(tx.db) != 0 {return sqlite.MISUSE}
 	stmt: ^sqlite.Stmt
 	rc := sqlite.prepare_v2(
@@ -125,7 +125,7 @@ save_cursor :: proc(tx: ^sqlite.Tx, cursor: Cursor) -> c.int {
 		if stmt != nil {sqlite.finalize(stmt)}
 	}
 	if rc != sqlite.OK {return rc}
-	if !sqlite.bind_string(stmt, 1, cursor.shard) {return 1} 	// SQLITE_ERROR
+	if !sqlite.bind_string(stmt, 1, string(cursor.shard[:])) {return 1} 	// SQLITE_ERROR
 	rc = sqlite.bind_int64(stmt, 2, cursor.offset)
 	if rc != sqlite.OK {return rc}
 	rc = sqlite.step(stmt)
