@@ -17,6 +17,9 @@ Error :: enum {
 	None,
 	BadEvent,
 	Corrupted,
+	UnsupportedVersion,
+	// Writers omit empty strings; explicit string clears are not implemented yet.
+	NotImplemented,
 	DATABASE_ERR,
 }
 
@@ -60,7 +63,19 @@ replay :: proc(
 		data := &text
 		for line in strings.split_lines_iterator(data) {
 			if strings.trim_space(line) == "" {continue}
-			item, op, tags := parse_item(line, &record, alloc)
+			item, op, tags, err := parse_item(line, &record, alloc)
+			if err != nil {return err}
+			if item.id <= 0 {return .BadEvent}
+			if op == "delete" || op == "regen_thumbnail" {
+				for field in record.fields {
+					if field.key == "op" || field.key == "id" || field.key == "version" {continue}
+					// Odin json omitempty still writes integer zeros; treat them as absent.
+					if !field.is_array &&
+					   field.values[0].kind == .Integer &&
+					   field.values[0].text == "0" {continue}
+					return .BadEvent
+				}
+			}
 			rc: i32 = sqlite.OK
 			switch op {
 			case "add":
@@ -76,8 +91,10 @@ replay :: proc(
 				rc = store.delete_item(&tx, item.id)
 				seen_ids[item.id] = false
 			case "regen_thumbnail":
+				if !seen_ids[item.id] {return .BadEvent}
 			// Derived artifact integrity is outside replay's scope.
 			case:
+				return .BadEvent
 			}
 			if rc != sqlite.OK {return .DATABASE_ERR}
 			for tag in tags {
@@ -136,23 +153,37 @@ parse_item :: proc(
 	item: library.Image,
 	op: string,
 	tags: []string,
+	err: Error,
 ) {
 	elog.parse_flat(line, record)
 	for field in record.fields {
+		// Legacy additive records are deliberately unsupported.
+		if field.key == "tags" {return item, op, tags, .BadEvent}
 		if field.key == "tags_xor" {
-			assert(field.is_array)
+			if !field.is_array {return item, op, tags, .BadEvent}
 			tags = make([]string, len(field.values), alloc)
 			for token, i in field.values {
+				if token.kind != .String {return item, op, tags, .BadEvent}
 				tags[i] = replay_flat_string(token, alloc)
 			}
+			if elog.validate_tags_xor(tags) != "" {return item, op, tags, .BadEvent}
 			continue
 		}
-		assert(!field.is_array && len(field.values) == 1)
+		if field.is_array || len(field.values) != 1 {return item, op, tags, .BadEvent}
 		token := field.values[0]
-		if field.key == "id" || field.key == "width" || field.key == "height" {
-			assert(token.kind == .Integer)
+		// Absent version means version 0.
+		if field.key == "version" {
+			if token.kind != .Integer {return item, op, tags, .BadEvent}
 			value, ok := strconv.parse_int(token.text)
-			assert(ok)
+			if !ok || value < 0 {return item, op, tags, .BadEvent}
+			if value >
+			   elog.MAX_SUPPORTED_EVENT_VERSION {return item, op, tags, .UnsupportedVersion}
+			continue
+		}
+		if field.key == "id" || field.key == "width" || field.key == "height" {
+			if token.kind != .Integer {return item, op, tags, .BadEvent}
+			value, ok := strconv.parse_int(token.text)
+			if !ok {return item, op, tags, .BadEvent}
 			switch field.key {
 			case "id":
 				item.id = value
@@ -162,6 +193,16 @@ parse_item :: proc(
 				item.height = value
 			}
 			continue
+		}
+		if field.key == "op" ||
+		   field.key == "oid" ||
+		   field.key == "path" ||
+		   field.key == "ext" ||
+		   field.key == "comment" ||
+		   field.key == "name" ||
+		   field.key == "content_type" {
+			if token.kind != .String {return item, op, tags, .BadEvent}
+			if token.text == `""` && field.key != "op" {return item, op, tags, .NotImplemented}
 		}
 		switch field.key {
 		case "op":
@@ -179,15 +220,17 @@ parse_item :: proc(
 		case "content_type":
 			item.content_type = replay_flat_string(token, alloc)
 		case "mtime":
-			assert(token.kind == .Integer)
+			if token.kind != .Integer {return item, op, tags, .BadEvent}
 			value, ok := strconv.parse_i64(token.text)
-			assert(ok)
+			if !ok {return item, op, tags, .BadEvent}
 			item.mtime = value
 		case "added_at":
-			assert(token.kind == .Integer)
+			if token.kind != .Integer {return item, op, tags, .BadEvent}
 			value, ok := strconv.parse_i64(token.text)
-			assert(ok)
+			if !ok {return item, op, tags, .BadEvent}
 			item.added_at = value
+		case:
+			return item, op, tags, .BadEvent
 		}
 	}
 	return

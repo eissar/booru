@@ -70,6 +70,36 @@ validate_event_tags :: proc(t: ^testing.T) {
 		defer strings.builder_destroy(&ascii)
 		testing.expect(t, encode_event(Event{}, &ascii) == "")
 	}
+	{
+		ascii: strings.Builder
+		strings.builder_init(&ascii)
+		defer strings.builder_destroy(&ascii)
+		testing.expect(t, encode_event(Event{id = 1, op = "delete"}, &ascii) == "")
+	}
+	{
+		ascii: strings.Builder
+		strings.builder_init(&ascii)
+		defer strings.builder_destroy(&ascii)
+		testing.expect(t, encode_event(Event{id = 1, op = "delete", name = "x"}, &ascii) != "")
+	}
+	{
+		ascii: strings.Builder
+		strings.builder_init(&ascii)
+		defer strings.builder_destroy(&ascii)
+		testing.expect(
+			t,
+			encode_event(Event{id = 1, op = "regen_thumbnail", width = 5}, &ascii) != "",
+		)
+	}
+	{
+		ascii: strings.Builder
+		strings.builder_init(&ascii)
+		defer strings.builder_destroy(&ascii)
+		testing.expect(
+			t,
+			encode_event(Event{id = 1, op = "delete", tags_xor = {"cat"}}, &ascii) != "",
+		)
+	}
 }
 
 @(test)

@@ -114,6 +114,12 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 {"op":"patch","id":1,"tags_xor":["cat"]}`,
 		`{"op":"delete","id":2}`,
 		`{"op":"add","id":1}`,
+		`{"op":"patch","id":1,"color":"red"}`,
+		`{"op":"delete","id":1,"name":"x"}`,
+		`{"op":"regen_thumbnail","id":1,"width":5}`,
+		`{"op":"regen_thumbnail","id":2}`,
+		`{"op":"delete","id":1}
+{"op":"regen_thumbnail","id":1}`,
 		`{"op":"delete","id":1}
 {"op":"add","id":1}`,
 	}
@@ -128,6 +134,48 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 		images, rc := store.read_images(s.data_store, alloc)
 		testing.expect(t, rc == sqlite.OK && len(images) == 0)
 		testing.expect(t, sqlite.get_autocommit(s.data_store) != 0)
+		store.Close(&s)
+	}
+}
+
+@(test)
+validate_event_versions :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	cases := []struct {
+		text:     string,
+		expected: Error,
+	} {
+		{`{"op":"add","id":1,"version":0}`, .None},
+		{`{"op":"add","id":1,"version":1}`, .UnsupportedVersion},
+		{`{"op":"add","id":1,"version":-1}`, .BadEvent},
+		{`{"op":"add","id":1,"version":"0"}`, .BadEvent},
+		{`{"op":"add","id":1,"version":[]}`, .BadEvent},
+		{`{"op":"unknown","id":1}`, .BadEvent},
+		{`{"op":"add","id":1,"unknown":0}`, .BadEvent},
+	}
+	for test in cases {
+		s: library.State
+		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+		testing.expect_value(t, replay(&s, {test.text}, context.allocator), test.expected)
+		images, rc := store.read_images(s.data_store, alloc)
+		testing.expect(t, rc == sqlite.OK)
+		testing.expect_value(t, len(images), test.expected == .None ? 1 : 0)
+		testing.expect(t, sqlite.get_autocommit(s.data_store) != 0)
+		store.Close(&s)
+	}
+}
+
+@(test)
+explicit_empty_scalars_are_not_implemented :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	cleared := []string{`{"op":"patch","id":1,"comment":""}`, `{"op":"patch","id":1,"name":""}`}
+	for event in cleared {
+		s: library.State
+		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+		text := strings.concatenate({"{\"op\":\"add\",\"id\":1}\n", event, "\n"}, alloc)
+		testing.expect_value(t, replay(&s, {text}, context.allocator), Error.NotImplemented)
 		store.Close(&s)
 	}
 }
@@ -175,7 +223,8 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 	record := elog.Record {
 		fields = make([dynamic]elog.Field, 0, 16, alloc),
 	}
-	item, op, tags := parse_item(source, &record, alloc)
+	item, op, tags, err := parse_item(source, &record, alloc)
+	testing.expect(t, err == nil)
 	testing.expect(t, item.id == 1 && op == "patch")
 	testing.expect_value(t, len(item.tags), 0)
 	testing.expect(t, slice.equal(tags, []string{"cat", "dog"}))
@@ -185,7 +234,7 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 	text := `{"op":"add","id":1,"tags_xor":["cat"]}
 {"op":"patch","id":1,"tags_xor":["cat","dog"]}
 {"op":"patch","id":1,"tags_xor":["cat","dog"]}
-{"op":"regen_thumbnail","id":1}
+{"op":"regen_thumbnail","id":1,"width":0,"mtime":0}
 `
 	testing.expect(t, replay(&s, {text}, context.allocator) == nil)
 	images, rc := store.read_images(s.data_store, alloc)
