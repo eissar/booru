@@ -32,8 +32,12 @@ sample :: proc() -> (elapsed: time.Duration, ok: bool) {
 		return
 	}
 
+	cursor: elog.Cursor
+	defer delete(cursor.shard)
 	log := elog.EventLog {
-		root = root,
+		root      = root,
+		cursor    = &cursor,
+		allocator = context.allocator,
 	}
 	state := library.State {
 		library_path = root,

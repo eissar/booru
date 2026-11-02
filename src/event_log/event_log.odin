@@ -4,6 +4,7 @@ import "core:c"
 import "core:encoding/json"
 import "core:fmt"
 import "core:io"
+import "core:mem"
 import "core:strings"
 import "core:time"
 import "core:unicode/utf16"
@@ -34,9 +35,10 @@ Op :: enum {
 
 // One writer owns the filesystem log. SQLite owns derived replay progress.
 EventLog :: struct {
-	root:   string,
-	db:     ^sqlite.DB,
-	cursor: ^Cursor,
+	root:      string,
+	db:        ^sqlite.DB,
+	cursor:    ^Cursor,
+	allocator: mem.Allocator, // Owns cursor.shard across request-arena resets.
 }
 
 Event :: struct {

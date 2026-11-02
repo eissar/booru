@@ -56,8 +56,9 @@ main :: proc() {
 	cursor: elog.Cursor
 	defer delete(cursor.shard)
 	event_log := elog.EventLog {
-		root   = cfg.library,
-		cursor = &cursor,
+		root      = cfg.library,
+		cursor    = &cursor,
+		allocator = context.allocator,
 	}
 	state := library.State {
 		library_path = cfg.library,

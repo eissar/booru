@@ -65,8 +65,9 @@ eagle_items_import_into_sqlite_with_correct_amount_of_items :: proc(t: ^testing.
 	cursor: elog.Cursor
 	defer delete(cursor.shard)
 	log := elog.EventLog {
-		root   = root,
-		cursor = &cursor,
+		root      = root,
+		cursor    = &cursor,
+		allocator = context.allocator,
 	}
 	imported := library.State {
 		library_path = root,

@@ -52,8 +52,8 @@ append_records :: proc(log: ^EventLog, events: []Event) -> (err: string) {
 	}
 
 	if log.cursor.shard != shard {
-		delete(log.cursor.shard)
-		log.cursor.shard = strings.clone(shard)
+		delete(log.cursor.shard, log.allocator)
+		log.cursor.shard = strings.clone(shard, log.allocator)
 	}
 	log.cursor.offset = end
 
