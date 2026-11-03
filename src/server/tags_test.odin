@@ -123,7 +123,10 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 		// Rebuild from the complete log after every request, including rejected/no-op requests.
 		rebuilt := library.State{}
 		if !testing.expect(t, store.Init(&rebuilt, ":memory:") == sqlite.OK) {return}
-		testing.expect(t, replay.replay(&rebuilt, {string(data)}, alloc) == nil)
+		if !testing.expect(t, sqlite.run(rebuilt.data_store, "BEGIN")) {return}
+		result := replay.replay(&rebuilt, {string(data)}, alloc)
+		testing.expect(t, result == nil)
+		testing.expect(t, sqlite.run(rebuilt.data_store, result == nil ? "COMMIT" : "ROLLBACK"))
 		other, exists, read_rc := store.read_image_by_id(rebuilt.data_store, 1, alloc)
 		testing.expect(t, read_rc == sqlite.OK && exists)
 		testing.expect(

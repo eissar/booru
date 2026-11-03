@@ -31,15 +31,17 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	// Deliberately create files out of lexical order.
 	testing.expect(
 		t,
-		os.write_entire_file(fmt.tprintf("%s/20.ndjson", events), transmute([]u8)last) == nil,
+		os.write_entire_file(fmt.tprintf("%s/2026-03.ndjson", events), transmute([]u8)last) == nil,
 	)
 	testing.expect(
 		t,
-		os.write_entire_file(fmt.tprintf("%s/00.ndjson", events), transmute([]u8)first) == nil,
+		os.write_entire_file(fmt.tprintf("%s/2026-01.ndjson", events), transmute([]u8)first) ==
+		nil,
 	)
 	testing.expect(
 		t,
-		os.write_entire_file(fmt.tprintf("%s/10.ndjson", events), transmute([]u8)middle) == nil,
+		os.write_entire_file(fmt.tprintf("%s/2026-02.ndjson", events), transmute([]u8)middle) ==
+		nil,
 	)
 	rebuilt := library.State {
 		library_path = root,
@@ -47,6 +49,16 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	if !testing.expect(t, store.Init(&rebuilt, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&rebuilt)
 	initiate_replay(&rebuilt)
+	log := elog.EventLog {
+		db = rebuilt.data_store,
+	}
+	lengths := [3]int{len(first), len(middle), len(last)}
+	shards := [3]string{"2026-01.ndjson", "2026-02.ndjson", "2026-03.ndjson"}
+	for shard, i in shards {
+		cursor, rc := elog.load_cursor(&log, shard)
+		testing.expect(t, rc == sqlite.OK)
+		testing.expect_value(t, cursor.offset, i64(lengths[i]))
+	}
 	testing.expect(t, library.requestNewId() > 900001)
 
 	live: library.State
@@ -95,7 +107,9 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	defer store.Close(&single)
 	text := strings.concatenate({first, middle, last}, alloc)
 	// Heap allocator exercises cleanup of decoded strings and compacted rows.
+	if !testing.expect(t, sqlite.run(single.data_store, "BEGIN")) {return}
 	testing.expect(t, replay(&single, {text}, context.allocator) == nil)
+	testing.expect(t, sqlite.run(single.data_store, "COMMIT"))
 	one, one_rc := store.read_images(single.data_store, alloc)
 	if testing.expect(t, one_rc == sqlite.OK && len(one) == 1) {
 		testing.expect_value(t, one[0].name, "final")
@@ -130,7 +144,9 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 			{"{\"op\":\"add\",\"id\":1,\"tags_xor\":[\"cat\"]}\n", event, "\n"},
 			alloc,
 		)
+		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 		testing.expect_value(t, replay(&s, {text}, context.allocator), Error.BadEvent)
+		testing.expect(t, sqlite.run(s.data_store, "ROLLBACK"))
 		images, rc := store.read_images(s.data_store, alloc)
 		testing.expect(t, rc == sqlite.OK && len(images) == 0)
 		testing.expect(t, sqlite.get_autocommit(s.data_store) != 0)
@@ -157,7 +173,10 @@ validate_event_versions :: proc(t: ^testing.T) {
 	for test in cases {
 		s: library.State
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
-		testing.expect_value(t, replay(&s, {test.text}, context.allocator), test.expected)
+		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
+		result := replay(&s, {test.text}, context.allocator)
+		testing.expect_value(t, result, test.expected)
+		testing.expect(t, sqlite.run(s.data_store, result == nil ? "COMMIT" : "ROLLBACK"))
 		images, rc := store.read_images(s.data_store, alloc)
 		testing.expect(t, rc == sqlite.OK)
 		testing.expect_value(t, len(images), test.expected == .None ? 1 : 0)
@@ -175,7 +194,9 @@ explicit_empty_scalars_are_not_implemented :: proc(t: ^testing.T) {
 		s: library.State
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 		text := strings.concatenate({"{\"op\":\"add\",\"id\":1}\n", event, "\n"}, alloc)
+		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 		testing.expect_value(t, replay(&s, {text}, context.allocator), Error.NotImplemented)
+		testing.expect(t, sqlite.run(s.data_store, "ROLLBACK"))
 		store.Close(&s)
 	}
 }
@@ -191,7 +212,9 @@ cross_shard_reuse_rolls_back :: proc(t: ^testing.T) {
 	s: library.State
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
+	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 	testing.expect_value(t, replay(&s, {first, last}, context.allocator), Error.BadEvent)
+	testing.expect(t, sqlite.run(s.data_store, "ROLLBACK"))
 	images, rc := store.read_images(s.data_store, alloc)
 	testing.expect(t, rc == sqlite.OK && len(images) == 0)
 }
@@ -207,7 +230,9 @@ identical_tags_on_distinct_items_are_independent :: proc(t: ^testing.T) {
 {"op":"add","id":2,"tags_xor":["cat"]}
 {"op":"patch","id":1,"tags_xor":["cat"]}
 `
+	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 	if !testing.expect(t, replay(&s, {text}, context.allocator) == nil) {return}
+	testing.expect(t, sqlite.run(s.data_store, "COMMIT"))
 	images, rc := store.read_images(s.data_store, alloc)
 	if testing.expect(t, rc == sqlite.OK && len(images) == 2) {
 		testing.expect(t, len(images[0].tags) == 0)
@@ -236,7 +261,9 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 {"op":"patch","id":1,"tags_xor":["cat","dog"]}
 {"op":"regen_thumbnail","id":1,"width":0,"mtime":0}
 `
+	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 	testing.expect(t, replay(&s, {text}, context.allocator) == nil)
+	testing.expect(t, sqlite.run(s.data_store, "COMMIT"))
 	images, rc := store.read_images(s.data_store, alloc)
 	if testing.expect(t, rc == sqlite.OK && len(images) == 1) {
 		testing.expect(t, slice.equal(images[0].tags, []string{"cat"}))

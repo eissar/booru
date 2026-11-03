@@ -210,7 +210,17 @@ benchmark_replay :: proc(t: ^testing.T, flat: bool) {
 				run := cast(^Run)options.user_data
 				text := string(options.input)
 				if run.flat {
-					run.result = replay.replay(run.state, {text}, alloc)
+					if !sqlite.run(run.state.data_store, "BEGIN") {
+						run.result = .DATABASE_ERR
+					} else {
+						run.result = replay.replay(run.state, {text}, alloc)
+						if !sqlite.run(
+							run.state.data_store,
+							run.result == nil ? "COMMIT" : "ROLLBACK",
+						) {
+							run.result = .DATABASE_ERR
+						}
+					}
 				} else {
 					run.result = replay_json(run.state, &text, alloc)
 				}

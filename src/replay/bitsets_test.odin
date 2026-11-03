@@ -52,8 +52,10 @@ membership_grows_across_tags_and_shards_deterministically :: proc(t: ^testing.T)
 		s: library.State
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 		streams := []string{input} if run % 2 == 0 else []string{a, b}
+		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 		result := replay(&s, streams, context.allocator)
 		testing.expect(t, result == nil)
+		testing.expect(t, sqlite.run(s.data_store, result == nil ? "COMMIT" : "ROLLBACK"))
 		images, rc := store.read_images(s.data_store, alloc)
 		if testing.expect(t, rc == sqlite.OK && len(images) == 2) {
 			testing.expect_value(t, images[0].id, 1)

@@ -23,12 +23,13 @@ Error :: enum {
 	DATABASE_ERR,
 }
 
-// Full replay of an ordered slice of event streams.
+// Applies event streams inside the caller's transaction.
 replay :: proc(
 	s: ^library.State,
 	streams: []string,
 	backing_alloc: mem.Allocator,
 	prog_callback: progress.Callback = nil,
+	full_replay := true,
 ) -> Error {
 	// Own decoded strings until replay ends, including tags retained across shards.
 	arena: mem.Dynamic_Arena
@@ -49,8 +50,6 @@ replay :: proc(
 	max_id: int
 	finished: u64
 	db := s.data_store
-	if !sqlite.run(db, "BEGIN") {return .DATABASE_ERR}
-	defer {if sqlite.get_autocommit(db) == 0 {sqlite.run(db, "ROLLBACK")}}
 	tx := sqlite.Tx {
 		db = db,
 	}
@@ -79,24 +78,38 @@ replay :: proc(
 			rc: i32 = sqlite.OK
 			switch op {
 			case "add":
-				if _, seen := seen_ids[item.id]; seen {return .BadEvent}
-				seen_ids[item.id] = true
+				if full_replay {
+					if _, seen := seen_ids[item.id]; seen {return .BadEvent}
+					seen_ids[item.id] = true
+				}
 				max_id = max(max_id, item.id)
 				rc = store.insert_into_items(&tx, item)
 			case "patch":
-				if !seen_ids[item.id] {return .BadEvent}
+				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				rc = store.patch_item(&tx, item)
 			case "delete":
-				if !seen_ids[item.id] {return .BadEvent}
+				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				rc = store.delete_item(&tx, item.id)
-				seen_ids[item.id] = false
+				if full_replay {seen_ids[item.id] = false}
 			case "regen_thumbnail":
-				if !seen_ids[item.id] {return .BadEvent}
+				if full_replay && !seen_ids[item.id] {return .BadEvent}
 			// Derived artifact integrity is outside replay's scope.
 			case:
 				return .BadEvent
 			}
 			if rc != sqlite.OK {return .DATABASE_ERR}
+			if !full_replay {
+				if len(tags) != 0 {
+					if store.toggle_tags(&tx, item.id, tags) != sqlite.OK {
+						return .DATABASE_ERR
+					}
+				}
+				finished += 1
+				if prog_callback != nil {
+					prog_callback({phase = "replay events", finished = finished})
+				}
+				continue // Incremental replay applies tags directly.
+			}
 			for tag in tags {
 				index, known := tag_indexes[tag]
 				if !known {
@@ -139,7 +152,6 @@ replay :: proc(
 			if rc != sqlite.OK {return .DATABASE_ERR}
 		}
 	}
-	if !sqlite.run(db, "COMMIT") {return .DATABASE_ERR}
 	// Historical maximum includes creations subsequently deleted.
 	library.seed_ids_from_library(max_id)
 	return nil
@@ -288,6 +300,9 @@ initiate_replay :: proc(
 			bytes, read_err := os.read_entire_file(path, alloc)
 			if read_err != nil {fmt.panicf("replay: cannot read %s: %v", path, read_err)}
 			streams[i] = string(bytes)
+			for len(streams[i]) > 0 && streams[i][len(streams[i]) - 1] != '\n' {
+				streams[i] = streams[i][:len(streams[i]) - 1]
+			}
 			continue // Full replay reads the entire shard.
 		}
 
@@ -311,7 +326,26 @@ initiate_replay :: proc(
 		os.close(file)
 		streams[i] = string(bytes)
 	}
-	if err := replay(s, streams, alloc, prog_callback); err != nil {fmt.panicf("replay: %v", err)}
+	db := s.data_store
+	if !sqlite.run(db, "BEGIN") {fmt.panicf("replay: begin transaction")}
+	defer {if sqlite.get_autocommit(db) == 0 {sqlite.run(db, "ROLLBACK")}}
+	tx := sqlite.Tx {
+		db = db,
+	}
+	if err := replay(s, streams, alloc, prog_callback, full_replay); err != nil {
+		fmt.panicf("replay: %v", err)
+	}
+	for path, i in paths {
+		cursor := upper
+		if full_replay {
+			copy(cursor.shard[:], path[len(path) - len(cursor.shard):])
+			cursor.offset = i64(len(streams[i]))
+		}
+		if rc := elog.save_cursor(&tx, &cursor); rc != sqlite.OK {
+			fmt.panicf("replay: save cursor: %d", rc)
+		}
+	}
+	if !sqlite.run(db, "COMMIT") {fmt.panicf("replay: commit transaction")}
 
 	if rc := store.create_indexes(s.data_store); rc != sqlite.OK {
 		fmt.panicf("replay: create indexes: %d", rc)
