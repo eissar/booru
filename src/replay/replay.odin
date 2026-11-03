@@ -244,7 +244,15 @@ replay_flat_string :: proc(token: elog.Token, alloc: mem.Allocator) -> string {
 	return value
 }
 
-initiate_replay :: proc(s: ^library.State, prog_callback: progress.Callback = nil) {
+initiate_replay :: proc(
+	s: ^library.State,
+	prog_callback: progress.Callback = nil,
+	full_replay := true,
+) {
+	upper: elog.Cursor
+	if !full_replay {
+		upper = s.event_log.cursor^ // capture by value
+	}
 	if prog_callback != nil {prog_callback({phase = "replay files"})}
 	alloc := context.temp_allocator
 	events_dir := fmt.tprintf("%s/events", s.library_path)
@@ -264,6 +272,7 @@ initiate_replay :: proc(s: ^library.State, prog_callback: progress.Callback = ni
 		if _, err := os.walker_error(&w);
 		   err != nil {fmt.panicf("replay: cannot walk %s: %v", events_dir, err)}
 		if entry.type == .Directory || !strings.has_suffix(entry.name, ".ndjson") {continue}
+		if !full_replay && entry.name != string(upper.shard[:]) {continue}
 		append(&paths, strings.clone(entry.fullpath, alloc))
 	}
 	if _, err := os.walker_error(&w);
@@ -275,8 +284,31 @@ initiate_replay :: proc(s: ^library.State, prog_callback: progress.Callback = ni
 		delete(streams, alloc)
 	}
 	for path, i in paths {
-		bytes, read_err := os.read_entire_file(path, alloc)
-		if read_err != nil {fmt.panicf("replay: cannot read %s: %v", path, read_err)}
+		if full_replay {
+			bytes, read_err := os.read_entire_file(path, alloc)
+			if read_err != nil {fmt.panicf("replay: cannot read %s: %v", path, read_err)}
+			streams[i] = string(bytes)
+			continue // Full replay reads the entire shard.
+		}
+
+		cursor, rc := elog.load_cursor(s.event_log, string(upper.shard[:]))
+		if rc != sqlite.OK {fmt.panicf("replay: load cursor: %d", rc)}
+		if cursor.offset < 0 || cursor.offset > upper.offset {
+			fmt.panicf("replay: cursor outside append boundary")
+		}
+		file, open_err := os.open(path, {.Read})
+		if open_err != nil {fmt.panicf("replay: cannot open %s: %v", path, open_err)}
+		bytes := make([]u8, int(upper.offset - cursor.offset), alloc)
+		read := 0
+		for read < len(bytes) {
+			n, read_err := os.read_at(file, bytes[read:], cursor.offset + i64(read))
+			read += n
+			if read == len(bytes) {break}
+			if read_err != nil || n == 0 {
+				fmt.panicf("replay: cannot read %s: %v", path, read_err)
+			}
+		}
+		os.close(file)
 		streams[i] = string(bytes)
 	}
 	if err := replay(s, streams, alloc, prog_callback); err != nil {fmt.panicf("replay: %v", err)}
