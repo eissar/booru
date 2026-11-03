@@ -1,0 +1,43 @@
+# ast-grep rules for test/tools/mutate.pl (Odin, via tree-sitter-odin).
+# `body` finds the procs to mutate; the others find mutation sites, which
+# mutate.pl keeps only inside a body. $L/$A/$C locate the operator or
+# condition by byte offset.
+id: body
+language: odin
+rule:
+  kind: block
+  inside:
+    kind: procedure
+    inside:
+      kind: procedure_declaration
+      follows: {kind: comment, regex: '^//\s*mull-on\s*$'}
+---
+id: binary
+language: odin
+rule:
+  kind: binary_expression
+  has: {field: left, pattern: $L}
+---
+id: unary
+language: odin
+rule:
+  kind: unary_expression
+  regex: '^[!-]'
+  has: {field: argument, pattern: $A}
+---
+id: condition
+language: odin
+rule:
+  kind: if_statement
+  has: {field: condition, pattern: $C}
+---
+# Statements whose removal can still compile: calls and assignments to
+# existing variables (not `:=` declarations).
+id: statement
+language: odin
+rule:
+  inside: {kind: block}
+  any:
+    - kind: call_expression
+    - kind: update_statement
+    - {kind: assignment_statement, not: {regex: ':'}}

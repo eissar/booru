@@ -11,46 +11,51 @@ noticed. It exits non-zero if any mutant survives.
 
 ## Tools
 
-[universalmutator](https://github.com/agroce/universalmutator) generates the
-mutants. Install it into `/tmp`:
+- [ast-grep](https://ast-grep.github.io/) finds the marked bodies and the
+  mutation sites. Install it into `/tmp` (or put `ast-grep` on `PATH`, or
+  set `AST_GREP`):
 
-    python3 -m venv /tmp/umvenv && /tmp/umvenv/bin/pip install universalmutator
+      python3 -m venv /tmp/sgvenv && /tmp/sgvenv/bin/pip install ast-grep-cli
 
-Set `UNIVERSALMUTATOR` to use another `mutate` binary. The script also needs
-`rsync`, `timeout`, and `perl`.
+- The [tree-sitter-odin](https://github.com/tree-sitter-grammars/tree-sitter-odin)
+  grammar, at a pinned commit, is cloned and compiled into
+  `.test-data/odin.so` (gitignored) on the first run. That needs `git` and
+  `cc`. ast-grep loads it as a custom language with
+  `--custom-languages allow`.
+
+The script also needs `rsync`, `timeout`, and `perl`.
 
 ## How it works
 
 1. Copy the tracked tree to `/tmp/booru-mutate-*`; nothing in the worktree is
    written.
-2. Find each marked proc's body by text, relying on odinfmt's layout (the
-   pre-commit hook enforces it): after `// mull-on` and any `@(...)` lines
-   comes `name :: proc`, the body starts after the signature line ending in
-   `{`, and ends before the next `}` in column 0.
-3. Run universalmutator on the body lines with its `universal.rules`
-   (operators, comparisons, constants) plus `test/tools/odin.rules` (delete a
-   statement, negate or pin an `if`). Keep mutants that change one body line;
-   drop duplicates and ones that delete the final `return`.
+2. `ast-grep scan` with `test/tools/mutate-sites.yml` reports, with byte
+   offsets, the body block of every proc declaration that follows a
+   `// mull-on` comment, and the mutation sites in `src/`. Sites outside a
+   marked body are ignored.
+3. Each site gives mutants, as byte-range edits of the body:
+
+   | Site | Mutants |
+   |---|---|
+   | binary operator | `==` → `!=`/`<=`/`>=`, `<` → `<=`/`>=`, `+` ↔ `-`, `*` ↔ `/`, `%` → `/`, `&&` ↔ `\|\|`, `&` ↔ `\|`, `<<` ↔ `>>`, ... |
+   | `!x`, `-x` | `x` |
+   | `if` condition | `true`, `false` |
+   | call statement, `x = ...`, `x += ...` | `{}` (deleted) |
+
 4. Rewrite each marked proc so its body is one branch per mutant:
 
        validate_tags_xor :: proc(tags: []string) -> string {
-       if __mut == 1 {
-       <body with mutant 1's line>
-       } else if __mut == 2 {
-       ...
-       } else {
-       <original body>
-       }
+       if __mut == 1 {<body with mutant 1>} else if __mut == 2 {...
+       } else {<original body>}
        }
 
    A generated `zz_mutate_switch.odin` in the package sets `__mut` from
    `$MUTANT` at startup. Every branch is a full copy of the body, so locals,
    `return`, named results and `defer` behave as in the original.
-5. Build `test/` the way `task test:all:build` does. Mutants that do not
-   compile (regex mutations often don't) are dropped by mapping the
-   compiler's error lines back to their branch, and the build is retried.
-   Syntax errors stop the parser, so this can take one round per bad mutant.
-   `MUTATE_DEBUG=1` prints each round's errors.
+5. Build `test/` the way `task test:all:build` does. A mutant that does not
+   compile is dropped by mapping the compiler's error lines back to its
+   branch, and the build is retried (`MUTATE_DEBUG=1` prints each round's
+   errors). Because sites come from the syntax tree, this is rare.
 6. Run the suite with `MUTANT=0` (must pass), then once per mutant with a
    timeout of ten times the baseline. A failing or timed-out run kills the
    mutant.
@@ -63,26 +68,24 @@ that no test calls has all its mutants survive.
 
 ## Example: `validate_tags_xor`
 
-`src/event_log/event_log.odin` marks `validate_tags_xor`. universalmutator
-proposes 32 mutants; 6 do not compile, and of the other 26, `task mutate`
-reports:
+`src/event_log/event_log.odin` marks `validate_tags_xor`. ast-grep finds 13
+mutants, all of which compile; `task mutate` reports:
 
-    src/event_log/event_log.odin:148: SURVIVED: if len(tag) == 0 {return "event tag must not be empty"}  =>  if len(tag) <= 0 {return "event tag must not be empty"}
-    mutate: 25/26 killed (96%)
+    src/event_log/event_log.odin:148:15: SURVIVED: `==` => `<=`
+    mutate: 12/13 killed (92%)
 
-The survivor is an equivalent mutant: `len` is never negative, so `<= 0`
-and `== 0` behave the same and no test can tell them apart. The run takes
-about 5 s.
+That is `len(tag) == 0` → `len(tag) <= 0`, an equivalent mutant: `len` is
+never negative, so no test can tell them apart. The run takes about 6 s.
 
 ## Limitations
 
 - **Equivalent mutants**, like the one above, survive and have to be judged by
   hand.
-- **One-line mutants only.** universalmutator's rules work on single lines;
-  there is no "replace the whole body" mutant.
+- **No whole-body mutant** (e.g. "return the zero value"); the catalogue is
+  operators, conditions and statement deletion.
 - **Code size** grows with mutants × body length, since each mutant copies the
   whole body. Fine for small procs.
-- **Layout-dependent.** Marked procs must be odinfmt-formatted top-level procs
-  with a multi-line body.
+- **Grammar drift.** tree-sitter-odin is a community grammar; Odin syntax it
+  does not know yet can hide sites or bodies.
 - **Sequential runs.** Mutants run one at a time; each is a full `test:all`
   run (about 0.1 s here).

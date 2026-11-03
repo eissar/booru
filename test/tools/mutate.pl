@@ -5,140 +5,161 @@
 #
 # MUTATE_DEBUG=1 prints the compiler output of each round.
 #
-# universalmutator generates one-line source mutants of each marked proc body.
-# Instead of rebuilding per mutant, every mutant becomes a branch of the body:
+# ast-grep (with the tree-sitter-odin grammar) finds each marked proc's body
+# and the operators, conditions and statements in it (mutate-sites.yml). Each
+# mutant is a byte-range edit of a body. Instead of rebuilding per mutant,
+# every mutant becomes a branch of the body:
 #
 #     name :: proc(...) -> ... {
-#     if __mut == 1 {
-#         <body with mutant 1's line>
-#     } else if __mut == 2 {
-#         ...
-#     } else {
-#         <original body>
-#     }
+#     if __mut == 1 { <body with mutant 1> } else if __mut == 2 { ... }
+#     else { <original body> }
 #     }
 #
 # and a generated file per package sets __mut from $MUTANT at startup. The
 # suite is built once and run once per mutant. Mutants that do not compile are
-# dropped using the compiler's error lines. Only text is rewritten: the body
-# is found by odinfmt's layout (signature ends in `{`, the proc ends at the
-# next `}` in column 0), so the tree must be odinfmt-clean (the pre-commit
-# hook checks this). The worktree is never written.
+# dropped using the compiler's error lines. The worktree is never written.
 use v5.36;
 use Cwd qw(abs_path);
 use File::Basename qw(dirname);
-use File::Path qw(make_path);
 use File::Temp qw(tempdir);
+use JSON::PP qw(decode_json);
 
-my $MUTATE = $ENV{UNIVERSALMUTATOR} // '/tmp/umvenv/bin/mutate';
-my @BUILD  = ('odin', 'build', 'test/', '-build-mode:test', '-all-packages', '-debug');
+my $GRAMMAR_REPO = 'https://github.com/tree-sitter-grammars/tree-sitter-odin';
+my $GRAMMAR_REV  = 'd2ca8efb4487e156a60d5bd6db2598b872629403';
+my @BUILD = ('odin', 'build', 'test/', '-build-mode:test', '-all-packages', '-debug');
 my $verbose = @ARGV && $ARGV[0] eq '-v';
 
+# Operator swaps, roughly cargo-mutants' set.
+my %SWAP = (
+	'==' => ['!=', '<=', '>='], '!=' => ['=='],
+	'<'  => ['<=', '>='],       '<=' => ['<', '>'],
+	'>'  => ['>=', '<='],       '>=' => ['>', '<'],
+	'+'  => ['-'], '-'  => ['+'], '*' => ['/'], '/' => ['*'], '%' => ['/'],
+	'&&' => ['||'], '||' => ['&&'], '&' => ['|'], '|' => ['&'],
+	'<<' => ['>>'], '>>' => ['<<'],
+);
+
 sub slurp ($path) {
-	open my $fh, '<', $path or die "mutate: $path: $!\n";
-	return [<$fh>];
+	open my $fh, '<:raw', $path or die "mutate: $path: $!\n";
+	local $/;
+	return <$fh>;
 }
 
-sub spew ($path, @lines) {
-	open my $fh, '>', $path or die "mutate: $path: $!\n";
-	print $fh @lines;
+sub spew ($path, $text) {
+	open my $fh, '>:raw', $path or die "mutate: $path: $!\n";
+	print $fh $text;
 }
 
-die "mutate: missing $MUTATE; see test/tools/MUTATION.md\n" unless -x $MUTATE;
 chdir abs_path(dirname(__FILE__) . '/../..') or die "mutate: chdir: $!\n";
-my $rules = abs_path('test/tools/odin.rules');
-my $work  = tempdir('booru-mutate-XXXXXXXX', TMPDIR => 1);
-my $tree  = "$work/tree";
+my $root = abs_path('.');
+my ($sg) = grep { -x } $ENV{AST_GREP} // (), '/tmp/sgvenv/bin/ast-grep', map {"$_/ast-grep"} split /:/, $ENV{PATH};
+die "mutate: ast-grep not found; see test/tools/MUTATION.md\n" unless $sg;
+
+# The Odin grammar, built once into .test-data/ (gitignored).
+my $grammar = "$root/.test-data/odin.so";
+unless (-e $grammar) {
+	my $src = "$root/.test-data/tree-sitter-odin";
+	say STDERR "mutate: building $grammar";
+	system("rm -rf '$src' && git init -q '$src' && git -C '$src' fetch -q --depth 1 '$GRAMMAR_REPO' $GRAMMAR_REV"
+			. " && git -C '$src' checkout -q FETCH_HEAD"
+			. " && cc -shared -fPIC -O2 -I'$src/src' '$src/src/parser.c' '$src/src/scanner.c' -o '$grammar'") == 0
+		or die "mutate: could not build the tree-sitter-odin grammar\n";
+}
+
+my $work = tempdir('booru-mutate-XXXXXXXX', TMPDIR => 1);
+my $tree = "$work/tree";
 say STDERR "mutate: scratch dir $work";
 system("git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=- . '$tree'") == 0
 	or die "mutate: copy failed\n";
-my @sources = split /\0/, `git ls-files -co --exclude-standard -z 'src/*.odin'`;
+spew("$work/sgconfig.yml", "customLanguages:\n  odin:\n    libraryPath: $grammar\n    extensions: [odin]\n    expandoChar: _\n");
 chdir $tree or die "mutate: chdir: $!\n";
 
-# 1. Marked procs: `// mull-on`, optional attribute lines, `name :: proc`,
-#    body from after the line ending in `{` to before the next `}` line.
-my @procs;    # { file, name, open, close } with 0-based line indexes
-my %src;      # file -> [lines]
-for my $file (@sources) {
-	my $lines = $src{$file} = slurp($file);
-	for my $i (grep { $lines->[$_] =~ m{^//\s*mull-on\s*$} } 0 .. $#$lines) {
-		my $sig = $i + 1;
-		$sig++ while $sig < @$lines && $lines->[$sig] =~ /^@/;
-		my ($name) = ($lines->[$sig] // '') =~ /^(\w+) :: proc\b/
-			or die "$file:" . ($i + 1) . ": `// mull-on` must be followed by a top-level proc\n";
-		my $open = $sig;
-		$open++ until $open > $#$lines || $lines->[$open] =~ /\{\s*$/ && ($open == $sig || $lines->[$open] =~ /^\)/);
-		my $close = $open + 1;
-		$close++ until $close > $#$lines || $lines->[$close] =~ /^\}\s*$/;
-		die "$file:" . ($sig + 1) . ": cannot find the body of $name (run odinfmt)\n" if $close > $#$lines;
-		my $results = grep {/->/} @$lines[ $sig .. $open ];
-		push @procs, { file => $file, name => $name, open => $open, close => $close, results => $results };
+# 1. Bodies and sites. Byte offsets; a body is the text inside its braces.
+my (%src, @bodies, %sites);
+open my $scan, '-|', $sg, 'scan', '--config', "$work/sgconfig.yml", '--custom-languages', 'allow',
+	'--rule', "$root/test/tools/mutate-sites.yml", '--json=stream', 'src'
+	or die "mutate: ast-grep: $!\n";
+while (<$scan>) {
+	my $m = decode_json($_);
+	my ($file, $rule, $r) = ($m->{file}, $m->{ruleId}, $m->{range}{byteOffset});
+	$src{$file} //= slurp($file);
+	if ($rule eq 'body') {
+		my @names = substr($src{$file}, 0, $r->{start}) =~ /^(\w+) :: proc\b/mg;
+		push @bodies, { file => $file, name => $names[-1] // '?', start => $r->{start} + 1, end => $r->{end} - 1 };
+		next;
 	}
+	my $var = $m->{metaVariables}{single};
+	push @{ $sites{$file} }, { rule => $rule, start => $r->{start}, end => $r->{end}, text => $m->{text},
+		map { $_ => $var->{$_}{range}{byteOffset} } keys %$var };
 }
-die "mutate: no // mull-on markers under src/\n" unless @procs;
+close $scan or die "mutate: ast-grep scan failed\n";
+die "mutate: no // mull-on procs under src/\n" unless @bodies;
 
-# 2. One-line mutants of the bodies, deduplicated.
-my %mutants;    # id -> { proc, line (0-based), text }
+# 2. Mutants: [start, end, replacement] edits inside a body.
+my %mutants;    # id -> { body, start, end, new }
 my $next_id = 1;
-for my $p (@procs) {
-	my $dir = "$work/mutants/" . ($p->{file} =~ s{/}{_}gr) . "-$p->{name}";
-	make_path($dir);
-	spew("$dir/lines", map { $_ + 1 . "\n" } $p->{open} + 1 .. $p->{close} - 1);
-	system("'$MUTATE' '$p->{file}' none '$rules' --noCheck --lines '$dir/lines' --mutantDir '$dir' >/dev/null 2>&1") == 0
-		or die "mutate: universalmutator failed on $p->{file}\n";
-	my $orig = $src{ $p->{file} };
-	my ($last_return) = grep { $orig->[$_] =~ /\S/ } reverse $p->{open} + 1 .. $p->{close} - 1;
-	$last_return = -1 unless $orig->[$last_return] =~ /^\s*return\b/;
+for my $body (@bodies) {
+	my $text = $src{ $body->{file} };
 	my %seen;
-	for my $m (sort glob "$dir/*.mutant.*") {
-		my $lines = slurp($m);
-		next unless @$lines == @$orig;
-		my @diff = grep { $lines->[$_] ne $orig->[$_] } 0 .. $#$orig;
-		next unless @diff == 1 && $diff[0] > $p->{open} && $diff[0] < $p->{close};
-		next if $seen{"$diff[0] $lines->[$diff[0]]"}++;
-		# Deleting the final return would not compile in the original either.
-		next if $p->{results} && $diff[0] == $last_return && $lines->[ $diff[0] ] =~ m{^\s*/\*};
-		$mutants{ $next_id++ } = { proc => $p, line => $diff[0], text => $lines->[ $diff[0] ] };
+	my $add = sub ($start, $end, $new) {
+		return if $seen{"$start $end $new"}++;
+		$mutants{ $next_id++ } = { body => $body, start => $start, end => $end, new => $new };
+	};
+	for my $s (@{ $sites{ $body->{file} } // [] }) {
+		next unless $s->{start} >= $body->{start} && $s->{end} <= $body->{end};
+		if ($s->{rule} eq 'binary') {
+			pos($text) = $s->{L}{end};
+			$text =~ m{\G\s*([-+*/%&|~<>=!]+)}g or next;
+			my $op_start = pos($text) - length $1;
+			$add->($op_start, pos($text), $_) for @{ $SWAP{$1} // [] };
+		} elsif ($s->{rule} eq 'unary') {
+			$add->($s->{start}, $s->{A}{start}, '');    # drop `!` / `-`
+		} elsif ($s->{rule} eq 'condition') {
+			$add->($s->{C}{start}, $s->{C}{end}, $_) for 'true', 'false';
+		} elsif ($s->{rule} eq 'statement') {
+			$add->($s->{start}, $s->{end}, '{}');
+		}
 	}
 }
-say STDERR 'mutate: ', scalar(keys %mutants), ' mutants in ', join(', ', map { $_->{name} } @procs);
+say STDERR 'mutate: ', scalar(keys %mutants), ' mutants in ', join(', ', map { $_->{name} } @bodies);
 
 # 3. Write the switched bodies; build; drop mutants the compiler rejects.
 sub write_tree {
 	my %where;    # "file line" (1-based, rewritten file) -> mutant id
 	my %by_file;
-	push @{ $by_file{ $_->{file} } }, $_ for @procs;
+	push @{ $by_file{ $_->{file} } }, $_ for @bodies;
 	for my $file (keys %by_file) {
-		my $lines = $src{$file};
-		my @out;
-		my $at = 0;
-		for my $p (sort { $a->{open} <=> $b->{open} } @{ $by_file{$file} }) {
-			push @out, @$lines[ $at .. $p->{open} ];
-			my @body = @$lines[ $p->{open} + 1 .. $p->{close} - 1 ];
+		my $text = $src{$file};
+		my ($out, $at) = ('', 0);
+		my $mark = sub ($id, $added) {    # map every line of the text just added
+			my $line = ($out =~ tr/\n//) + 1;
+			my $from = $line - ($added =~ tr/\n//);
+			$where{"$file $_"} = $id for $from .. $line;
+		};
+		for my $body_at (sort { $a->{start} <=> $b->{start} } @{ $by_file{$file} }) {
+			$out .= substr($text, $at, $body_at->{start} - $at);
+			my $body = substr($text, $body_at->{start}, $body_at->{end} - $body_at->{start});
 			my $prev;
-			for my $id (sort { $a <=> $b } grep { $mutants{$_}{proc} == $p } keys %mutants) {
-				push @out, ($prev ? '} else ' : '') . "if __mut == $id {\n";
-				# A mutant that unbalances the braces is reported at the next branch.
-				$where{ "$file " . scalar @out } = $prev if $prev;
-				$prev = $id;
+			for my $id (sort { $a <=> $b } grep { $mutants{$_}{body} == $body_at } keys %mutants) {
 				my $m = $mutants{$id};
-				for my $i (0 .. $#body) {
-					my $text = $p->{open} + 1 + $i == $m->{line} ? $m->{text} : $body[$i];
-					push @out, $text;
-					$where{ "$file " . scalar @out } = $id;
-				}
+				my $mutated = $body;
+				substr($mutated, $m->{start} - $body_at->{start}, $m->{end} - $m->{start}) = $m->{new};
+				my $branch = ($prev ? '} else ' : "\n") . "if __mut == $id {$mutated";
+				$out .= $branch;
+				$mark->($id, $branch);
+				$prev = $id;
 			}
 			if ($prev) {
-				push @out, "} else {\n";
-				$where{ "$file " . scalar @out } = $prev;
+				$out .= "} else {";
+				$mark->($prev, '');    # a brace a mutant broke shows up here
 			}
-			push @out, @body;
-			push @out, "}\n" if $prev;
-			$at = $p->{close};
+			$out .= $body;
+			$out .= "}\n" if $prev;
+			$at = $body_at->{end};
 		}
-		push @out, @$lines[ $at .. $#$lines ];
-		spew($file, @out);
-		my ($pkg) = map { /^package (\w+)/ ? $1 : () } @$lines;
+		$out .= substr($text, $at);
+		spew($file, $out);
+		my ($pkg) = $text =~ /^package (\w+)/m;
 		spew(dirname($file) . '/zz_mutate_switch.odin', <<~"ODIN");
 			package $pkg
 
@@ -165,16 +186,15 @@ for (my $round = 1;; $round++) {
 	my $where = write_tree();
 	my $out = `@BUILD -error-pos-style:unix -max-error-count:10000 -out:'$exe' 2>&1`;
 	last if $? == 0;
+	print STDERR $out if $ENV{MUTATE_DEBUG};
 	my %bad;
 	while ($out =~ m{^(\S+?):(\d+):\d+:\s*(?:Syntax\s+)?Error}mg) {
 		my ($path, $line) = ($1, $2);
 		my $file = $path =~ s{^\Q$tree\E/}{}r;
-		my $id = $where->{"$file $line"};
-		die "$out\nmutate: build error outside any mutant ($file:$line)\n" unless $id;
+		my $id = $where->{"$file $line"} or die "$out\nmutate: build error outside any mutant ($file:$line)\n";
 		$bad{$id} = 1;
 	}
 	die "$out\nmutate: build failed\n" unless %bad;
-	print STDERR $out if $ENV{MUTATE_DEBUG};
 	delete @mutants{ keys %bad };
 	say STDERR "mutate: round $round dropped ", scalar(keys %bad), ' mutants that do not compile';
 	die "mutate: every mutant failed to compile\n" unless %mutants;
@@ -190,16 +210,19 @@ for my $id (sort { $a <=> $b } keys %mutants) {
 	push @{ $rc == 0 ? \@survived : \@killed }, $id;
 }
 
-# 5. Report against worktree paths.
+# 5. Report: file:line:col, the original text and its replacement.
 sub show ($status, $id) {
 	my $m    = $mutants{$id};
-	my $orig = $src{ $m->{proc}{file} }[ $m->{line} ] =~ s/^\s+|\s+$//gr;
-	my $new  = $m->{text} =~ s/^\s+|\s+$//gr;
-	say "$m->{proc}{file}:", $m->{line} + 1, ": $status: $orig  =>  $new";
+	my $text = $src{ $m->{body}{file} };
+	my $before = substr($text, 0, $m->{start});
+	my $line = ($before =~ tr/\n//) + 1;
+	my $col  = $m->{start} - (rindex($before, "\n") + 1) + 1;
+	my $orig = substr($text, $m->{start}, $m->{end} - $m->{start}) =~ s/\s+/ /gr;
+	say "$m->{body}{file}:$line:$col: $status: `$orig` => `$m->{new}`";
 }
-my $by_line = sub { $mutants{$a}{proc}{file} cmp $mutants{$b}{proc}{file} || $mutants{$a}{line} <=> $mutants{$b}{line} || $a <=> $b };
-show('killed', $_) for $verbose ? sort $by_line @killed : ();
-show('SURVIVED', $_) for sort $by_line @survived;
+my $by_pos = sub { $mutants{$a}{body}{file} cmp $mutants{$b}{body}{file} || $mutants{$a}{start} <=> $mutants{$b}{start} || $a <=> $b };
+show('killed', $_) for $verbose ? sort $by_pos @killed : ();
+show('SURVIVED', $_) for sort $by_pos @survived;
 my $total = @killed + @survived;
 printf "mutate: %d/%d killed (%.0f%%)\n", scalar @killed, $total, 100 * @killed / $total;
 exit(@survived ? 1 : 0);
