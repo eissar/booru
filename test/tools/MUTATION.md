@@ -4,7 +4,7 @@ Put `// mull-on` on the line above a top-level proc and run:
 
     task mutate -- src/cli
 
-`test/tools/mutate.py` mutates only the marked procs, runs the package's
+`test/tools/mutate.pl` mutates only the marked procs, runs the package's
 `odin test` binary once per mutant, and prints the mutants the tests did not
 catch, using worktree paths.
 
@@ -17,7 +17,7 @@ Mull 0.37 for LLVM 21 is the version that matches Odin's backend
     /tmp/mull-deb13/usr/bin/mull-runner         # runner
 
 Set `MULL_PLUGIN` / `MULL_RUNNER` to use other paths. The script also needs
-`clang` (21), `rsync`, and `python3`.
+`clang` (21), `rsync`, and `perl`.
 
 ## How it works
 

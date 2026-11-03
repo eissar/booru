@@ -137,7 +137,7 @@ tasks:
   mutate:
     desc: 'Mutation-test the // mull-on decls with mull (e.g. task mutate -- src/cli); see test/tools/MUTATION.md'
     cmds:
-      - python3 test/tools/mutate.py {{.CLI_ARGS}}
+      - perl test/tools/mutate.pl {{.CLI_ARGS}}
 
   fmt:
     desc: 'Format Odin sources in place (pass a path with --, e.g. task fmt -- src/http)'
