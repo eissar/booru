@@ -5,7 +5,7 @@ Put `// mull-on` on the line above a top-level proc and run:
     task mutate          # survivors and score
     task mutate -- -v    # also list killed mutants
 
-`test/tools/mutate.pl` makes small source edits ("mutants") to the marked
+`test/tools/mutate/` (an Odin program) makes small source edits ("mutants") to the marked
 procs, runs the `test:all` suite once per mutant, and prints the edits no test
 noticed. It exits non-zero if any mutant survives.
 
@@ -23,7 +23,7 @@ noticed. It exits non-zero if any mutant survives.
   `cc`. ast-grep loads it as a custom language with
   `--custom-languages allow`.
 
-The script also needs `rsync`, `timeout`, and `perl`.
+The tool also needs `rsync` and `git`; per-mutant timeouts use `core:os` process waits.
 
 ## How it works
 
