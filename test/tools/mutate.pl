@@ -1,158 +1,205 @@
 #!/usr/bin/env perl
-# Mutation-test the `// mull-on` decls against the test:all suite with mull.
+# Mutation-test the procs marked `// mull-on` against the test:all suite.
 #
-#     test/tools/mutate.pl [extra mull-runner args]
+#     test/tools/mutate.pl [-v]        # -v also lists killed mutants
 #
-# Odin has no clang driver, so mull's IR plugin is applied by hand:
+# MUTATE_DEBUG=1 prints the compiler output of each round.
 #
-#   1. copy the tracked tree to a scratch dir and run mutate_annotate.odin on it,
-#      which adds the mull-off comments that close each `// mull-on` region;
-#   2. build test/ the way `task test:all:build` does, once with
-#      -show-system-calls to learn the link line, once as LLVM IR (one .ll
-#      per module);
-#   3. drop the debug location from IR operators whose source line has no
-#      operator that lowers to them (mull skips instructions without one), then
-#      compile every .ll with clang -fpass-plugin=mull-ir-frontend;
-#   4. link with the captured flags and hand the binary to mull-runner.
+# universalmutator generates one-line source mutants of each marked proc body.
+# Instead of rebuilding per mutant, every mutant becomes a branch of the body:
 #
-# The worktree is never written. Tools default to the /tmp install described
-# in test/tools/MUTATION.md; override with MULL_PLUGIN / MULL_RUNNER.
+#     name :: proc(...) -> ... {
+#     if __mut == 1 {
+#         <body with mutant 1's line>
+#     } else if __mut == 2 {
+#         ...
+#     } else {
+#         <original body>
+#     }
+#     }
+#
+# and a generated file per package sets __mut from $MUTANT at startup. The
+# suite is built once and run once per mutant. Mutants that do not compile are
+# dropped using the compiler's error lines. Only text is rewritten: the body
+# is found by odinfmt's layout (signature ends in `{`, the proc ends at the
+# next `}` in column 0), so the tree must be odinfmt-clean (the pre-commit
+# hook checks this). The worktree is never written.
 use v5.36;
 use Cwd qw(abs_path);
 use File::Basename qw(dirname);
+use File::Path qw(make_path);
 use File::Temp qw(tempdir);
-use Text::ParseWords qw(shellwords);
 
-my $PLUGIN = $ENV{MULL_PLUGIN} // '/tmp/mull-pkg/usr/lib/mull-ir-frontend-21';
-my $RUNNER = $ENV{MULL_RUNNER} // '/tmp/mull-deb13/usr/bin/mull-runner';
+my $MUTATE = $ENV{UNIVERSALMUTATOR} // '/tmp/umvenv/bin/mutate';
+my @BUILD  = ('odin', 'build', 'test/', '-build-mode:test', '-all-packages', '-debug');
+my $verbose = @ARGV && $ARGV[0] eq '-v';
 
-# Output of a command run without a shell; stderr passes through. On failure
-# the output is shown, since it may hold the error.
-sub capture (@cmd) {
-	open my $fh, '-|', @cmd or die "mutate: $cmd[0]: $!\n";
-	local $/;
-	my $out = <$fh> // '';
-	close $fh or die "$out\nmutate: " . label(@cmd) . " failed\n";
-	return $out;
+sub slurp ($path) {
+	open my $fh, '<', $path or die "mutate: $path: $!\n";
+	return [<$fh>];
 }
 
-sub sys (@cmd) { system(@cmd) == 0 or die "mutate: " . label(@cmd) . " failed\n" }
+sub spew ($path, @lines) {
+	open my $fh, '>', $path or die "mutate: $path: $!\n";
+	print $fh @lines;
+}
 
-# `sh -c SCRIPT NAME ...` is labelled by NAME.
-sub label (@cmd) { ($cmd[0] eq "sh" ? $cmd[3] : $cmd[0]) =~ s/ .*//r }
-
-my @runner_args = @ARGV;
-my @TEST_ALL     = ('test/', '-build-mode:test', '-all-packages', '-debug');
--e or die "mutate: missing $_; see test/tools/MUTATION.md\n" for $PLUGIN, $RUNNER;
-
+die "mutate: missing $MUTATE; see test/tools/MUTATION.md\n" unless -x $MUTATE;
 chdir abs_path(dirname(__FILE__) . '/../..') or die "mutate: chdir: $!\n";
-my $work = tempdir('booru-mutate-XXXXXXXX', TMPDIR => 1);
-my $tree = "$work/tree";
+my $rules = abs_path('test/tools/odin.rules');
+my $work  = tempdir('booru-mutate-XXXXXXXX', TMPDIR => 1);
+my $tree  = "$work/tree";
 say STDERR "mutate: scratch dir $work";
-
-# 1. Scratch copy (tracked + untracked-but-not-ignored files), then annotate.
-sys("git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=- . '$tree'");
-my @odin = map {"$tree/$_"} split /\0/, capture(qw(git ls-files -co --exclude-standard -z src/*.odin));
-my @annotated = split ' ', capture('odin', 'run', 'test/tools/mutate_annotate.odin', '-file',
-	"-out:$work/annotate", '--', "$work/table", @odin);
-die "mutate: no // mull-on markers under src/\n" unless @annotated;
-say STDERR 'mutate: annotated ', join ' ', map { s{^\Q$tree\E/}{}r } @annotated;
-
+system("git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=- . '$tree'") == 0
+	or die "mutate: copy failed\n";
+my @sources = split /\0/, `git ls-files -co --exclude-standard -z 'src/*.odin'`;
 chdir $tree or die "mutate: chdir: $!\n";
 
-# 2. Link line from a normal test build, minus odin's own objects and -o;
-#    then one .ll per module.
-my $calls = capture('sh', '-c', 'exec "$@" 2>&1', 'odin',
-	'odin', 'build', @TEST_ALL, '-show-system-calls', "-out:$work/test");
-my ($link) = $calls =~ m{^\s*(clang .*-o "\Q$work\E/test".*)$}m
-	or die "mutate: no link line in odin -show-system-calls output\n";
-my (undef, @words) = shellwords($link);
-my @link_flags;
-while (defined(my $w = shift @words)) {
-	if ($w eq '-o') { shift @words; next }
-	push @link_flags, $w unless $w =~ m{/test-.*\.o$};
+# 1. Marked procs: `// mull-on`, optional attribute lines, `name :: proc`,
+#    body from after the line ending in `{` to before the next `}` line.
+my @procs;    # { file, name, open, close } with 0-based line indexes
+my %src;      # file -> [lines]
+for my $file (@sources) {
+	my $lines = $src{$file} = slurp($file);
+	for my $i (grep { $lines->[$_] =~ m{^//\s*mull-on\s*$} } 0 .. $#$lines) {
+		my $sig = $i + 1;
+		$sig++ while $sig < @$lines && $lines->[$sig] =~ /^@/;
+		my ($name) = ($lines->[$sig] // '') =~ /^(\w+) :: proc\b/
+			or die "$file:" . ($i + 1) . ": `// mull-on` must be followed by a top-level proc\n";
+		my $open = $sig;
+		$open++ until $open > $#$lines || $lines->[$open] =~ /\{\s*$/ && ($open == $sig || $lines->[$open] =~ /^\)/);
+		my $close = $open + 1;
+		$close++ until $close > $#$lines || $lines->[$close] =~ /^\}\s*$/;
+		die "$file:" . ($sig + 1) . ": cannot find the body of $name (run odinfmt)\n" if $close > $#$lines;
+		my $results = grep {/->/} @$lines[ $sig .. $open ];
+		push @procs, { file => $file, name => $name, open => $open, close => $close, results => $results };
+	}
 }
-mkdir "$work/ir";
-sys('odin', 'test', grep({ $_ ne '-build-mode:test' } @TEST_ALL), '-build-mode:llvm-ir', "-out:$work/ir");
+die "mutate: no // mull-on markers under src/\n" unless @procs;
 
-# 3a. Odin's debug info does not point at operators, so mull would also
-#     mutate code Odin generates (string decoding, bounds and bool checks).
-#     Keep an operator's location only if its source line has an operator
-#     that lowers to it (the table from step 1); without a location mull
-#     leaves the instruction alone. This stands in for
-#     mull's junk detection, which only parses C and C++.
-my %CLASS = (
-	icmp => 'cmp', fcmp => 'cmp',
-	add  => 'add', fadd => 'add',
-	sub  => 'sub', fsub => 'sub', fneg => 'sub',
-	mul  => 'mul', fmul => 'mul',
-	sdiv => 'div', udiv => 'div', fdiv => 'div',
-	srem => 'rem', urem => 'rem', frem => 'rem',
-	and  => 'and', or   => 'or',  xor  => 'xor',
-	shl  => 'shl', lshr => 'shr', ashr => 'shr',
-);
-my %ops;    # "file line" -> { class => 1 }, for every line of a marked proc
-open my $tbl, '<', "$work/table" or die "mutate: table: $!\n";
-while (<$tbl>) {
-	chomp;
-	my ($file, $line, $classes) = split /\t/, $_, 3;
-	$ops{"$file $line"} = { map { $_ => 1 } split /,/, $classes // '' };
+# 2. One-line mutants of the bodies, deduplicated.
+my %mutants;    # id -> { proc, line (0-based), text }
+my $next_id = 1;
+for my $p (@procs) {
+	my $dir = "$work/mutants/" . ($p->{file} =~ s{/}{_}gr) . "-$p->{name}";
+	make_path($dir);
+	spew("$dir/lines", map { $_ + 1 . "\n" } $p->{open} + 1 .. $p->{close} - 1);
+	system("'$MUTATE' '$p->{file}' none '$rules' --noCheck --lines '$dir/lines' --mutantDir '$dir' >/dev/null 2>&1") == 0
+		or die "mutate: universalmutator failed on $p->{file}\n";
+	my $orig = $src{ $p->{file} };
+	my ($last_return) = grep { $orig->[$_] =~ /\S/ } reverse $p->{open} + 1 .. $p->{close} - 1;
+	$last_return = -1 unless $orig->[$last_return] =~ /^\s*return\b/;
+	my %seen;
+	for my $m (sort glob "$dir/*.mutant.*") {
+		my $lines = slurp($m);
+		next unless @$lines == @$orig;
+		my @diff = grep { $lines->[$_] ne $orig->[$_] } 0 .. $#$orig;
+		next unless @diff == 1 && $diff[0] > $p->{open} && $diff[0] < $p->{close};
+		next if $seen{"$diff[0] $lines->[$diff[0]]"}++;
+		# Deleting the final return would not compile in the original either.
+		next if $p->{results} && $diff[0] == $last_return && $lines->[ $diff[0] ] =~ m{^\s*/\*};
+		$mutants{ $next_id++ } = { proc => $p, line => $diff[0], text => $lines->[ $diff[0] ] };
+	}
 }
-close $tbl;
-my %marked = map { $_ => 1 } @annotated;
-my ($kept, $dropped) = (0, 0);
-for my $ll (glob "$work/ir/*.ll") {
-	open my $in, '<', $ll or die "mutate: $ll: $!\n";
-	my @lines = <$in>;
-	close $in;
-	my (%file, %scope, %loc);
-	for (@lines) {
-		if (/^!(\d+) = !DIFile\(filename: "([^"]*)", directory: "([^"]*)"/) {
-			$file{$1} = $2 =~ m{^/} ? $2 : "$3/$2";
-		} elsif (/^!(\d+) = (?:distinct )?!DI(?:Subprogram|LexicalBlock|LexicalBlockFile)\(.*?\bfile: !(\d+)/) {
-			$scope{$1} = $2;
-		} elsif (/^!(\d+) = !DILocation\(line: (\d+), column: (\d+), scope: !(\d+)/) {
-			$loc{$1} = [$2, $4];
+say STDERR 'mutate: ', scalar(keys %mutants), ' mutants in ', join(', ', map { $_->{name} } @procs);
+
+# 3. Write the switched bodies; build; drop mutants the compiler rejects.
+sub write_tree {
+	my %where;    # "file line" (1-based, rewritten file) -> mutant id
+	my %by_file;
+	push @{ $by_file{ $_->{file} } }, $_ for @procs;
+	for my $file (keys %by_file) {
+		my $lines = $src{$file};
+		my @out;
+		my $at = 0;
+		for my $p (sort { $a->{open} <=> $b->{open} } @{ $by_file{$file} }) {
+			push @out, @$lines[ $at .. $p->{open} ];
+			my @body = @$lines[ $p->{open} + 1 .. $p->{close} - 1 ];
+			my $prev;
+			for my $id (sort { $a <=> $b } grep { $mutants{$_}{proc} == $p } keys %mutants) {
+				push @out, ($prev ? '} else ' : '') . "if __mut == $id {\n";
+				# A mutant that unbalances the braces is reported at the next branch.
+				$where{ "$file " . scalar @out } = $prev if $prev;
+				$prev = $id;
+				my $m = $mutants{$id};
+				for my $i (0 .. $#body) {
+					my $text = $p->{open} + 1 + $i == $m->{line} ? $m->{text} : $body[$i];
+					push @out, $text;
+					$where{ "$file " . scalar @out } = $id;
+				}
+			}
+			if ($prev) {
+				push @out, "} else {\n";
+				$where{ "$file " . scalar @out } = $prev;
+			}
+			push @out, @body;
+			push @out, "}\n" if $prev;
+			$at = $p->{close};
 		}
-	}
-	next unless grep { $marked{$_} } values %file;
-	my $changed;
-	for (@lines) {
-		my ($op, $id) = /^\s+%\S+ = (\w+)\b.*, !dbg !(\d+)$/ or next;
-		my $class = $CLASS{$op} or next;
-		my ($line, $sc) = @{ $loc{$id} // next };
-		my $f = $file{ $scope{$sc} // '' } // next;
-		my $here = $ops{"$f $line"} or next;    # mull-off code: leave it
-		if ($here->{$class}) { $kept++; next }
-		s/, !dbg !\d+$//;
-		$dropped++;
-		$changed = 1;
-	}
-	next unless $changed;
-	open my $out, '>', $ll or die "mutate: $ll: $!\n";
-	print $out @lines;
-	close $out;
-}
-say STDERR "mutate: kept $kept IR operators in marked code, dropped $dropped generated ones";
+		push @out, @$lines[ $at .. $#$lines ];
+		spew($file, @out);
+		my ($pkg) = map { /^package (\w+)/ ? $1 : () } @$lines;
+		spew(dirname($file) . '/zz_mutate_switch.odin', <<~"ODIN");
+			package $pkg
 
-# 3b. Instrument every module; includePaths keeps mull to the annotated files.
-open my $cfg, '>', "$work/mull.yml" or die "mutate: mull.yml: $!\n";
-print $cfg "junkDetectionDisabled: true\nincludePaths:\n", map {"  - '^\Q$_\E\$'\n"} @annotated;
-close $cfg;
-$ENV{MULL_CONFIG} = "$work/mull.yml";
-sys('sh', '-c', q{ls "$1"/*.ll | xargs -P "$(nproc)" -n1 sh -c \
-	'clang -c -O0 -Wno-override-module -fpass-plugin="$0" "$1" -o "$1.o" >/dev/null 2>&1' "$2"},
-	'clang', "$work/ir", $PLUGIN);
+			import __mutate_rt "base:runtime"
+			import __mutate_os "core:os"
+			import __mutate_strconv "core:strconv"
 
-# 4. Link and run. Report against worktree paths, not the scratch copy.
-sys('clang', glob("$work/ir/*.o"), '-o', "$work/test.mull", @link_flags);
-open my $mull, '-|', 'sh', '-c', 'exec "$@" 2>&1', 'mull',
-	$RUNNER, '--include-not-covered', @runner_args, "$work/test.mull"
-	or die "mutate: $RUNNER: $!\n";
-while (<$mull>) {
-	s{\Q$tree\E/}{}g;
-	s{ // mull-off}{}g;
-	print;
+			\@(private = "package")
+			__mut: int
+
+			\@(init, private = "file")
+			__mutate_init :: proc "contextless" () {
+				context = __mutate_rt.default_context()
+				buf: [32]u8
+				__mut, _ = __mutate_strconv.parse_int(__mutate_os.get_env(buf[:], "MUTANT"))
+			}
+			ODIN
+	}
+	return \%where;
 }
-close $mull;
-exit $? >> 8;
+
+my $exe = "$work/test-all";
+for (my $round = 1;; $round++) {
+	my $where = write_tree();
+	my $out = `@BUILD -error-pos-style:unix -max-error-count:10000 -out:'$exe' 2>&1`;
+	last if $? == 0;
+	my %bad;
+	while ($out =~ m{^(\S+?):(\d+):\d+:\s*(?:Syntax\s+)?Error}mg) {
+		my ($path, $line) = ($1, $2);
+		my $file = $path =~ s{^\Q$tree\E/}{}r;
+		my $id = $where->{"$file $line"};
+		die "$out\nmutate: build error outside any mutant ($file:$line)\n" unless $id;
+		$bad{$id} = 1;
+	}
+	die "$out\nmutate: build failed\n" unless %bad;
+	print STDERR $out if $ENV{MUTATE_DEBUG};
+	delete @mutants{ keys %bad };
+	say STDERR "mutate: round $round dropped ", scalar(keys %bad), ' mutants that do not compile';
+	die "mutate: every mutant failed to compile\n" unless %mutants;
+}
+
+# 4. Baseline, then one run per mutant. A failing or timed-out run kills it.
+my $t0 = time;
+system("MUTANT=0 '$exe' >/dev/null 2>&1") == 0 or die "mutate: test:all fails without mutants\n";
+my $timeout = 10 * (time - $t0 + 1);
+my (@survived, @killed);
+for my $id (sort { $a <=> $b } keys %mutants) {
+	my $rc = system("MUTANT=$id timeout $timeout '$exe' >/dev/null 2>&1") >> 8;
+	push @{ $rc == 0 ? \@survived : \@killed }, $id;
+}
+
+# 5. Report against worktree paths.
+sub show ($status, $id) {
+	my $m    = $mutants{$id};
+	my $orig = $src{ $m->{proc}{file} }[ $m->{line} ] =~ s/^\s+|\s+$//gr;
+	my $new  = $m->{text} =~ s/^\s+|\s+$//gr;
+	say "$m->{proc}{file}:", $m->{line} + 1, ": $status: $orig  =>  $new";
+}
+my $by_line = sub { $mutants{$a}{proc}{file} cmp $mutants{$b}{proc}{file} || $mutants{$a}{line} <=> $mutants{$b}{line} || $a <=> $b };
+show('killed', $_) for $verbose ? sort $by_line @killed : ();
+show('SURVIVED', $_) for sort $by_line @survived;
+my $total = @killed + @survived;
+printf "mutate: %d/%d killed (%.0f%%)\n", scalar @killed, $total, 100 * @killed / $total;
+exit(@survived ? 1 : 0);

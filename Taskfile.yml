@@ -135,7 +135,7 @@ tasks:
 
 
   mutate:
-    desc: 'Mutation-test the // mull-on decls against test:all with mull; see test/tools/MUTATION.md'
+    desc: 'Mutation-test the // mull-on procs against test:all (-- -v lists killed mutants); see test/tools/MUTATION.md'
     cmds:
       - perl test/tools/mutate.pl {{.CLI_ARGS}}
 
