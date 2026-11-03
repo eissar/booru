@@ -20,7 +20,8 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	defer os.remove_all(root)
 	events := fmt.tprintf("%s/events", root)
 	if !testing.expect(t, os.mkdir_all(events, os.Permissions_Default_Directory) == nil) {return}
-	first := `{"op":"add","id":1,"name":"before","width":42,"comment":"retained","tags_xor":["alpha","beta"]}
+	first := `{"op":"add","id":1,"oid":"oid","path":"path","ext":"png","name":"before","content_type":"image/png","width":42,"height":43,"mtime":44,"added_at":45,"comment":"retained","tags_xor":["alpha","beta"]}
+{"op":"add","id":2}
 {"op":"add","id":900001,"tags_xor":["ghost"]}
 `
 	middle := `{"op":"patch","id":1,"name":"middle","tags_xor":["alpha","gamma"]}
@@ -67,10 +68,24 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	rc := sqlite.with_transaction(live.data_store, 1, proc(tx: ^sqlite.Tx, id: int) -> c.int {
 		rc := store.insert_into_items(
 			tx,
-			library.Image{id = id, name = "before", width = 42, comment = "retained"},
+			library.Image {
+				id = id,
+				oid = "oid",
+				path = "path",
+				ext = "png",
+				name = "before",
+				content_type = "image/png",
+				width = 42,
+				height = 43,
+				mtime = 44,
+				added_at = 45,
+				comment = "retained",
+			},
 		)
 		if rc != sqlite.OK {return rc}
 		rc = store.toggle_tags(tx, id, {"alpha", "beta"})
+		if rc != sqlite.OK {return rc}
+		rc = store.insert_into_items(tx, library.Image{id = 2})
 		if rc != sqlite.OK {return rc}
 		rc = store.insert_into_items(tx, library.Image{id = 900001})
 		if rc != sqlite.OK {return rc}
@@ -91,7 +106,7 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	expected, live_rc := store.read_images(live.data_store, alloc)
 	if testing.expect(
 		t,
-		read_rc == sqlite.OK && live_rc == sqlite.OK && len(actual) == 1 && len(expected) == 1,
+		read_rc == sqlite.OK && live_rc == sqlite.OK && len(actual) == 2 && len(expected) == 2,
 	) {
 		testing.expect_value(t, actual[0].id, expected[0].id)
 		testing.expect_value(t, actual[0].name, "final")
@@ -100,6 +115,16 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 		testing.expect_value(t, actual[0].comment, expected[0].comment)
 		testing.expect(t, slice.equal(actual[0].tags, expected[0].tags))
 		testing.expect(t, slice.equal(actual[0].tags, []string{"dog", "gamma"}))
+	}
+	// An omitted field after a populated insert must not inherit a prior binding.
+	blank, found, blank_rc := store.read_image_by_id(rebuilt.data_store, 2, alloc)
+	if testing.expect(t, blank_rc == sqlite.OK && found) {
+		testing.expect(t, blank.oid == "" && blank.path == "" && blank.ext == "")
+		testing.expect(t, blank.name == "" && blank.comment == "" && blank.content_type == "")
+		testing.expect(
+			t,
+			blank.width == 0 && blank.height == 0 && blank.mtime == 0 && blank.added_at == 0,
+		)
 	}
 	// Existing public entry point remains a complete single-input replay.
 	single: library.State
@@ -111,10 +136,12 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	testing.expect(t, replay(&single, {text}, context.allocator) == nil)
 	testing.expect(t, sqlite.run(single.data_store, "COMMIT"))
 	one, one_rc := store.read_images(single.data_store, alloc)
-	if testing.expect(t, one_rc == sqlite.OK && len(one) == 1) {
+	if testing.expect(t, one_rc == sqlite.OK && len(one) == 2) {
 		testing.expect_value(t, one[0].name, "final")
 		testing.expect(t, slice.equal(one[0].tags, []string{"dog", "gamma"}))
 	}
+	store.Close(&single)
+	testing.expect(t, single.data_store == nil)
 }
 
 @(test)
@@ -151,6 +178,7 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 		testing.expect(t, rc == sqlite.OK && len(images) == 0)
 		testing.expect(t, sqlite.get_autocommit(s.data_store) != 0)
 		store.Close(&s)
+		testing.expect(t, s.data_store == nil)
 	}
 }
 

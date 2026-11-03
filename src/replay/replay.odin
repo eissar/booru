@@ -56,6 +56,8 @@ replay :: proc(
 	record: elog.Record
 	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
 	defer delete(record.fields)
+	item_insert: ^sqlite.Stmt
+	defer {if item_insert != nil {sqlite.finalize(item_insert)}}
 	for stream, i in streams {
 		text := stream
 		data := &text
@@ -80,8 +82,14 @@ replay :: proc(
 				if full_replay {
 					if _, seen := seen_ids[item.id]; seen {return .BadEvent}
 					seen_ids[item.id] = true
+					if item_insert == nil {
+						item_insert, rc = store.prepare_item_insert(db)
+						if rc != sqlite.OK {return .DATABASE_ERR}
+					}
+					rc = store.insert_into_items(&tx, item, item_insert)
+				} else {
+					rc = store.insert_into_items(&tx, item)
 				}
-				rc = store.insert_into_items(&tx, item)
 			case "patch":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				rc = store.patch_item(&tx, item)

@@ -132,7 +132,7 @@ import_browse_delete_replay :: proc(t: ^testing.T) {
 	restarted := library.State {
 		library_path = root,
 	}
-	if !testing.expect(t, store.Init(&restarted, ":memory:", defer_indexes = true) == sqlite.OK) {
+	if !testing.expect(t, store.Init(&restarted, ":memory:") == sqlite.OK) {
 		return
 	}
 	defer store.Close(&restarted)

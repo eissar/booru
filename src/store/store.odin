@@ -5,7 +5,9 @@ import "../vendor/sqlite"
 import "core:c"
 
 // Init assigns data_store only on success. Close an existing connection first.
-Init :: proc(state: ^library.State, path: cstring, defer_indexes := false) -> (rc: c.int) {
+// Secondary indexes are never created here; replay.initiate_replay builds them
+// after applying events.
+Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 	db, open_rc := sqlite.open(path)
 	if open_rc != sqlite.OK {
 		return open_rc
@@ -28,11 +30,6 @@ Init :: proc(state: ^library.State, path: cstring, defer_indexes := false) -> (r
 
 	rc = create_tables(db)
 	if rc != sqlite.OK {return rc}
-
-	if !defer_indexes {
-		rc = create_indexes(db)
-		if rc != sqlite.OK {return rc}
-	}
 
 	state.data_store = db
 	if state.event_log != nil {state.event_log.db = db}
@@ -172,27 +169,26 @@ insert_into_items :: proc {
 // Owns its transaction.
 @(private = "file")
 insert_item :: proc(db: ^sqlite.DB, item: library.Image) -> c.int {
-	return sqlite.with_transaction(db, item, insert_item_tx)
+	return sqlite.with_transaction(db, item, proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+		return insert_item_tx(tx, item)
+	})
 }
 
 // Uses the caller's transaction; never commits or rolls back.
 @(private = "file")
-insert_item_tx :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-	stmt: ^sqlite.Stmt
-	rc := sqlite.prepare_v2(
-		tx.db,
-		`INSERT INTO items (
-			id, oid, path, ext, name, content_type,
-			width, height, mtime, added_at, comment
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		-1,
-		&stmt,
-		nil,
-	)
-	defer {
-		if stmt != nil {sqlite.finalize(stmt)}
+insert_item_tx :: proc(
+	tx: ^sqlite.Tx,
+	item: library.Image,
+	prepared: ^sqlite.Stmt = nil,
+) -> c.int {
+	stmt := prepared
+	owned_stmt := stmt == nil
+	rc: c.int
+	if owned_stmt {
+		stmt, rc = prepare_item_insert(tx.db)
+		if rc != sqlite.OK {return rc}
 	}
-	if rc != sqlite.OK {return rc}
+	defer {if owned_stmt {sqlite.finalize(stmt)}}
 
 	integer_values := [5]i64 {
 		i64(item.id),
@@ -226,5 +222,24 @@ insert_item_tx :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return rc}
-	return sqlite.OK
+	return sqlite.reset(stmt)
+}
+
+// The caller owns the returned statement and must finalize it.
+prepare_item_insert :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
+	rc = sqlite.prepare_v2(
+		db,
+		`INSERT INTO items (
+			id, oid, path, ext, name, content_type,
+			width, height, mtime, added_at, comment
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		-1,
+		&stmt,
+		nil,
+	)
+	if rc != sqlite.OK && stmt != nil {
+		sqlite.finalize(stmt)
+		stmt = nil
+	}
+	return
 }

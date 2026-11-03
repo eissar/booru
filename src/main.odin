@@ -115,7 +115,7 @@ main :: proc() {
 		fmt.panicf("stat store: %v", stat_err)
 	}
 	fresh_store := stat_err == .Not_Exist
-	rc := store.Init(&state, db_c_str, defer_indexes = fresh_store)
+	rc := store.Init(&state, db_c_str)
 	if rc != 0 {
 		log.fatal("datastore type=sqlite open: failed w/ error code:", rc)
 		os.exit(1)
