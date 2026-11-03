@@ -29,24 +29,26 @@ The script also needs `rsync`, `timeout`, and `perl`.
 
 1. Copy the tracked tree to `/tmp/booru-mutate-*`; nothing in the worktree is
    written.
-2. `ast-grep scan` with `test/tools/mutate-sites.yml` reports, with byte
-   offsets, the body block of every proc declaration that follows a
-   `// mull-on` comment, and the mutation sites in `src/`. Sites outside a
-   marked body are ignored.
-3. Each site gives mutants, as byte-range edits of the body:
+2. `ast-grep scan` runs `test/tools/mutants.yml`. Its `body` rule reports the
+   block of every proc declared right after a `// mull-on` comment. Every
+   other rule is a mutation: a pattern plus a `fix`, and each match inside a
+   marked block is one mutant, reported under the rule's id. To add a
+   mutation, add a rule. The current set:
 
-   | Site | Mutants |
+   | Rules | Mutation |
    |---|---|
-   | binary operator | `==` → `!=`/`<=`/`>=`, `<` → `<=`/`>=`, `+` ↔ `-`, `*` ↔ `/`, `%` → `/`, `&&` ↔ `\|\|`, `&` ↔ `\|`, `<<` ↔ `>>`, ... |
-   | `!x`, `-x` | `x` |
-   | `if` condition | `true`, `false` |
-   | call statement, `x = ...`, `x += ...` | `{}` (deleted) |
+   | `eq-to-ne`, `lt-to-le`, `add-to-sub`, `and-to-or`, ... | swap a binary operator (`==` → `!=`/`<=`/`>=`, `<` → `<=`/`>=`, `+` ↔ `-`, `&&` ↔ `\|\|`, ...) |
+   | `drop-not`, `drop-neg` | `!x`, `-x` → `x` |
+   | `if-true`, `if-false` | replace an `if` condition |
+   | `delete-statement` | call, `x = ...` or `x += ...` → `{}` |
+   | `body-empty`, `body-return-zero`, `body-return-named` | replace the whole body with `{}`, `return {}`, or a bare `return` (cargo-mutants' "replace with default") |
 
+3. Duplicate edits (same range and text) are dropped.
 4. Rewrite each marked proc so its body is one branch per mutant:
 
        validate_tags_xor :: proc(tags: []string) -> string {
-       if __mut == 1 {<body with mutant 1>} else if __mut == 2 {...
-       } else {<original body>}
+       if __mut == 1 {<block with mutant 1>} else if __mut == 2 {...}
+       else {<original block>}
        }
 
    A generated `zz_mutate_switch.odin` in the package sets `__mut` from
@@ -68,21 +70,22 @@ that no test calls has all its mutants survive.
 
 ## Example: `validate_tags_xor`
 
-`src/event_log/event_log.odin` marks `validate_tags_xor`. ast-grep finds 13
+`src/event_log/event_log.odin` marks `validate_tags_xor`. The rules give 14
 mutants, all of which compile; `task mutate` reports:
 
-    src/event_log/event_log.odin:148:15: SURVIVED: `==` => `<=`
-    mutate: 12/13 killed (92%)
+    src/event_log/event_log.odin:148:6: SURVIVED: [eq-to-le] `len(tag) == 0` => `len(tag) <= 0`
+    mutate: 13/14 killed (93%)
 
-That is `len(tag) == 0` → `len(tag) <= 0`, an equivalent mutant: `len` is
-never negative, so no test can tell them apart. The run takes about 6 s.
+That is an equivalent mutant: `len` is never negative, so no test can tell
+`<= 0` from `== 0`. The whole-body mutant (`return {}`) is killed. The run
+takes about 8 s.
 
 ## Limitations
 
 - **Equivalent mutants**, like the one above, survive and have to be judged by
   hand.
-- **No whole-body mutant** (e.g. "return the zero value"); the catalogue is
-  operators, conditions and statement deletion.
+- **Unnamed multi-result procs** (`-> (int, bool)`) get no whole-body mutant:
+  tree-sitter-odin does not parse that result list cleanly.
 - **Code size** grows with mutants × body length, since each mutant copies the
   whole body. Fine for small procs.
 - **Grammar drift.** tree-sitter-odin is a community grammar; Odin syntax it

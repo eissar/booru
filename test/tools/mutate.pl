@@ -5,14 +5,14 @@
 #
 # MUTATE_DEBUG=1 prints the compiler output of each round.
 #
-# ast-grep (with the tree-sitter-odin grammar) finds each marked proc's body
-# and the operators, conditions and statements in it (mutate-sites.yml). Each
-# mutant is a byte-range edit of a body. Instead of rebuilding per mutant,
-# every mutant becomes a branch of the body:
+# ast-grep (with the tree-sitter-odin grammar) runs the rules in mutants.yml:
+# `body` finds each marked proc's block, and every other rule's matches with
+# their fixes inside a marked block are the mutants. Instead of rebuilding per
+# mutant, every mutant becomes a branch of the body:
 #
 #     name :: proc(...) -> ... {
-#     if __mut == 1 { <body with mutant 1> } else if __mut == 2 { ... }
-#     else { <original body> }
+#     if __mut == 1 {<block with mutant 1>} else if __mut == 2 {...}
+#     else {<original block>}
 #     }
 #
 # and a generated file per package sets __mut from $MUTANT at startup. The
@@ -28,16 +28,6 @@ my $GRAMMAR_REPO = 'https://github.com/tree-sitter-grammars/tree-sitter-odin';
 my $GRAMMAR_REV  = 'd2ca8efb4487e156a60d5bd6db2598b872629403';
 my @BUILD = ('odin', 'build', 'test/', '-build-mode:test', '-all-packages', '-debug');
 my $verbose = @ARGV && $ARGV[0] eq '-v';
-
-# Operator swaps, roughly cargo-mutants' set.
-my %SWAP = (
-	'==' => ['!=', '<=', '>='], '!=' => ['=='],
-	'<'  => ['<=', '>='],       '<=' => ['<', '>'],
-	'>'  => ['>=', '<='],       '>=' => ['>', '<'],
-	'+'  => ['-'], '-'  => ['+'], '*' => ['/'], '/' => ['*'], '%' => ['/'],
-	'&&' => ['||'], '||' => ['&&'], '&' => ['|'], '|' => ['&'],
-	'<<' => ['>>'], '>>' => ['<<'],
-);
 
 sub slurp ($path) {
 	open my $fh, '<:raw', $path or die "mutate: $path: $!\n";
@@ -74,52 +64,33 @@ system("git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=-
 spew("$work/sgconfig.yml", "customLanguages:\n  odin:\n    libraryPath: $grammar\n    extensions: [odin]\n    expandoChar: _\n");
 chdir $tree or die "mutate: chdir: $!\n";
 
-# 1. Bodies and sites. Byte offsets; a body is the text inside its braces.
-my (%src, @bodies, %sites);
+# 1. Marked blocks and mutants, as byte ranges. A block includes its braces.
+my (%src, @bodies, @matches);
 open my $scan, '-|', $sg, 'scan', '--config', "$work/sgconfig.yml", '--custom-languages', 'allow',
-	'--rule', "$root/test/tools/mutate-sites.yml", '--json=stream', 'src'
+	'--rule', "$root/test/tools/mutants.yml", '--json=stream', 'src'
 	or die "mutate: ast-grep: $!\n";
 while (<$scan>) {
 	my $m = decode_json($_);
-	my ($file, $rule, $r) = ($m->{file}, $m->{ruleId}, $m->{range}{byteOffset});
+	my ($file, $r) = ($m->{file}, $m->{range}{byteOffset});
 	$src{$file} //= slurp($file);
-	if ($rule eq 'body') {
+	if ($m->{ruleId} eq 'body') {
 		my @names = substr($src{$file}, 0, $r->{start}) =~ /^(\w+) :: proc\b/mg;
-		push @bodies, { file => $file, name => $names[-1] // '?', start => $r->{start} + 1, end => $r->{end} - 1 };
-		next;
+		push @bodies, { file => $file, name => $names[-1] // '?', start => $r->{start}, end => $r->{end} };
+	} elsif (defined $m->{replacement}) {
+		my $at = $m->{replacementOffsets} // $r;
+		push @matches, { file => $file, rule => $m->{ruleId}, start => $at->{start}, end => $at->{end}, new => $m->{replacement} };
 	}
-	my $var = $m->{metaVariables}{single};
-	push @{ $sites{$file} }, { rule => $rule, start => $r->{start}, end => $r->{end}, text => $m->{text},
-		map { $_ => $var->{$_}{range}{byteOffset} } keys %$var };
 }
 close $scan or die "mutate: ast-grep scan failed\n";
 die "mutate: no // mull-on procs under src/\n" unless @bodies;
 
-# 2. Mutants: [start, end, replacement] edits inside a body.
-my %mutants;    # id -> { body, start, end, new }
-my $next_id = 1;
-for my $body (@bodies) {
-	my $text = $src{ $body->{file} };
-	my %seen;
-	my $add = sub ($start, $end, $new) {
-		return if $seen{"$start $end $new"}++;
-		$mutants{ $next_id++ } = { body => $body, start => $start, end => $end, new => $new };
-	};
-	for my $s (@{ $sites{ $body->{file} } // [] }) {
-		next unless $s->{start} >= $body->{start} && $s->{end} <= $body->{end};
-		if ($s->{rule} eq 'binary') {
-			pos($text) = $s->{L}{end};
-			$text =~ m{\G\s*([-+*/%&|~<>=!]+)}g or next;
-			my $op_start = pos($text) - length $1;
-			$add->($op_start, pos($text), $_) for @{ $SWAP{$1} // [] };
-		} elsif ($s->{rule} eq 'unary') {
-			$add->($s->{start}, $s->{A}{start}, '');    # drop `!` / `-`
-		} elsif ($s->{rule} eq 'condition') {
-			$add->($s->{C}{start}, $s->{C}{end}, $_) for 'true', 'false';
-		} elsif ($s->{rule} eq 'statement') {
-			$add->($s->{start}, $s->{end}, '{}');
-		}
-	}
+my %mutants;    # id -> { body, rule, start, end, new }
+my ($next_id, %seen) = (1);
+for my $m (sort { $a->{file} cmp $b->{file} || $a->{start} <=> $b->{start} } @matches) {
+	my ($body) = grep { $_->{file} eq $m->{file} && $_->{start} <= $m->{start} && $m->{end} <= $_->{end} } @bodies
+		or next;
+	next if $seen{"$m->{file} $m->{start} $m->{end} $m->{new}"}++;
+	$mutants{ $next_id++ } = { %$m, body => $body };
 }
 say STDERR 'mutate: ', scalar(keys %mutants), ' mutants in ', join(', ', map { $_->{name} } @bodies);
 
@@ -144,17 +115,17 @@ sub write_tree {
 				my $m = $mutants{$id};
 				my $mutated = $body;
 				substr($mutated, $m->{start} - $body_at->{start}, $m->{end} - $m->{start}) = $m->{new};
-				my $branch = ($prev ? '} else ' : "\n") . "if __mut == $id {$mutated";
+				my $branch = ($prev ? ' else ' : "{\n") . "if __mut == $id $mutated";
 				$out .= $branch;
 				$mark->($id, $branch);
 				$prev = $id;
 			}
 			if ($prev) {
-				$out .= "} else {";
+				$out .= ' else ';
 				$mark->($prev, '');    # a brace a mutant broke shows up here
 			}
 			$out .= $body;
-			$out .= "}\n" if $prev;
+			$out .= "\n}" if $prev;
 			$at = $body_at->{end};
 		}
 		$out .= substr($text, $at);
@@ -218,7 +189,9 @@ sub show ($status, $id) {
 	my $line = ($before =~ tr/\n//) + 1;
 	my $col  = $m->{start} - (rindex($before, "\n") + 1) + 1;
 	my $orig = substr($text, $m->{start}, $m->{end} - $m->{start}) =~ s/\s+/ /gr;
-	say "$m->{body}{file}:$line:$col: $status: `$orig` => `$m->{new}`";
+	my $new  = $m->{new} =~ s/\s+/ /gr;
+	$orig = substr($orig, 0, 60) . '...' if length $orig > 63;
+	say "$m->{body}{file}:$line:$col: $status: [$m->{rule}] `$orig` => `$new`";
 }
 my $by_pos = sub { $mutants{$a}{body}{file} cmp $mutants{$b}{body}{file} || $mutants{$a}{start} <=> $mutants{$b}{start} || $a <=> $b };
 show('killed', $_) for $verbose ? sort $by_pos @killed : ();
