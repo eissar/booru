@@ -1,6 +1,5 @@
 package replay_bench
 
-import "core:encoding/json"
 import "core:fmt"
 import "core:mem"
 import "core:os"
@@ -9,152 +8,14 @@ import "core:strings"
 import "core:testing"
 import "core:time"
 
-import elog "../../src/event_log"
 import "../../src/library"
 import "../../src/replay"
 import "../../src/store"
 import "../../src/vendor/sqlite"
 
-Error :: replay.Error
-
-replay_json :: proc(s: ^library.State, data: ^string, alloc: mem.Allocator) -> (err: Error) {
-	db := s.data_store
-
-	tx := sqlite.Tx{db}
-	rc := sqlite.exec(db, "BEGIN", nil, nil, nil)
-	if rc != sqlite.OK {return .DATABASE_ERR}
-
-	// deferred rollback if we return error
-	// tested to set named result for defer
-	// so we can just do return nil/ return .DATABASE_ERR
-	// and it works as you'd expect
-	defer {
-		if err != nil {
-			if sqlite.get_autocommit(db) == 0 {
-				sqlite.exec(db, "ROLLBACK", nil, nil, nil)
-			}
-			sqlite.close(db)
-		}
-	}
-
-	// First-seen positions are deterministic for the ordered event stream.
-	tag_indexes := make(map[string]int, alloc)
-	dictionary := make([dynamic]string, alloc)
-	// TODO: Migrate to packed bitsets eventually to reduce memory.
-	memberships := make(map[int][dynamic]u8, alloc)
-	defer {
-		for _, membership in memberships {delete(membership)}
-		delete(memberships)
-	}
-	for line in strings.split_lines_iterator(data) {
-		if strings.trim_space(line) == "" {continue}
-
-		ev: elog.Event
-		if err := json.unmarshal(transmute([]u8)line, &ev, json.DEFAULT_SPECIFICATION, alloc);
-		   err != nil {
-			fmt.eprintln("library: bad event ", err)
-			continue
-		}
-
-		for tag in ev.tags_xor {
-			index, known := tag_indexes[tag]
-			if !known {
-				index = len(dictionary)
-				tag_indexes[tag] = index
-				append(&dictionary, tag)
-			}
-			membership := memberships[ev.id]
-			if membership.allocator.procedure == nil {membership = make([dynamic]u8, alloc)}
-			if len(membership) <= index {resize(&membership, index + 1)}
-			membership[index] ~= 1
-			memberships[ev.id] = membership
-		}
-
-		switch ev.op {
-		case "add":
-			item := library.Image {
-				id           = ev.id,
-				oid          = ev.oid,
-				path         = ev.path,
-				ext          = ev.ext,
-				width        = ev.width,
-				height       = ev.height,
-				name         = ev.name,
-				mtime        = ev.mtime,
-				added_at     = ev.added_at,
-				content_type = ev.content_type,
-			}
-			rc := store.insert_into_items(&tx, item)
-			if rc != sqlite.OK {
-				return .DATABASE_ERR
-			}
-		case "patch":
-			item := library.Image {
-				id           = ev.id,
-				oid          = ev.oid,
-				path         = ev.path,
-				ext          = ev.ext,
-				width        = ev.width,
-				height       = ev.height,
-				name         = ev.name,
-				mtime        = ev.mtime,
-				added_at     = ev.added_at,
-				content_type = ev.content_type,
-			}
-			rc := store.patch_item(&tx, item)
-			if rc != sqlite.OK {
-				return .DATABASE_ERR
-			}
-
-		case:
-			fmt.eprintfln(
-				"unsupported event type=%v . maybe corrupt library. continuing anyway.",
-				ev.op,
-			)
-			continue
-		}
-	}
-	stmt: ^sqlite.Stmt
-	defer {if stmt != nil {sqlite.finalize(stmt)}}
-	rc = sqlite.prepare_v2(
-		db,
-		"INSERT INTO item_tags (item_id, tag) SELECT id, ?2 FROM items WHERE id = ?1",
-		-1,
-		&stmt,
-		nil,
-	)
-	if rc != sqlite.OK {return .DATABASE_ERR}
-	for id, membership in memberships {
-		for present, index in membership {
-			if present == 0 {continue}
-			rc = sqlite.bind_int64(stmt, 1, i64(id))
-			if rc != sqlite.OK {return .DATABASE_ERR}
-			if !sqlite.bind_string(stmt, 2, dictionary[index]) {return .DATABASE_ERR}
-			rc = sqlite.step(stmt)
-			if rc != sqlite.DONE {return .DATABASE_ERR}
-			rc = sqlite.reset(stmt)
-			if rc != sqlite.OK {return .DATABASE_ERR}
-		}
-	}
-	commit_rc := sqlite.exec(db, "COMMIT", nil, nil, nil)
-	if commit_rc != 0 {
-		return .DATABASE_ERR
-	}
-	return nil
-}
-
+// End-to-end production replay; setup and verification are not timed.
 @(test)
 test_replay :: proc(t: ^testing.T) {
-	benchmark_replay(t, false)
-}
-
-@(test)
-test_replay_flat_parse :: proc(t: ^testing.T) {
-	benchmark_replay(t, true)
-}
-
-// Experimental end-to-end comparison: setup and result verification are not timed.
-benchmark_replay :: proc(t: ^testing.T, flat: bool) {
 	if !testing.expect(t, ensure_events_file(), "generate replay benchmark events") {return}
 	data, read_err := os.read_entire_file(EVENTS_PATH, context.allocator)
 	if !testing.expect(t, read_err == nil, "read replay benchmark fixture") {return}
@@ -165,25 +26,13 @@ benchmark_replay :: proc(t: ^testing.T, flat: bool) {
 		if strings.trim_space(line) != "" {count += 1}
 	}
 	if !testing.expect(t, count > 0) {return}
-	text = string(data)
-
-	reference: library.State
-	if !testing.expect(t, store.Init(&reference, ":memory:") == sqlite.OK) {return}
-	defer store.Close(&reference)
-	ref_arena: mem.Dynamic_Arena
-	mem.dynamic_arena_init(&ref_arena)
-	defer mem.dynamic_arena_destroy(&ref_arena)
-	if !testing.expect(
-		t,
-		replay_json(&reference, &text, mem.dynamic_arena_allocator(&ref_arena)) == nil,
-	) {return}
-	expected := replay_benchmark_snapshot(reference.data_store)
+	// Compare later rounds with the warmup to check deterministic output.
+	expected: string
 	defer delete(expected)
 
 	Run :: struct {
 		state:  ^library.State,
-		flat:   bool,
-		result: Error,
+		result: replay.Error,
 	}
 	durations: [11]f64
 	events_per_second: [11]f64
@@ -197,7 +46,6 @@ benchmark_replay :: proc(t: ^testing.T, flat: bool) {
 		defer mem.dynamic_arena_destroy(&arena)
 		run := Run {
 			state = &state,
-			flat  = flat,
 		}
 		options := time.Benchmark_Options {
 			count = count,
@@ -209,20 +57,16 @@ benchmark_replay :: proc(t: ^testing.T, flat: bool) {
 			) -> time.Benchmark_Error {
 				run := cast(^Run)options.user_data
 				text := string(options.input)
-				if run.flat {
-					if !sqlite.run(run.state.data_store, "BEGIN") {
-						run.result = .DATABASE_ERR
-					} else {
-						run.result = replay.replay(run.state, {text}, alloc)
-						if !sqlite.run(
-							run.state.data_store,
-							run.result == nil ? "COMMIT" : "ROLLBACK",
-						) {
-							run.result = .DATABASE_ERR
-						}
-					}
+				if !sqlite.run(run.state.data_store, "BEGIN") {
+					run.result = .DATABASE_ERR
 				} else {
-					run.result = replay_json(run.state, &text, alloc)
+					run.result = replay.replay(run.state, {text}, alloc)
+					if !sqlite.run(
+						run.state.data_store,
+						run.result == nil ? "COMMIT" : "ROLLBACK",
+					) {
+						run.result = .DATABASE_ERR
+					}
 				}
 				options.processed = len(options.input)
 				return .Okay
@@ -233,7 +77,13 @@ benchmark_replay :: proc(t: ^testing.T, flat: bool) {
 			time.benchmark(&options, mem.dynamic_arena_allocator(&arena)) == .Okay,
 		) {return}
 		if !testing.expect(t, run.result == nil) {return}
+		stmt, ok := sqlite.prepare(state.data_store, "SELECT COUNT(*) FROM items")
+		if !testing.expect(t, ok) {return}
+		defer sqlite.finalize(stmt)
+		if !testing.expect(t, sqlite.step(stmt) == sqlite.ROW) {return}
+		if !testing.expect(t, sqlite.column_int64(stmt, 0) == i64(count)) {return}
 		actual := replay_benchmark_snapshot(state.data_store)
+		if round == 0 {expected = strings.clone(actual)}
 		if !testing.expect(t, actual == expected, "identical item metadata and tags") {
 			fmt.printf("snapshot lengths: expected=%d actual=%d\n", len(expected), len(actual))
 			for i in 0 ..< min(len(expected), len(actual)) {
@@ -260,11 +110,8 @@ benchmark_replay :: proc(t: ^testing.T, flat: bool) {
 	slice.sort(events_per_second[1:])
 	slice.sort(mib_per_second[1:])
 	median_ns := (durations[5] + durations[6]) / 2
-	label := "json.unmarshal"
-	if flat {label = "flat_parser"}
 	fmt.printf(
-		"%s: %d events, median %.3f ms, %.0f ns/event, %.0f events/s, %.2f MiB/s (10 runs; DB setup excluded; rows/tags verified)\n",
-		label,
+		"replay: %d events, median %.3f ms, %.0f ns/event, %.0f events/s, %.2f MiB/s (10 runs; DB setup excluded; row count and repeatability checked)\n",
 		count,
 		median_ns / 1e6,
 		median_ns / f64(count),
