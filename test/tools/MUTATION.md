@@ -65,8 +65,7 @@ All three survivors are on `for c in tag {`. That line has no `<` or `-` in the
 source. In the IR they are the loop bound, the ASCII fast-path check
 (`byte < 0x80`) and the remaining-length subtraction of the loop Odin
 generates to decode UTF-8 (see Lowering artifacts below), so they are not
-obviously missing tests. The
-task exits non-zero when mutants survive.
+obviously missing tests. The task exits non-zero when mutants survive.
 
 ## Limitations
 
