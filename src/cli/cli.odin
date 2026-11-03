@@ -25,6 +25,7 @@ Opts :: struct {
 }
 //REGION: cli flag validation
 
+@(mutate)
 check_valid_port :: proc(
 	model: rawptr,
 	name: string,
@@ -44,6 +45,7 @@ check_valid_port :: proc(
 }
 
 // Port has no struct default so an explicit -port is detectable.
+@(mutate)
 resolve_listen_mode :: proc(opts: ^Opts) -> (error: string) {
 	if opts.socket != "" && opts.port != 0 {
 		return "-socket and -port are mutually exclusive"

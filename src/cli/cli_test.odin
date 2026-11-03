@@ -23,3 +23,11 @@ port_defaults_without_socket :: proc(t: ^testing.T) {
 	testing.expect(t, resolve_listen_mode(&opts) == "")
 	testing.expect_value(t, opts.port, 0)
 }
+
+@(test)
+port_range_checked :: proc(t: ^testing.T) {
+	testing.expect(t, check_valid_port(nil, "port", 0, "") != "")
+	testing.expect(t, check_valid_port(nil, "port", 1, "") == "")
+	testing.expect(t, check_valid_port(nil, "port", 65535, "") == "")
+	testing.expect(t, check_valid_port(nil, "port", 65536, "") != "")
+}
