@@ -134,8 +134,20 @@ tasks:
       - odin test src/thumbnail/ -out:{{.BIN_DIR}}/test-thumbnail -debug
 
 
+  mutate:grammar:
+    desc: Build the pinned tree-sitter-odin grammar into .test-data/odin.so
+    vars: {DIR: .test-data/tree-sitter-odin, REV: d2ca8efb4487e156a60d5bd6db2598b872629403}
+    status:
+      - test -f .test-data/odin.so
+    cmds:
+      - rm -rf {{.DIR}} && git init -q {{.DIR}}
+      - git -C {{.DIR}} fetch -q --depth 1 https://github.com/tree-sitter-grammars/tree-sitter-odin {{.REV}}
+      - git -C {{.DIR}} checkout -q FETCH_HEAD
+      - cc -shared -fPIC -O2 -I{{.DIR}}/src {{.DIR}}/src/parser.c {{.DIR}}/src/scanner.c -o .test-data/odin.so
+
   mutate:
-    desc: 'Mutation-test the procs in test/tools/mutate.json against test:all (-- -v lists killed mutants); see test/tools/MUTATION.md'
+    desc: 'Mutation-test the procs in test/tools/mutate.json (-- -v lists killed mutants); needs ast-grep on PATH or AST_GREP'
+    deps: [mutate:grammar]
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - odin run test/tools/mutate -out:{{.BIN_DIR}}/mutate -- {{.CLI_ARGS}}

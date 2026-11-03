@@ -1,207 +1,90 @@
-# ast-grep rules for test/tools/mutate.pl (Odin, via tree-sitter-odin).
-#
-# `body` finds every proc's block; mutate keeps those listed in
-# mutate.json's `procs`. Every other rule is a mutation: each match inside a
-# kept body, with its `fix`, is one mutant, named by the rule id. Add a
-# mutation by adding a rule.
+# ast-grep rules for test/tools/mutate (Odin, via tree-sitter-odin).
+# `body` finds every proc's block; mutate keeps those listed in mutate.json.
+# Every other rule is a mutation: each match inside a kept block, with its
+# `fix`, is one mutant named by the rule id. Add a mutation by adding a rule.
 id: body
 language: odin
-rule:
-  kind: block
-  inside:
-    kind: procedure
-    inside: {kind: procedure_declaration}
-
+rule: {kind: block, inside: {kind: procedure, inside: {kind: procedure_declaration}}}
 # Binary operators, roughly cargo-mutants' swaps.
 ---
-id: eq-to-ne
-language: odin
-rule: {kind: binary_expression, pattern: $L == $R}
-fix: $L != $R
+{id: eq-to-ne, language: odin, rule: {pattern: $L == $R}, fix: $L != $R}
 ---
-id: eq-to-le
-language: odin
-rule: {kind: binary_expression, pattern: $L == $R}
-fix: $L <= $R
+{id: eq-to-le, language: odin, rule: {pattern: $L == $R}, fix: $L <= $R}
 ---
-id: eq-to-ge
-language: odin
-rule: {kind: binary_expression, pattern: $L == $R}
-fix: $L >= $R
+{id: eq-to-ge, language: odin, rule: {pattern: $L == $R}, fix: $L >= $R}
 ---
-id: ne-to-eq
-language: odin
-rule: {kind: binary_expression, pattern: $L != $R}
-fix: $L == $R
+{id: ne-to-eq, language: odin, rule: {pattern: $L != $R}, fix: $L == $R}
 ---
-id: lt-to-le
-language: odin
-rule: {kind: binary_expression, pattern: $L < $R}
-fix: $L <= $R
+{id: lt-to-le, language: odin, rule: {pattern: $L < $R}, fix: $L <= $R}
 ---
-id: lt-to-ge
-language: odin
-rule: {kind: binary_expression, pattern: $L < $R}
-fix: $L >= $R
+{id: lt-to-ge, language: odin, rule: {pattern: $L < $R}, fix: $L >= $R}
 ---
-id: le-to-lt
-language: odin
-rule: {kind: binary_expression, pattern: $L <= $R}
-fix: $L < $R
+{id: le-to-lt, language: odin, rule: {pattern: $L <= $R}, fix: $L < $R}
 ---
-id: le-to-gt
-language: odin
-rule: {kind: binary_expression, pattern: $L <= $R}
-fix: $L > $R
+{id: le-to-gt, language: odin, rule: {pattern: $L <= $R}, fix: $L > $R}
 ---
-id: gt-to-ge
-language: odin
-rule: {kind: binary_expression, pattern: $L > $R}
-fix: $L >= $R
+{id: gt-to-ge, language: odin, rule: {pattern: $L > $R}, fix: $L >= $R}
 ---
-id: gt-to-le
-language: odin
-rule: {kind: binary_expression, pattern: $L > $R}
-fix: $L <= $R
+{id: gt-to-le, language: odin, rule: {pattern: $L > $R}, fix: $L <= $R}
 ---
-id: ge-to-gt
-language: odin
-rule: {kind: binary_expression, pattern: $L >= $R}
-fix: $L > $R
+{id: ge-to-gt, language: odin, rule: {pattern: $L >= $R}, fix: $L > $R}
 ---
-id: ge-to-lt
-language: odin
-rule: {kind: binary_expression, pattern: $L >= $R}
-fix: $L < $R
+{id: ge-to-lt, language: odin, rule: {pattern: $L >= $R}, fix: $L < $R}
 ---
-id: add-to-sub
-language: odin
-rule: {kind: binary_expression, pattern: $L + $R}
-fix: $L - $R
+{id: add-to-sub, language: odin, rule: {pattern: $L + $R}, fix: $L - $R}
 ---
-id: sub-to-add
-language: odin
-rule: {kind: binary_expression, pattern: $L - $R}
-fix: $L + $R
+{id: sub-to-add, language: odin, rule: {pattern: $L - $R}, fix: $L + $R}
 ---
-id: mul-to-div
-language: odin
-rule: {kind: binary_expression, pattern: $L * $R}
-fix: $L / $R
+{id: mul-to-div, language: odin, rule: {pattern: $L * $R}, fix: $L / $R}
 ---
-id: div-to-mul
-language: odin
-rule: {kind: binary_expression, pattern: $L / $R}
-fix: $L * $R
+{id: div-to-mul, language: odin, rule: {pattern: $L / $R}, fix: $L * $R}
 ---
-id: rem-to-div
-language: odin
-rule: {kind: binary_expression, pattern: $L % $R}
-fix: $L / $R
+{id: rem-to-div, language: odin, rule: {pattern: $L % $R}, fix: $L / $R}
 ---
-id: and-to-or
-language: odin
-rule: {kind: binary_expression, pattern: $L && $R}
-fix: $L || $R
+{id: and-to-or, language: odin, rule: {pattern: $L && $R}, fix: $L || $R}
 ---
-id: or-to-and
-language: odin
-rule: {kind: binary_expression, pattern: $L || $R}
-fix: $L && $R
+{id: or-to-and, language: odin, rule: {pattern: $L || $R}, fix: $L && $R}
 ---
-id: bitand-to-bitor
-language: odin
-rule: {kind: binary_expression, pattern: $L & $R}
-fix: $L | $R
+{id: bitand-to-bitor, language: odin, rule: {pattern: $L & $R}, fix: $L | $R}
 ---
-id: bitor-to-bitand
-language: odin
-rule: {kind: binary_expression, pattern: $L | $R}
-fix: $L & $R
+{id: bitor-to-bitand, language: odin, rule: {pattern: $L | $R}, fix: $L & $R}
 ---
-id: shl-to-shr
-language: odin
-rule: {kind: binary_expression, pattern: $L << $R}
-fix: $L >> $R
+{id: shl-to-shr, language: odin, rule: {pattern: $L << $R}, fix: $L >> $R}
 ---
-id: shr-to-shl
-language: odin
-rule: {kind: binary_expression, pattern: $L >> $R}
-fix: $L << $R
+{id: shr-to-shl, language: odin, rule: {pattern: $L >> $R}, fix: $L << $R}
 ---
-id: drop-not
-language: odin
-rule: {kind: unary_expression, pattern: '!$X'}
-fix: $X
+{id: drop-not, language: odin, rule: {pattern: '!$X'}, fix: $X}
 ---
-id: drop-neg
-language: odin
-rule: {kind: unary_expression, pattern: '-$X'}
-fix: $X
+{id: drop-neg, language: odin, rule: {pattern: '-$X'}, fix: $X}
 ---
+# An if condition (ast-grep needs explicit kinds, so list the usual ones).
 id: if-true
 language: odin
-rule:
-  inside: {kind: if_statement, field: condition}
-  any: &conditions
-    - kind: binary_expression
-    - kind: unary_expression
-    - kind: call_expression
-    - kind: selector_call_expression
-    - kind: identifier
-    - kind: member_expression
-    - kind: index_expression
-    - kind: parenthesized_expression
-    - kind: in_expression
+utils: {cond: {any: [{kind: binary_expression}, {kind: unary_expression}, {kind: call_expression}, {kind: selector_call_expression}, {kind: identifier}, {kind: member_expression}, {kind: index_expression}, {kind: parenthesized_expression}, {kind: in_expression}]}}
+rule: {matches: cond, inside: {kind: if_statement, field: condition}}
 fix: 'true'
 ---
 id: if-false
 language: odin
-rule:
-  inside: {kind: if_statement, field: condition}
-  any:
-    - kind: binary_expression
-    - kind: unary_expression
-    - kind: call_expression
-    - kind: selector_call_expression
-    - kind: identifier
-    - kind: member_expression
-    - kind: index_expression
-    - kind: parenthesized_expression
-    - kind: in_expression
+utils: {cond: {any: [{kind: binary_expression}, {kind: unary_expression}, {kind: call_expression}, {kind: selector_call_expression}, {kind: identifier}, {kind: member_expression}, {kind: index_expression}, {kind: parenthesized_expression}, {kind: in_expression}]}}
+rule: {matches: cond, inside: {kind: if_statement, field: condition}}
 fix: 'false'
 ---
-# Delete statements whose removal can still compile: calls and assignments
-# to existing variables (not `:=` declarations).
+# Delete a call or an assignment to an existing variable (not `:=`).
 id: delete-statement
 language: odin
-rule:
-  inside: {kind: block}
-  any:
-    - kind: call_expression
-    - kind: update_statement
-    - {kind: assignment_statement, not: {regex: ':'}}
+rule: {inside: {kind: block}, any: [{kind: call_expression}, {kind: update_statement}, {kind: assignment_statement, not: {regex: ':'}}]}
 fix: '{}'
 ---
-# Replace the whole body with a zero-value return, cargo-mutants' most
-# useful mutant: it survives when no test checks the result.
-id: body-empty
-language: odin
-rule:
-  kind: block
-  inside: {kind: procedure, not: {has: {kind: type}}}
-fix: '{}'
+# Replace the whole body (cargo-mutants' "replace with default").
+{id: body-empty, language: odin, rule: {kind: block, inside: {kind: procedure, not: {has: {kind: type}}}}, fix: '{}'}
 ---
 id: body-return-zero
 language: odin
-rule:
-  kind: block
-  inside: {kind: procedure, has: {kind: type, not: {has: {kind: tuple_type}}}}
+rule: {kind: block, inside: {kind: procedure, has: {kind: type, not: {has: {kind: tuple_type}}}}}
 fix: "{\n\treturn {}\n}"
 ---
 id: body-return-named
 language: odin
-rule:
-  kind: block
-  inside: {kind: procedure, has: {kind: type, has: {kind: tuple_type, has: {kind: named_type}}}}
+rule: {kind: block, inside: {kind: procedure, has: {kind: type, has: {kind: tuple_type, has: {kind: named_type}}}}}
 fix: "{\n\treturn\n}"
