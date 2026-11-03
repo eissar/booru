@@ -47,7 +47,6 @@ replay :: proc(
 	}
 	seen_ids := make(map[int]bool, backing_alloc)
 	defer delete(seen_ids)
-	max_id: int
 	finished: u64
 	db := s.data_store
 	tx := sqlite.Tx {
@@ -82,7 +81,6 @@ replay :: proc(
 					if _, seen := seen_ids[item.id]; seen {return .BadEvent}
 					seen_ids[item.id] = true
 				}
-				max_id = max(max_id, item.id)
 				rc = store.insert_into_items(&tx, item)
 			case "patch":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
@@ -152,8 +150,6 @@ replay :: proc(
 			if rc != sqlite.OK {return .DATABASE_ERR}
 		}
 	}
-	// Historical maximum includes creations subsequently deleted.
-	library.seed_ids_from_library(max_id)
 	return nil
 }
 @(private)
@@ -350,6 +346,19 @@ initiate_replay :: proc(
 	if rc := store.create_indexes(s.data_store); rc != sqlite.OK {
 		fmt.panicf("replay: create indexes: %d", rc)
 	}
+	stmt: ^sqlite.Stmt
+	rc := sqlite.prepare_v2(
+		db,
+		"SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'items'), 0)",
+		-1,
+		&stmt,
+		nil,
+	)
+	defer {if stmt != nil {sqlite.finalize(stmt)}}
+	if rc != sqlite.OK || sqlite.step(stmt) != sqlite.ROW {
+		fmt.panicf("replay: read item ID sequence")
+	}
+	library.seed_ids_from_library(int(sqlite.column_int64(stmt, 0)))
 	if full_replay && s.event_log != nil && s.event_log.cursor != nil {
 		s.event_log.cursor^ = {}
 		if len(paths) > 0 {

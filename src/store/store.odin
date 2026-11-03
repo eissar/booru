@@ -46,7 +46,7 @@ create_tables :: proc(db: ^sqlite.DB) -> c.int {
 		`
 		BEGIN;
 		CREATE TABLE IF NOT EXISTS items (
-			id INTEGER PRIMARY KEY,
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			oid TEXT NOT NULL,
 			path TEXT NOT NULL,
 			ext TEXT NOT NULL,
