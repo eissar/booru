@@ -110,19 +110,32 @@ main :: proc() {
 	)
 	db_c_str := strings.clone_to_cstring(db_c, context.temp_allocator)
 
-	// Startup currently rebuilds the derived store on every run.
-	if err := os.remove(db_c); err != nil && err != .Not_Exist {
-		fmt.panicf("remove store: %v", err)
+	_, stat_err := os.stat(db_c, context.temp_allocator)
+	if stat_err != nil && stat_err != .Not_Exist {
+		fmt.panicf("stat store: %v", stat_err)
 	}
-	rc := store.Init(&state, db_c_str, defer_indexes = true)
+	fresh_store := stat_err == .Not_Exist
+	rc := store.Init(&state, db_c_str, defer_indexes = fresh_store)
 	if rc != 0 {
 		log.fatal("datastore type=sqlite open: failed w/ error code:", rc)
 		os.exit(1)
 	}
 	defer store.Close(&state)
 
-	// replay events from the event log
-	replay.initiate_replay(&state)
+	// Existing stores assume older shards are fully applied. The append boundary
+	// is the calendar-current shard's end, not SQLite's applied cursor (nor the
+	// latest historical shard, which may belong to a previous month).
+	if !fresh_store {
+		shard := elog.get_current_event_shard(context.temp_allocator)
+		copy(cursor.shard[:], shard)
+		path := fmt.tprintf("%s/events/%s", cfg.library, shard)
+		info, err := os.stat(path, context.temp_allocator)
+		if err != nil && err != .Not_Exist {
+			fmt.panicf("stat event shard: %v", err)
+		}
+		if err == nil {cursor.offset = info.size}
+	}
+	replay.initiate_replay(&state, full_replay = fresh_store)
 
 	log.infof(
 		"Library initialized in %.2f ms: %s",
