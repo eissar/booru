@@ -10,7 +10,9 @@
 #   2. build test/ the way `task test:all:build` does, once with
 #      -show-system-calls to learn the link line, once as LLVM IR (one .ll
 #      per module);
-#   3. compile every .ll with clang -fpass-plugin=mull-ir-frontend;
+#   3. drop the debug location from IR operators whose source line has no
+#      operator that lowers to them (mull skips instructions without one), then
+#      compile every .ll with clang -fpass-plugin=mull-ir-frontend;
 #   4. link with the captured flags and hand the binary to mull-runner.
 #
 # The worktree is never written. Tools default to the /tmp install described
@@ -52,7 +54,7 @@ say STDERR "mutate: scratch dir $work";
 sys("git ls-files -co --exclude-standard -z | rsync -a --from0 --files-from=- . '$tree'");
 my @odin = map {"$tree/$_"} split /\0/, capture(qw(git ls-files -co --exclude-standard -z src/*.odin));
 my @annotated = split ' ', capture('odin', 'run', 'test/tools/mutate_annotate.odin', '-file',
-	"-out:$work/annotate", '--', @odin);
+	"-out:$work/annotate", '--', "$work/table", @odin);
 die "mutate: no // mull-on markers under src/\n" unless @annotated;
 say STDERR 'mutate: annotated ', join ' ', map { s{^\Q$tree\E/}{}r } @annotated;
 
@@ -73,7 +75,67 @@ while (defined(my $w = shift @words)) {
 mkdir "$work/ir";
 sys('odin', 'test', grep({ $_ ne '-build-mode:test' } @TEST_ALL), '-build-mode:llvm-ir', "-out:$work/ir");
 
-# 3. Instrument every module; includePaths keeps mull to the annotated files.
+# 3a. Odin's debug info does not point at operators, so mull would also
+#     mutate code Odin generates (string decoding, bounds and bool checks).
+#     Keep an operator's location only if its source line has an operator
+#     that lowers to it (the table from step 1); without a location mull
+#     leaves the instruction alone. This stands in for
+#     mull's junk detection, which only parses C and C++.
+my %CLASS = (
+	icmp => 'cmp', fcmp => 'cmp',
+	add  => 'add', fadd => 'add',
+	sub  => 'sub', fsub => 'sub', fneg => 'sub',
+	mul  => 'mul', fmul => 'mul',
+	sdiv => 'div', udiv => 'div', fdiv => 'div',
+	srem => 'rem', urem => 'rem', frem => 'rem',
+	and  => 'and', or   => 'or',  xor  => 'xor',
+	shl  => 'shl', lshr => 'shr', ashr => 'shr',
+);
+my %ops;    # "file line" -> { class => 1 }, for every line of a marked proc
+open my $tbl, '<', "$work/table" or die "mutate: table: $!\n";
+while (<$tbl>) {
+	chomp;
+	my ($file, $line, $classes) = split /\t/, $_, 3;
+	$ops{"$file $line"} = { map { $_ => 1 } split /,/, $classes // '' };
+}
+close $tbl;
+my %marked = map { $_ => 1 } @annotated;
+my ($kept, $dropped) = (0, 0);
+for my $ll (glob "$work/ir/*.ll") {
+	open my $in, '<', $ll or die "mutate: $ll: $!\n";
+	my @lines = <$in>;
+	close $in;
+	my (%file, %scope, %loc);
+	for (@lines) {
+		if (/^!(\d+) = !DIFile\(filename: "([^"]*)", directory: "([^"]*)"/) {
+			$file{$1} = $2 =~ m{^/} ? $2 : "$3/$2";
+		} elsif (/^!(\d+) = (?:distinct )?!DI(?:Subprogram|LexicalBlock|LexicalBlockFile)\(.*?\bfile: !(\d+)/) {
+			$scope{$1} = $2;
+		} elsif (/^!(\d+) = !DILocation\(line: (\d+), column: (\d+), scope: !(\d+)/) {
+			$loc{$1} = [$2, $4];
+		}
+	}
+	next unless grep { $marked{$_} } values %file;
+	my $changed;
+	for (@lines) {
+		my ($op, $id) = /^\s+%\S+ = (\w+)\b.*, !dbg !(\d+)$/ or next;
+		my $class = $CLASS{$op} or next;
+		my ($line, $sc) = @{ $loc{$id} // next };
+		my $f = $file{ $scope{$sc} // '' } // next;
+		my $here = $ops{"$f $line"} or next;    # mull-off code: leave it
+		if ($here->{$class}) { $kept++; next }
+		s/, !dbg !\d+$//;
+		$dropped++;
+		$changed = 1;
+	}
+	next unless $changed;
+	open my $out, '>', $ll or die "mutate: $ll: $!\n";
+	print $out @lines;
+	close $out;
+}
+say STDERR "mutate: kept $kept IR operators in marked code, dropped $dropped generated ones";
+
+# 3b. Instrument every module; includePaths keeps mull to the annotated files.
 open my $cfg, '>', "$work/mull.yml" or die "mutate: mull.yml: $!\n";
 print $cfg "junkDetectionDisabled: true\nincludePaths:\n", map {"  - '^\Q$_\E\$'\n"} @annotated;
 close $cfg;
