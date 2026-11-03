@@ -1,6 +1,5 @@
 package importers
 
-import "core:c"
 import "core:crypto"
 import "core:encoding/hex"
 import "core:encoding/uuid"
@@ -21,8 +20,7 @@ import "../dirlist"
 import elog "../event_log"
 import "../library"
 import "../media"
-import "../store"
-import "../vendor/sqlite"
+import "../replay"
 
 Import_Result :: struct {
 	success:     int,
@@ -311,32 +309,7 @@ eagle_import :: proc(
 	if err := elog.ev_append(s.event_log, events[:]); err != "" {
 		fmt.panicf("import: event log append failed: %s", err)
 	}
-	// Log first, then apply: a failed apply is recovered by the next replay.
-	rc := sqlite.with_transaction(
-		s.data_store,
-		events[:],
-		proc(tx: ^sqlite.Tx, events: []elog.Event) -> c.int {
-			for ev in events {
-				item := library.Image {
-					id           = ev.id,
-					oid          = ev.oid,
-					path         = ev.path,
-					ext          = ev.ext,
-					width        = ev.width,
-					height       = ev.height,
-					name         = ev.name,
-					comment      = ev.comment,
-					mtime        = ev.mtime,
-					added_at     = ev.added_at,
-					content_type = ev.content_type,
-				}
-				if rc := store.insert_into_items(tx, item); rc != sqlite.OK {return rc}
-				if rc := store.toggle_tags(tx, ev.id, ev.tags_xor); rc != sqlite.OK {return rc}
-			}
-			return sqlite.OK
-		},
-	)
-	if rc != sqlite.OK {fmt.panicf("import: apply events to store: rc=%v", rc)}
+	replay.initiate_replay(s, full_replay = false)
 	return
 }
 

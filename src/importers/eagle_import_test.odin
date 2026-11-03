@@ -81,6 +81,9 @@ eagle_items_import_into_sqlite_with_correct_amount_of_items :: proc(t: ^testing.
 		"import counts: 3 imported, 1 missing metadata, 0 read errors",
 	)
 
+	saved, saved_rc := elog.load_cursor(&log, string(cursor.shard[:]))
+	testing.expect(t, saved_rc == sqlite.OK && saved == cursor, "live import saved cursor")
+
 	replayed := library.State {
 		library_path = root,
 	}

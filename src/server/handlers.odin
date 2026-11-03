@@ -1,7 +1,6 @@
 package server
 
 import "core:bufio"
-import "core:c"
 import "core:crypto/sha2"
 import "core:encoding/hex"
 import "core:fmt"
@@ -17,6 +16,7 @@ import "../http"
 import "../library"
 import "../media"
 import "../progress"
+import "../replay"
 import "../store"
 import "../template"
 import "../thumbnail"
@@ -590,24 +590,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		}
 	}
 
-	rc := sqlite.with_transaction(s.data_store, ev, proc(tx: ^sqlite.Tx, ev: elog.Event) -> c.int {
-		item := library.Image {
-			id           = ev.id,
-			oid          = ev.oid,
-			path         = ev.path,
-			ext          = ev.ext,
-			width        = ev.width,
-			height       = ev.height,
-			name         = ev.name,
-			comment      = ev.comment,
-			mtime        = ev.mtime,
-			added_at     = ev.added_at,
-			content_type = ev.content_type,
-		}
-		if rc := store.insert_into_items(tx, item); rc != sqlite.OK {return rc}
-		return store.toggle_tags(tx, ev.id, ev.tags_xor)
-	})
-	if rc != sqlite.OK {fmt.panicf("ingest: apply event to store: rc=%v", rc)}
+	replay.initiate_replay(s, full_replay = false)
 
 	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
 }
@@ -696,16 +679,7 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		return
 	}
 
-	// Log first, then apply to the store.
-	if sqlite.with_transaction(s.data_store, id, store.delete_item) != sqlite.OK {
-		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(
-			template.render_toast("could not apply delete event", .Error),
-			res,
-			.InternalServerError,
-		)
-		return
-	}
+	replay.initiate_replay(s, full_replay = false)
 
 	pth := fmt.aprintf("%s/images/%d.%s", s.library_path, id, img.ext, allocator = req.alloc)
 	// TODO: a failed original removal is logged but still returns 200. Originals
@@ -828,36 +802,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 			)
 			return
 		}
-		rc := sqlite.with_transaction(
-			s.data_store,
-			ev,
-			proc(tx: ^sqlite.Tx, ev: elog.Event) -> c.int {
-				patch := library.Image {
-					id           = ev.id,
-					oid          = ev.oid,
-					path         = ev.path,
-					ext          = ev.ext,
-					name         = ev.name,
-					comment      = ev.comment,
-					content_type = ev.content_type,
-					mtime        = ev.mtime,
-					added_at     = ev.added_at,
-					width        = ev.width,
-					height       = ev.height,
-				}
-				if rc := store.patch_item(tx, patch); rc != sqlite.OK {return rc}
-				return store.toggle_tags(tx, ev.id, ev.tags_xor)
-			},
-		)
-		if rc != sqlite.OK {
-			res.headers["HX-Reswap"] = "beforeend"
-			http.res_html(
-				template.render_toast("could not apply patch event", .Error),
-				res,
-				.InternalServerError,
-			)
-			return
-		}
+		replay.initiate_replay(s, full_replay = false)
 	}
 
 	img, _, rc2 := store.read_image_by_id(s.data_store, id, req.alloc)
