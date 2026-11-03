@@ -140,13 +140,15 @@ replay :: proc(
 	defer {if stmt != nil {sqlite.finalize(stmt)}}
 	rc := sqlite.prepare_v2(
 		db,
-		"INSERT INTO item_tags (item_id, tag) SELECT id, ?2 FROM items WHERE id = ?1",
+		"INSERT INTO item_tags (item_id, tag) VALUES (?1, ?2)",
 		-1,
 		&stmt,
 		nil,
 	)
 	if rc != sqlite.OK {return .DATABASE_ERR}
 	for id, membership in memberships {
+		// Deleted items have no row; the old SELECT dropped their tags implicitly.
+		if !seen_ids[id] {continue}
 		for present, index in membership {
 			if present == 0 {continue}
 			rc = sqlite.bind_int64(stmt, 1, i64(id))
