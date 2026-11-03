@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Mutation-test the @(mutate) procs of one Odin test package with mull.
+"""Mutation-test the `// mull-on` decls of one Odin test package with mull.
 
     test/tools/mutate.py src/cli [-- extra mull-runner args]
 
 Odin has no clang driver, so mull's IR plugin is applied by hand:
 
   1. copy the tracked tree to a scratch dir and run mutate_annotate.odin on it,
-     which wraps every non-@(mutate) region in mull-off/mull-on comments;
+     which adds the mull-off comments that close each `// mull-on` region;
   2. `odin build -build-mode:test -show-system-calls` to learn the link line,
      then `odin test -build-mode:llvm-ir` to get one .ll per module;
   3. compile every .ll with clang -fpass-plugin=mull-ir-frontend;
@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = os.environ.get("MULL_PLUGIN", "/tmp/mull-pkg/usr/lib/mull-ir-frontend-21")
 RUNNER = os.environ.get("MULL_RUNNER", "/tmp/mull-deb13/usr/bin/mull-runner")
-ODIN_FLAGS = ["-debug", "-custom-attribute:mutate"]
+ODIN_FLAGS = ["-debug"]
 
 
 def run(cmd, **kw):
@@ -61,10 +61,10 @@ def main():
     annotate = run(
         ["odin", "run", str(ROOT / "test/tools/mutate_annotate.odin"), "-file",
          f"-out:{work}/annotate", "--", *odin_files],
-        capture_output=True, text=True,
+        stdout=subprocess.PIPE, text=True,
     ).stdout.split()
     if not annotate:
-        sys.exit("mutate: no @(mutate) procs under src/")
+        sys.exit("mutate: no // mull-on markers under src/")
     print("mutate: annotated", *(os.path.relpath(f, tree) for f in annotate), file=sys.stderr)
 
     # 2a. Link line from a normal test build.

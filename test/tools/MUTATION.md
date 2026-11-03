@@ -1,6 +1,6 @@
 # Mutation testing with mull (spike)
 
-Mark a proc with `@(mutate)` and run:
+Put `// mull-on` on the line above a top-level proc and run:
 
     task mutate -- src/cli
 
@@ -25,11 +25,14 @@ Mull is built around clang: its IR pass runs inside the compiler, then
 `mull-runner` runs the instrumented binary with one mutant enabled at a time.
 Odin can emit LLVM IR, so the script does the clang part itself:
 
-1. Copy the tracked tree to `/tmp/booru-mutate-*`. In that copy,
-   `mutate_annotate.odin` uses `core:odin/parser` to find `@(mutate)` decls and
-   appends `// mull-off` / `// mull-on` comments to existing lines, so line
-   numbers do not change. Mull reads those comments from the source files that
-   the debug info points to.
+1. Copy the tracked tree to `/tmp/booru-mutate-*`. Mull reads `mull-on` /
+   `mull-off` comments from the source files that the debug info points to,
+   but the source only carries `// mull-on`, which on its own would leave
+   everything after it on. In the copy, `mutate_annotate.odin` uses
+   `core:odin/parser` to find the decl after each marker and appends
+   `// mull-off` to the package line and to the line after that decl. Only
+   existing lines change, so line numbers stay the same. It rejects a marker
+   inside a decl or with no decl after it.
 2. Run `odin build -build-mode:test -show-system-calls` to capture the link
    line, then `odin test -build-mode:llvm-ir -debug` to get one `.ll` file per
    module.
@@ -37,10 +40,6 @@ Odin can emit LLVM IR, so the script does the clang part itself:
    `mull.yml` sets `includePaths` to the annotated files and turns off junk
    detection, which tries to parse the source as C++.
 4. Link with the captured flags and run `mull-runner --include-not-covered`.
-
-`@(mutate)` needs `-custom-attribute:mutate` on every compile of `src/`. The
-Taskfile passes it through `ODIN_ATTRS`, and `windows.sh` passes it too. If
-you run `odin` directly on `src/`, add the flag yourself.
 
 ## Example: `src/cli`
 

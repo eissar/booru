@@ -107,7 +107,6 @@ odin build "${WIN_TEST_PKG:-test}" \
   -target:windows_amd64 -linker:lld \
   -windows-sdk-root:"$view" \
   -build-mode:test -all-packages \
-  -custom-attribute:mutate \
   -extra-linker-flags:"$link_flags" \
   -out:bin/win/tests.exe "$@"
 
