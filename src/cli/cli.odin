@@ -10,8 +10,8 @@ Opts :: struct {
 	socket:         string `usage:"Listen on this Unix socket path instead of TCP."`,
 	daemon:         bool `usage:"Detach; return once the server is ready to serve."`,
 
-	/* default test/fixture/library */
-	library:        string `usage:"Path to the library root (contains events/ and images/)."`,
+	/* default managed library */
+	library:        string `usage:"Library name or explicit path (default: default)."`,
 	import_eagle:   string `name:"import-eagle" usage:"Import an Eagle library root before serving."`,
 
 	// pack: string
@@ -54,7 +54,7 @@ resolve_listen_mode :: proc(opts: ^Opts) -> (error: string) {
 
 getFlags :: proc() -> Opts {
 	opts: Opts = {
-		library        = "test/fixture/library",
+		library        = "default",
 		scan_thumbnail = true,
 	}
 	flags.register_flag_checker(check_valid_port)

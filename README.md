@@ -17,6 +17,10 @@ we panic on startup with 'upgrade'. libraries can be backwards but not forwards 
 
 ===
 
+## Libraries
+
+By default, booru opens the managed library `default` under `$XDG_DATA_HOME/booru/libraries/`. If `XDG_DATA_HOME` is unset, it uses `~/.local/share/booru/libraries/`. Select another managed library with `-library:memes`; use an explicit path such as `-library:./memes` or `-library:/mnt/photos` to open a library elsewhere. A leading `~/` expands to `$HOME`.
+
 ## Frontend CSS
 
 Tailwind 3.4.17 is a pinned build-only dependency. Run `task assets:css` to install locked npm dependencies and regenerate `static/tailwind.css` from `assets/tailwind.css`, the Odin templates, and `static/gallery.js`. Build, run, and preview tasks do this automatically. Commit the generated stylesheet alongside class changes; serving prebuilt assets does not require Node. Load Tailwind before `static/gallery.css` so custom styles retain precedence.

@@ -17,6 +17,9 @@ import "replay"
 import "server"
 import "store"
 import "thumbnail"
+import "util"
+
+DATA_DIR: string
 
 fmt_timestamp :: proc(elapsed: time.Duration) -> string {
 	if elapsed < time.Second {
@@ -39,6 +42,43 @@ main :: proc() {
 
 
 	cfg := cli.getFlags()
+	home := os.get_env("HOME", context.temp_allocator)
+	data_home := os.get_env("XDG_DATA_HOME", context.temp_allocator)
+	if data_home == "" {
+		if home == "" {
+			fmt.eprintln("error: HOME is required when XDG_DATA_HOME is unset")
+			os.exit(2)
+		}
+		data_home, _ = os.join_path({home, ".local", "share"}, context.temp_allocator)
+	} else if !os.is_absolute_path(data_home) {
+		fmt.eprintln("error: XDG_DATA_HOME must be an absolute path")
+		os.exit(2)
+	}
+	DATA_DIR, _ = os.join_path({data_home, "booru"}, context.temp_allocator)
+	library_path := util.expand_home(cfg.library, home)
+	// Bare names select managed libraries; explicit paths stay explicit.
+	if !strings.has_prefix(cfg.library, ".") &&
+	   !strings.has_prefix(cfg.library, "~") &&
+	   !strings.contains(cfg.library, "/") &&
+	   !strings.contains(cfg.library, `\`) {
+		library_path, _ = os.join_path(
+			{DATA_DIR, "libraries", cfg.library},
+			context.temp_allocator,
+		)
+		info, stat_err := os.stat(cfg.library, context.temp_allocator)
+		if stat_err == nil {
+			if info.type == .Directory {
+				fmt.eprintf(
+					"warning: library %q resolves to %s; use -library:./%s for the directory in the current directory\n",
+					cfg.library,
+					library_path,
+					cfg.library,
+				)
+			}
+			os.file_info_delete(info, context.temp_allocator)
+		}
+	}
+	cfg.library = library_path
 	ready_fd := daemonize() if cfg.daemon else {}
 
 	if err := library.init_new_library(cfg.library); err != nil {
