@@ -5,6 +5,8 @@ high level tasks
 Harden flat parser: validation, boundaries, tests/fuzzing.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
 
+- [ ] Review existing replay panic/error states and thoroughly evaluate when a failed incremental replay (`full_replay = false`) can safely fall back to full replay.
+
 # Store Write Path TODO
 
 - [ ] Add `store.apply(tx, event)` as the only public store write proc; make `insert_*`, `patch_item`, `delete_item` in `src/store/store.odin` `@(private = "package")`. Move the op `switch` out of `replay.replay` (`src/replay/replay.odin`) so replay just loops `apply`. Unknown ops should error, not `continue`.

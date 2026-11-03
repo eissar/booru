@@ -350,4 +350,12 @@ initiate_replay :: proc(
 	if rc := store.create_indexes(s.data_store); rc != sqlite.OK {
 		fmt.panicf("replay: create indexes: %d", rc)
 	}
+	if full_replay && s.event_log != nil && s.event_log.cursor != nil {
+		s.event_log.cursor^ = {}
+		if len(paths) > 0 {
+			path := paths[len(paths) - 1]
+			copy(s.event_log.cursor.shard[:], path[len(path) - len(s.event_log.cursor.shard):])
+			s.event_log.cursor.offset = i64(len(streams[len(streams) - 1]))
+		}
+	}
 }
