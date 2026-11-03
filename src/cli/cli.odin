@@ -44,7 +44,6 @@ check_valid_port :: proc(
 }
 
 // Port has no struct default so an explicit -port is detectable.
-// mull-on
 resolve_listen_mode :: proc(opts: ^Opts) -> (error: string) {
 	if opts.socket != "" && opts.port != 0 {
 		return "-socket and -port are mutually exclusive"

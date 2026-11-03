@@ -1,14 +1,15 @@
 #!/usr/bin/env perl
-# Mutation-test the `// mull-on` decls of one Odin test package with mull.
+# Mutation-test the `// mull-on` decls against the test:all suite with mull.
 #
-#     test/tools/mutate.pl src/cli [-- extra mull-runner args]
+#     test/tools/mutate.pl [extra mull-runner args]
 #
 # Odin has no clang driver, so mull's IR plugin is applied by hand:
 #
 #   1. copy the tracked tree to a scratch dir and run mutate_annotate.odin on it,
 #      which adds the mull-off comments that close each `// mull-on` region;
-#   2. `odin build -build-mode:test -show-system-calls` to learn the link line,
-#      then `odin test -build-mode:llvm-ir` to get one .ll per module;
+#   2. build test/ the way `task test:all:build` does, once with
+#      -show-system-calls to learn the link line, once as LLVM IR (one .ll
+#      per module);
 #   3. compile every .ll with clang -fpass-plugin=mull-ir-frontend;
 #   4. link with the captured flags and hand the binary to mull-runner.
 #
@@ -38,10 +39,8 @@ sub sys (@cmd) { system(@cmd) == 0 or die "mutate: " . label(@cmd) . " failed\n"
 # `sh -c SCRIPT NAME ...` is labelled by NAME.
 sub label (@cmd) { ($cmd[0] eq "sh" ? $cmd[3] : $cmd[0]) =~ s/ .*//r }
 
-my ($pkg, $sep, @runner_args) = @ARGV;
-die "usage: test/tools/mutate.pl <package-dir> [-- mull-runner args]\n"
-	if !defined $pkg || (defined $sep && $sep ne '--');
-$pkg =~ s{/+$}{};
+my @runner_args = @ARGV;
+my @TEST_ALL     = ('test/', '-build-mode:test', '-all-packages', '-debug');
 -e or die "mutate: missing $_; see test/tools/MUTATION.md\n" for $PLUGIN, $RUNNER;
 
 chdir abs_path(dirname(__FILE__) . '/../..') or die "mutate: chdir: $!\n";
@@ -62,7 +61,7 @@ chdir $tree or die "mutate: chdir: $!\n";
 # 2. Link line from a normal test build, minus odin's own objects and -o;
 #    then one .ll per module.
 my $calls = capture('sh', '-c', 'exec "$@" 2>&1', 'odin',
-	'odin', 'build', $pkg, '-build-mode:test', '-debug', '-show-system-calls', "-out:$work/test");
+	'odin', 'build', @TEST_ALL, '-show-system-calls', "-out:$work/test");
 my ($link) = $calls =~ m{^\s*(clang .*-o "\Q$work\E/test".*)$}m
 	or die "mutate: no link line in odin -show-system-calls output\n";
 my (undef, @words) = shellwords($link);
@@ -72,7 +71,7 @@ while (defined(my $w = shift @words)) {
 	push @link_flags, $w unless $w =~ m{/test-.*\.o$};
 }
 mkdir "$work/ir";
-sys('odin', 'test', $pkg, '-debug', '-build-mode:llvm-ir', "-out:$work/ir");
+sys('odin', 'test', grep({ $_ ne '-build-mode:test' } @TEST_ALL), '-build-mode:llvm-ir', "-out:$work/ir");
 
 # 3. Instrument every module; includePaths keeps mull to the annotated files.
 open my $cfg, '>', "$work/mull.yml" or die "mutate: mull.yml: $!\n";
