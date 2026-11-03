@@ -43,19 +43,20 @@ Odin can emit LLVM IR, so the script does the clang part itself:
 
 ## Example: `src/cli`
 
-`check_valid_port` and `resolve_listen_mode` are marked. Before this change,
-`check_valid_port` had no test, so Odin dropped it from the test binary and
-mull found no mutants in it. Mutation testing cannot report code that the
-tests never reach.
+`resolve_listen_mode` is marked. The existing tests
+`socket_with_port_rejected` and `port_defaults_without_socket` cover it, and
+`task mutate -- src/cli -- --ide-reporter-show-killed` reports:
 
-With a test that only checked 0, 8080, and 70000, the run reported:
+    src/cli/cli.odin:49:2: warning: Killed: Replaced with == [cxx_ne_to_eq]
+    src/cli/cli.odin:52:2: warning: Killed: Replaced with != [cxx_eq_to_ne]
+    src/cli/cli.odin:52:2: warning: Killed: Replaced with == [cxx_ne_to_eq]
+    [info] Mutation score: 100%
 
-    src/cli/cli.odin:40:3: warning: Survived: Replaced with >= [cxx_gt_to_ge]
-    src/cli/cli.odin:40:3: warning: Survived: Replaced with <= [cxx_lt_to_le]
-    [info] Mutation score: 77%
+Each `if` holds two comparisons, but mull reports one mutant per statement
+and mutator (see Limitations).
 
-Those are the off-by-one boundaries. `port_range_checked` now checks 0, 1,
-65535, and 65536, and the score is 100% (9/9).
+`check_valid_port` in the same file is not marked. No test calls it, so Odin
+leaves it out of the test binary, and marking it would produce no mutants.
 
 ## Limitations
 
@@ -69,9 +70,9 @@ Those are the off-by-one boundaries. `port_range_checked` now checks 0, 1,
 - **No coverage.** Mull's coverage filter needs clang's
   `-fcoverage-mapping`, which Odin does not emit, so the script passes
   `--include-not-covered`.
-- **Unreached procs are not compiled**, so they produce no mutants (see the
-  example above).
+- **Unreached procs are not compiled**, so they produce no mutants (see
+  `check_valid_port` above).
 - **Whole binary.** Each mutant runs the full package test binary. That is fast
-  for `src/cli` (17 ms total). Slower packages will need their tests split up.
+  for `src/cli` (under 20 ms total). Slower packages will need their tests split up.
 - Linux only. `-show-system-calls` output parsing assumes Odin's clang link
   line.

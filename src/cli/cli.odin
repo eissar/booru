@@ -25,7 +25,6 @@ Opts :: struct {
 }
 //REGION: cli flag validation
 
-// mull-on
 check_valid_port :: proc(
 	model: rawptr,
 	name: string,
