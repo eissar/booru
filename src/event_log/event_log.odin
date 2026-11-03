@@ -142,7 +142,6 @@ get_current_event_shard :: proc(allocator := context.allocator) -> string {
 	return fmt.aprintf("%04d-%02d.ndjson", year, int(month), allocator = allocator)
 }
 
-// mull-on
 validate_tags_xor :: proc(tags: []string) -> string {
 	for tag, i in tags {
 		if len(tag) == 0 {return "event tag must not be empty"}

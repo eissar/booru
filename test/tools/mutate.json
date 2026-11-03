@@ -1,0 +1,5 @@
+{
+  "build": ["test/", "-build-mode:test", "-all-packages", "-debug"],
+  "procs": ["src/event_log/event_log.odin:validate_tags_xor"],
+  "accept": ["src/event_log/event_log.odin:validate_tags_xor:eq-to-le:len(tag) == 0"]
+}

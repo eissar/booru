@@ -1,8 +1,8 @@
 # ast-grep rules for test/tools/mutate.pl (Odin, via tree-sitter-odin).
 #
-# `body` finds the procs to mutate: the block of a proc declared right after
-# a `// mull-on` comment. Every other rule is a mutation: each match inside a
-# marked body, with its `fix`, is one mutant, named by the rule id. Add a
+# `body` finds every proc's block; mutate keeps those listed in
+# mutate.json's `procs`. Every other rule is a mutation: each match inside a
+# kept body, with its `fix`, is one mutant, named by the rule id. Add a
 # mutation by adding a rule.
 id: body
 language: odin
@@ -10,9 +10,7 @@ rule:
   kind: block
   inside:
     kind: procedure
-    inside:
-      kind: procedure_declaration
-      follows: {kind: comment, regex: '^//\s*mull-on\s*$'}
+    inside: {kind: procedure_declaration}
 
 # Binary operators, roughly cargo-mutants' swaps.
 ---

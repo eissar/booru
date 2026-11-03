@@ -1,17 +1,42 @@
 # Mutation testing (spike)
 
-Put `// mull-on` on the line above a top-level proc and run:
+List procs in `test/tools/mutate.json` and run:
 
     task mutate          # survivors and score
-    task mutate -- -v    # also list killed mutants
+    task mutate -- -v    # also list killed and accepted mutants
 
-`test/tools/mutate/` (an Odin program) makes small source edits ("mutants") to the marked
-procs, runs the `test:all` suite once per mutant, and prints the edits no test
-noticed. It exits non-zero if any mutant survives.
+`test/tools/mutate/` (an Odin program) makes small source edits ("mutants") to
+the listed procs, runs the `test:all` suite once per mutant, and prints the
+edits no test noticed. It exits non-zero if a survivor is not accepted.
+
+## Config: `test/tools/mutate.json`
+
+Flat JSON (no nested objects), read once at startup with
+`core:encoding/json` (`json.unmarshal`, strict `.JSON`) into a struct:
+
+    {
+      "build": ["test/", "-build-mode:test", "-all-packages", "-debug"],
+      "procs": ["src/event_log/event_log.odin:validate_tags_xor"],
+      "accept": ["src/event_log/event_log.odin:validate_tags_xor:eq-to-le:len(tag) == 0"]
+    }
+
+- `build`: arguments to `odin build` for the test binary (here, `test:all`).
+- `procs`: `file:proc` to mutate. An entry that matches no proc is an error,
+  so renames do not silently drop coverage.
+- `accept`: survivors judged equivalent. The key is
+  `file:proc:rule:original text`, with no line number, and is printed under
+  each unaccepted survivor for copying. An entry that matches no survivor is
+  reported, so stale entries show up. JSON has no comments: record why each
+  entry is equivalent below.
+
+Accepted:
+
+- `validate_tags_xor:eq-to-le:len(tag) == 0`: `len` is never negative, so
+  `<= 0` is the same check as `== 0`.
 
 ## Tools
 
-- [ast-grep](https://ast-grep.github.io/) finds the marked bodies and the
+- [ast-grep](https://ast-grep.github.io/) finds the proc bodies and the
   mutation sites. Install it into `/tmp` (or put `ast-grep` on `PATH`, or
   set `AST_GREP`):
 
@@ -30,9 +55,9 @@ The tool also needs `rsync` and `git`; per-mutant timeouts use `core:os` process
 1. Copy the tracked tree to `/tmp/booru-mutate-*`; nothing in the worktree is
    written.
 2. `ast-grep scan` runs `test/tools/mutants.yml`. Its `body` rule reports the
-   block of every proc declared right after a `// mull-on` comment. Every
-   other rule is a mutation: a pattern plus a `fix`, and each match inside a
-   marked block is one mutant, reported under the rule's id. To add a
+   block of every proc; those listed in `procs` are kept. Every other rule is
+   a mutation: a pattern plus a `fix`, and each match inside a kept block is
+   one mutant, reported under the rule's id. To add a
    mutation, add a rule. The current set:
 
    | Rules | Mutation |
@@ -44,7 +69,7 @@ The tool also needs `rsync` and `git`; per-mutant timeouts use `core:os` process
    | `body-empty`, `body-return-zero`, `body-return-named` | replace the whole body with `{}`, `return {}`, or a bare `return` (cargo-mutants' "replace with default") |
 
 3. Duplicate edits (same range and text) are dropped.
-4. Rewrite each marked proc so its body is one branch per mutant:
+4. Rewrite each listed proc so its body is one branch per mutant:
 
        validate_tags_xor :: proc(tags: []string) -> string {
        if __mut == 1 {<block with mutant 1>} else if __mut == 2 {...}
@@ -64,26 +89,24 @@ The tool also needs `rsync` and `git`; per-mutant timeouts use `core:os` process
 
 ## Scope: what `test:all` reaches
 
-Only mark procs that `test:all` reaches. `test/test-all.odin` decides which
-packages' tests are in the suite; `src/cli` is not one of them. A marked proc
+Only list procs that `test:all` reaches. `test/test-all.odin` decides which
+packages' tests are in the suite; `src/cli` is not one of them. A listed proc
 that no test calls has all its mutants survive.
 
 ## Example: `validate_tags_xor`
 
-`src/event_log/event_log.odin` marks `validate_tags_xor`. The rules give 14
-mutants, all of which compile; `task mutate` reports:
+`mutate.json` lists `validate_tags_xor`. The rules give 14 mutants, all of
+which compile; `task mutate` reports:
 
-    src/event_log/event_log.odin:148:6: SURVIVED: [eq-to-le] `len(tag) == 0` => `len(tag) <= 0`
-    mutate: 13/14 killed (93%)
+    mutate: 13/14 killed (93%), 1 accepted, 0 missed
 
-That is an equivalent mutant: `len` is never negative, so no test can tell
-`<= 0` from `== 0`. The whole-body mutant (`return {}`) is killed. The run
-takes about 8 s.
+The survivor, `len(tag) == 0` → `len(tag) <= 0`, is accepted (see Config).
+The whole-body mutant (`return {}`) is killed. The run takes about 4 s.
 
 ## Limitations
 
 - **Equivalent mutants**, like the one above, survive and have to be judged by
-  hand.
+  hand, then accepted in `mutate.json`.
 - **Unnamed multi-result procs** (`-> (int, bool)`) get no whole-body mutant:
   tree-sitter-odin does not parse that result list cleanly.
 - **Code size** grows with mutants × body length, since each mutant copies the

@@ -1,12 +1,16 @@
-// Mutation-test the procs marked `// mull-on` against the test:all suite.
+// Mutation-test the procs listed in test/tools/mutate.json.
 //
 //     odin run test/tools/mutate -- [-v]     // -v also lists killed mutants
 //
 // MUTATE_DEBUG=1 prints the compiler output of each round.
 //
+// mutate.json is flat JSON: `build` (odin build arguments for the test
+// binary), `procs` ("file:proc" to mutate) and `accept` (keys of surviving
+// mutants judged equivalent, as printed after each survivor).
+//
 // ast-grep (with the tree-sitter-odin grammar) runs the rules in
-// test/tools/mutants.yml: `body` finds each marked proc's block, and every
-// other rule's matches with their fixes inside a marked block are the
+// test/tools/mutants.yml: `body` finds every proc's block, and every other
+// rule's matches with their fixes inside a listed proc's block are the
 // mutants. Instead of rebuilding per mutant, every mutant becomes a branch of
 // the body:
 //
@@ -32,9 +36,14 @@ import "core:time"
 
 GRAMMAR_REPO :: "https://github.com/tree-sitter-grammars/tree-sitter-odin"
 GRAMMAR_REV :: "d2ca8efb4487e156a60d5bd6db2598b872629403"
-BUILD :: []string{"odin", "build", "test/", "-build-mode:test", "-all-packages", "-debug"}
 
-// A marked proc's block, braces included, as byte offsets into its file.
+Config :: struct {
+	build:  []string,
+	procs:  []string,
+	accept: []string,
+}
+
+// A listed proc's block, braces included, as byte offsets into its file.
 Body :: struct {
 	file:       string,
 	name:       string,
@@ -57,6 +66,7 @@ Line :: struct {
 }
 
 root, work, tree: string
+config: Config
 src: map[string]string // file -> contents
 bodies: [dynamic]Body
 mutants: [dynamic]Mutant
@@ -131,9 +141,9 @@ ensure_grammar :: proc() -> string {
 
 // 1. Marked blocks and mutants from `ast-grep scan`, as byte ranges.
 scan :: proc(sg, grammar: string) {
-	config := strings.concatenate({work, "/sgconfig.yml"})
+	sg_config := strings.concatenate({work, "/sgconfig.yml"})
 	write(
-		config,
+		sg_config,
 		strings.concatenate(
 			{
 				"customLanguages:\n  odin:\n    libraryPath: ",
@@ -148,7 +158,7 @@ scan :: proc(sg, grammar: string) {
 			sg,
 			"scan",
 			"--config",
-			config,
+			sg_config,
 			"--custom-languages",
 			"allow",
 			"--rule",
@@ -176,7 +186,10 @@ scan :: proc(sg, grammar: string) {
 		if file not_in src {src[file] = read(strings.concatenate({tree, "/", file}))}
 		start, end := int(at["start"].(json.Integer)), int(at["end"].(json.Integer))
 		if rule == "body" {
-			append(&bodies, Body{file, proc_name(src[file][:start]), start, end})
+			name := proc_name(src[file][:start])
+			if slice.contains(config.procs, strings.concatenate({file, ":", name})) {
+				append(&bodies, Body{file, name, start, end})
+			}
 		} else if new, has := m["replacement"].(json.String); has {
 			if r, has_r := m["replacementOffsets"].(json.Object); has_r {
 				start, end = int(r["start"].(json.Integer)), int(r["end"].(json.Integer))
@@ -184,7 +197,12 @@ scan :: proc(sg, grammar: string) {
 			append(&matches, Match{file, rule, new, start, end})
 		}
 	}
-	if len(bodies) == 0 {fail("mutate: no // mull-on procs under src/")}
+	for p in config.procs {
+		found := false
+		for b in bodies {found ||= strings.concatenate({b.file, ":", b.name}) == p}
+		if !found {fail("mutate: mutate.json lists", p, "but no such proc was found")}
+	}
+	if len(bodies) == 0 {fail("mutate: mutate.json lists no procs")}
 
 	slice.sort_by(matches[:], proc(a, b: Match) -> bool {
 		return a.file < b.file || a.file == b.file && a.start < b.start
@@ -310,7 +328,8 @@ live :: proc() -> (n: int) {
 build :: proc(exe: string) {
 	cmd := slice.concatenate(
 		[][]string {
-			BUILD,
+			{"odin", "build"},
+			config.build,
 			{
 				"-error-pos-style:unix",
 				"-max-error-count:10000",
@@ -358,15 +377,24 @@ passes :: proc(exe: string, id: int, timeout: time.Duration) -> bool {
 	return state.exit_code == 0
 }
 
+squash :: proc(s: string) -> string {
+	return strings.join(strings.fields(s), " ")
+}
+
+// Line-independent name for `accept`: file:proc:rule:original text.
+accept_key :: proc(m: Mutant) -> string {
+	b := bodies[m.body]
+	return strings.concatenate(
+		{b.file, ":", b.name, ":", m.rule, ":", squash(src[b.file][m.start:m.end])},
+	)
+}
+
 show :: proc(status: string, m: Mutant) {
 	file := bodies[m.body].file
 	text := src[file]
 	before := text[:m.start]
 	line := strings.count(before, "\n") + 1
 	col := m.start - (strings.last_index_byte(before, '\n') + 1) + 1
-	squash :: proc(s: string) -> string {
-		return strings.join(strings.fields(s), " ")
-	}
 	orig := squash(text[m.start:m.end])
 	if len(orig) > 63 {orig = strings.concatenate({orig[:60], "..."})}
 	fmt.printfln(
@@ -385,6 +413,11 @@ main :: proc() {
 	verbose := len(os.args) > 1 && os.args[1] == "-v"
 	root, _ = filepath.clean(strings.concatenate({#directory, "/../../.."}), context.allocator)
 	if err := os.change_directory(root); err != nil {fail("mutate: chdir", root, err)}
+	data, read_err := os.read_entire_file("test/tools/mutate.json", context.allocator)
+	if read_err != nil {fail("mutate: test/tools/mutate.json:", read_err)}
+	if err := json.unmarshal(data, &config, .JSON); err != nil {
+		fail("mutate: test/tools/mutate.json:", err)
+	}
 	sg := find_ast_grep()
 	grammar := ensure_grammar()
 
@@ -424,13 +457,33 @@ main :: proc() {
 	slice.sort_by(killed[:], by_pos)
 	slice.sort_by(survived[:], by_pos)
 	if verbose {for m in killed {show("killed", m)}}
-	for m in survived {show("SURVIVED", m)}
+	accepted, missed: [dynamic]Mutant
+	used: map[string]bool
+	for m in survived {
+		key := accept_key(m)
+		if slice.contains(config.accept, key) {
+			used[key] = true
+			append(&accepted, m)
+		} else {
+			append(&missed, m)
+		}
+	}
+	if verbose {for m in accepted {show("accepted", m)}}
+	for m in missed {
+		show("SURVIVED", m)
+		fmt.printfln("    accept key: %s", accept_key(m))
+	}
+	for key in config.accept {
+		if !used[key] {fmt.eprintln("mutate: accept entry matched no surviving mutant:", key)}
+	}
 	total := len(killed) + len(survived)
 	fmt.printfln(
-		"mutate: %d/%d killed (%.0f%%)",
+		"mutate: %d/%d killed (%.0f%%), %d accepted, %d missed",
 		len(killed),
 		total,
 		100 * f64(len(killed)) / f64(total),
+		len(accepted),
+		len(missed),
 	)
-	os.exit(len(survived) > 0 ? 1 : 0)
+	os.exit(len(missed) > 0 ? 1 : 0)
 }
