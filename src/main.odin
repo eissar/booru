@@ -54,7 +54,8 @@ main :: proc() {
 		fmt.eprintln("error: XDG_DATA_HOME must be an absolute path")
 		os.exit(2)
 	}
-	DATA_DIR, _ = os.join_path({data_home, "booru"}, context.temp_allocator)
+	DATA_DIR, _ = os.join_path({data_home, "booru"}, context.allocator)
+	defer delete(DATA_DIR, context.allocator)
 	library_path := util.expand_home(cfg.library, home)
 	// Bare names select managed libraries; explicit paths stay explicit.
 	if !strings.has_prefix(cfg.library, ".") &&
@@ -78,6 +79,8 @@ main :: proc() {
 			os.file_info_delete(info, context.temp_allocator)
 		}
 	}
+	library_path = strings.clone(library_path, context.allocator)
+	defer delete(library_path, context.allocator)
 	cfg.library = library_path
 	ready_fd := daemonize() if cfg.daemon else {}
 
