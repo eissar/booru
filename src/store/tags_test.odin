@@ -17,8 +17,28 @@ tags_are_explicit_and_toggle_in_transaction :: proc(t: ^testing.T) {
 		name = "before",
 		tags = {"ignored"},
 	}
-	testing.expect(t, insert_into_items(s.data_store, image) == sqlite.OK)
-	testing.expect(t, sqlite.with_transaction(s.data_store, image, patch_item) == sqlite.OK)
+	testing.expect(
+		t,
+		sqlite.with_transaction(
+			s.data_store,
+			image,
+			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+				return insert_item(tx, item)
+			},
+		) ==
+		sqlite.OK,
+	)
+	testing.expect(
+		t,
+		sqlite.with_transaction(
+			s.data_store,
+			image,
+			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+				return patch_item(tx, item)
+			},
+		) ==
+		sqlite.OK,
+	)
 	got, found, rc := read_image_by_id(s.data_store, 1, alloc)
 	testing.expect(t, found && rc == sqlite.OK && len(got.tags) == 0)
 	testing.expect(t, toggle_tags(&sqlite.Tx{db = s.data_store}, 1, {"cat"}) == sqlite.MISUSE)
@@ -56,7 +76,7 @@ toggle_failure_rolls_back_tags_and_metadata :: proc(t: ^testing.T) {
 	testing.expect(
 		t,
 		sqlite.with_transaction(s.data_store, 1, proc(tx: ^sqlite.Tx, id: int) -> c.int {
-				rc := insert_into_items(tx, library.Image{id = id, name = "before"})
+				rc := insert_item(tx, library.Image{id = id, name = "before"})
 				if rc != sqlite.OK {return rc}
 				return toggle_tags(tx, id, {"keep"})
 			}) == sqlite.OK,
@@ -82,7 +102,7 @@ toggle_failure_rolls_back_tags_and_metadata :: proc(t: ^testing.T) {
 	}
 	// A tag failure must also roll back creation in the same transaction.
 	rc = sqlite.with_transaction(s.data_store, 2, proc(tx: ^sqlite.Tx, id: int) -> c.int {
-		rc := insert_into_items(tx, library.Image{id = id})
+		rc := insert_item(tx, library.Image{id = id})
 		if rc != sqlite.OK {return rc}
 		return toggle_tags(tx, id, {"good", "bad"})
 	})

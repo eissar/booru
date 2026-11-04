@@ -58,6 +58,12 @@ replay :: proc(
 	defer delete(record.fields)
 	item_insert: ^sqlite.Stmt
 	defer {if item_insert != nil {sqlite.finalize(item_insert)}}
+	item_patch, patch_rc := store.prepare_item_patch(db)
+	if patch_rc != sqlite.OK {return .DATABASE_ERR}
+	defer sqlite.finalize(item_patch)
+	item_delete, delete_rc := store.prepare_item_delete(db)
+	if delete_rc != sqlite.OK {return .DATABASE_ERR}
+	defer sqlite.finalize(item_delete)
 	for stream, i in streams {
 		text := stream
 		data := &text
@@ -86,16 +92,16 @@ replay :: proc(
 						item_insert, rc = store.prepare_item_insert(db)
 						if rc != sqlite.OK {return .DATABASE_ERR}
 					}
-					rc = store.insert_into_items(&tx, item, item_insert)
+					rc = store.insert_item(&tx, item, item_insert)
 				} else {
-					rc = store.insert_into_items(&tx, item)
+					rc = store.insert_item(&tx, item)
 				}
 			case "patch":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
-				rc = store.patch_item(&tx, item)
+				rc = store.patch_item(&tx, item, item_patch)
 			case "delete":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
-				rc = store.delete_item(&tx, item.id)
+				rc = store.delete_item(&tx, item.id, item_delete)
 				if full_replay {seen_ids[item.id] = false}
 			case "regen_thumbnail":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}

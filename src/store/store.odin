@@ -99,46 +99,40 @@ Close :: proc(state: ^library.State) {
 }
 
 // Uses the caller's transaction. Foreign-key cascade removes item_tags.
-delete_item :: proc(tx: ^sqlite.Tx, id: int) -> c.int {
-	stmt: ^sqlite.Stmt
-	rc := sqlite.prepare_v2(tx.db, "DELETE FROM items WHERE id == ?", -1, &stmt, nil)
-	defer {
-		if stmt != nil {sqlite.finalize(stmt)}
+delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> c.int {
+	stmt := prepared
+	owned_stmt := stmt == nil
+	rc: c.int
+	if owned_stmt {
+		stmt, rc = prepare_item_delete(tx.db)
+		if rc != sqlite.OK {return rc}
 	}
-	if rc != sqlite.OK {return rc}
+	defer {
+		if owned_stmt && stmt != nil {sqlite.finalize(stmt)}
+	}
 	rc = sqlite.bind_int64(stmt, 1, i64(id))
 	if rc != sqlite.OK {return rc}
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return rc}
+	if !owned_stmt {
+		return sqlite.reset(stmt)
+	}
 	return sqlite.OK
 }
 
 // Uses the caller's transaction. Empty/zero fields leave existing values alone.
 // Tags are never changed here; apply explicit deltas with toggle_tags.
-patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-	stmt: ^sqlite.Stmt
-	rc := sqlite.prepare_v2(
-		tx.db,
-		`UPDATE items SET
-			oid = COALESCE(NULLIF(?, ''), oid),
-			path = COALESCE(NULLIF(?, ''), path),
-			ext = COALESCE(NULLIF(?, ''), ext),
-			name = COALESCE(NULLIF(?, ''), name),
-			content_type = COALESCE(NULLIF(?, ''), content_type),
-			mtime = COALESCE(NULLIF(?, 0), mtime),
-			added_at = COALESCE(NULLIF(?, 0), added_at),
-			width = COALESCE(NULLIF(?, 0), width),
-			height = COALESCE(NULLIF(?, 0), height),
-			comment = COALESCE(NULLIF(?11, ''), comment)
-		WHERE id = ?10`,
-		-1,
-		&stmt,
-		nil,
-	)
-	defer {
-		if stmt != nil {sqlite.finalize(stmt)}
+patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> c.int {
+	stmt := prepared
+	owned_stmt := stmt == nil
+	rc: c.int
+	if owned_stmt {
+		stmt, rc = prepare_item_patch(tx.db)
+		if rc != sqlite.OK {return rc}
 	}
-	if rc != sqlite.OK {return rc}
+	defer {
+		if owned_stmt && stmt != nil {sqlite.finalize(stmt)}
+	}
 
 	values := [5]string{item.oid, item.path, item.ext, item.name, item.content_type}
 	for value, i in values {
@@ -157,30 +151,52 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
 	if rc != sqlite.OK {return rc}
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return rc}
+	if !owned_stmt {
+		return sqlite.reset(stmt)
+	}
 	return sqlite.OK
 }
 
+// The caller owns the returned statement and must finalize it.
+prepare_item_delete :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
+	rc = sqlite.prepare_v2(db, "DELETE FROM items WHERE id == ?", -1, &stmt, nil)
+	if rc != sqlite.OK && stmt != nil {
+		sqlite.finalize(stmt)
+		stmt = nil
+	}
+	return
+}
+
+// The caller owns the returned statement and must finalize it.
+prepare_item_patch :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
+	rc = sqlite.prepare_v2(
+		db,
+		`UPDATE items SET
+			oid = COALESCE(NULLIF(?, ''), oid),
+			path = COALESCE(NULLIF(?, ''), path),
+			ext = COALESCE(NULLIF(?, ''), ext),
+			name = COALESCE(NULLIF(?, ''), name),
+			content_type = COALESCE(NULLIF(?, ''), content_type),
+			mtime = COALESCE(NULLIF(?, 0), mtime),
+			added_at = COALESCE(NULLIF(?, 0), added_at),
+			width = COALESCE(NULLIF(?, 0), width),
+			height = COALESCE(NULLIF(?, 0), height),
+			comment = COALESCE(NULLIF(?11, ''), comment)
+		WHERE id = ?10`,
+		-1,
+		&stmt,
+		nil,
+	)
+	if rc != sqlite.OK && stmt != nil {
+		sqlite.finalize(stmt)
+		stmt = nil
+	}
+	return
+}
+
 // Inserts item metadata; tags are stored separately in item_tags.
-insert_into_items :: proc {
-	insert_item,
-	insert_item_tx,
-}
-
-// Owns its transaction.
-@(private = "file")
-insert_item :: proc(db: ^sqlite.DB, item: library.Image) -> c.int {
-	return sqlite.with_transaction(db, item, proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-		return insert_item_tx(tx, item)
-	})
-}
-
 // Uses the caller's transaction; never commits or rolls back.
-@(private = "file")
-insert_item_tx :: proc(
-	tx: ^sqlite.Tx,
-	item: library.Image,
-	prepared: ^sqlite.Stmt = nil,
-) -> c.int {
+insert_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> c.int {
 	stmt := prepared
 	owned_stmt := stmt == nil
 	rc: c.int

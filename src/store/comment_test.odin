@@ -2,6 +2,7 @@ package store
 
 import "../library"
 import "../vendor/sqlite"
+import "core:c"
 import "core:testing"
 
 @(test)
@@ -14,9 +15,12 @@ comment_round_trip :: proc(t: ^testing.T) {
 	comment := "Unicode 猫, \"quotes\", \\ and\nnewlines"
 	if !testing.expect(
 		t,
-		insert_into_items(
+		sqlite.with_transaction(
 			state.data_store,
 			library.Image{id = 1, oid = "oid", name = "match", comment = comment},
+			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+				return insert_item(tx, item)
+			},
 		) ==
 		sqlite.OK,
 	) {return}
@@ -37,13 +41,22 @@ comment_round_trip :: proc(t: ^testing.T) {
 		sqlite.with_transaction(
 			state.data_store,
 			library.Image{id = 1, comment = "updated"},
-			patch_item,
+			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+				return patch_item(tx, item)
+			},
 		) ==
 		sqlite.OK,
 	)
 	testing.expect(
 		t,
-		sqlite.with_transaction(state.data_store, library.Image{id = 1}, patch_item) == sqlite.OK,
+		sqlite.with_transaction(
+			state.data_store,
+			library.Image{id = 1},
+			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+				return patch_item(tx, item)
+			},
+		) ==
+		sqlite.OK,
 	)
 	image, id_found, id_rc := read_image_by_id(state.data_store, 1, alloc)
 	if testing.expect(t, id_found && id_rc == sqlite.OK) {

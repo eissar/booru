@@ -66,7 +66,7 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	if !testing.expect(t, store.Init(&live, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&live)
 	rc := sqlite.with_transaction(live.data_store, 1, proc(tx: ^sqlite.Tx, id: int) -> c.int {
-		rc := store.insert_into_items(
+		rc := store.insert_item(
 			tx,
 			library.Image {
 				id = id,
@@ -85,9 +85,9 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 		if rc != sqlite.OK {return rc}
 		rc = store.toggle_tags(tx, id, {"alpha", "beta"})
 		if rc != sqlite.OK {return rc}
-		rc = store.insert_into_items(tx, library.Image{id = 2})
+		rc = store.insert_item(tx, library.Image{id = 2})
 		if rc != sqlite.OK {return rc}
-		rc = store.insert_into_items(tx, library.Image{id = 900001})
+		rc = store.insert_item(tx, library.Image{id = 900001})
 		if rc != sqlite.OK {return rc}
 		rc = store.toggle_tags(tx, 900001, {"ghost"})
 		if rc != sqlite.OK {return rc}

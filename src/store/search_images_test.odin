@@ -27,7 +27,7 @@ search_images_filters_sorts_and_pages :: proc(t: ^testing.T) {
 				state.data_store,
 				image,
 				proc(tx: ^sqlite.Tx, image: library.Image) -> c.int {
-					rc := insert_into_items(tx, image)
+					rc := insert_item(tx, image)
 					if rc != sqlite.OK {return rc}
 					return toggle_tags(tx, image.id, image.tags)
 				},

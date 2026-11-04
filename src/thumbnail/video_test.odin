@@ -33,7 +33,17 @@ video_first_frame_thumbnail_fixture :: proc(t: ^testing.T) {
 	}
 	if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&state)
-	testing.expect(t, store.insert_into_items(state.data_store, images[0]) == sqlite.OK)
+	testing.expect(
+		t,
+		sqlite.with_transaction(
+			state.data_store,
+			images[0],
+			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+				return store.insert_item(tx, item)
+			},
+		) ==
+		sqlite.OK,
+	)
 
 	// Startup scan generates both resolutions from the video's first frame.
 	n, failed := generate_missing_thumbnails(state)

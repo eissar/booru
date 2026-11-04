@@ -1,5 +1,7 @@
 package server
 
+import "core:c"
+
 import "core:bytes"
 import "core:fmt"
 import "core:io"
@@ -61,7 +63,17 @@ image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 	if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&state)
 	for img in images {
-		if !testing.expect(t, store.insert_into_items(state.data_store, img) == sqlite.OK) {return}
+		if !testing.expect(
+			t,
+			sqlite.with_transaction(
+				state.data_store,
+				img,
+				proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+					return store.insert_item(tx, item)
+				},
+			) ==
+			sqlite.OK,
+		) {return}
 	}
 	res := http.Response {
 		headers = make(map[string]string),
@@ -98,7 +110,17 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
 	for img in images {
-		if !testing.expect(t, store.insert_into_items(s.data_store, img) == sqlite.OK) {return}
+		if !testing.expect(
+			t,
+			sqlite.with_transaction(
+				s.data_store,
+				img,
+				proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+					return store.insert_item(tx, item)
+				},
+			) ==
+			sqlite.OK,
+		) {return}
 	}
 	source, err := os.read_entire_file(
 		"test/fixture/library/thumbnails/" + oid + ".webp",

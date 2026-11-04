@@ -1,5 +1,7 @@
 package store
 
+import "core:c"
+
 import "../library"
 import "../vendor/sqlite"
 import "core:os"
@@ -20,7 +22,14 @@ init_preserves_existing_store :: proc(t: ^testing.T) {
 	if !testing.expect(t, Init(&s, name) == sqlite.OK) {return}
 	if !testing.expect(
 		t,
-		insert_into_items(s.data_store, library.Image{id = 1, name = "preserved"}) == sqlite.OK,
+		sqlite.with_transaction(
+			s.data_store,
+			library.Image{id = 1, name = "preserved"},
+			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
+				return insert_item(tx, item)
+			},
+		) ==
+		sqlite.OK,
 	) {
 		Close(&s)
 		return
