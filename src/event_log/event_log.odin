@@ -32,7 +32,6 @@ Op :: enum {
 	Add,
 	Patch,
 	Delete,
-	Regen_Thumbnail,
 }
 
 // One writer owns the filesystem log. SQLite owns derived replay progress.
@@ -161,7 +160,8 @@ encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -
 	switch event in e {
 	case Event:
 		if err := validate_tags_xor(event.tags_xor); err != "" {return err}
-		if event.op == "delete" || event.op == "regen_thumbnail" {
+		if event.op == "regen_thumbnail" {return "unsupported event operation"}
+		if event.op == "delete" {
 			if len(event.tags_xor) != 0 ||
 			   event.oid != "" ||
 			   event.path != "" ||
@@ -172,9 +172,10 @@ encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -
 			   event.mtime != 0 ||
 			   event.added_at != 0 ||
 			   event.width != 0 ||
-			   event.height != 0 {return "delete and regen_thumbnail events carry only id"}
+			   event.height != 0 {return "delete events carry only id"}
 		}
 	case EventRemediation:
+		if event.op == "regen_thumbnail" {return "unsupported event operation"}
 		if err := validate_tags_xor(event.tags_xor); err != "" {return err}
 	case:
 		return "unsupported event type"

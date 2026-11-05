@@ -86,10 +86,7 @@ validate_event_tags :: proc(t: ^testing.T) {
 		ascii: strings.Builder
 		strings.builder_init(&ascii)
 		defer strings.builder_destroy(&ascii)
-		testing.expect(
-			t,
-			encode_event(Event{id = 1, op = "regen_thumbnail", width = 5}, &ascii) != "",
-		)
+		testing.expect(t, encode_event(Event{id = 1, op = "regen_thumbnail"}, &ascii) != "")
 	}
 	{
 		ascii: strings.Builder
@@ -100,6 +97,21 @@ validate_event_tags :: proc(t: ^testing.T) {
 			encode_event(Event{id = 1, op = "delete", tags_xor = {"cat"}}, &ascii) != "",
 		)
 	}
+}
+
+@(test)
+reject_thumbnail_events :: proc(t: ^testing.T) {
+	buf: bytes.Buffer
+	bytes.buffer_init_allocator(&buf, 0, 0)
+	defer bytes.buffer_destroy(&buf)
+	w := bytes.buffer_to_stream(&buf)
+	e := Event {
+		id = 1,
+		op = "regen_thumbnail",
+	}
+	testing.expect(t, write_event(w, e) != "")
+	testing.expect(t, write_event(w, EventRemediation{e, {}}) != "")
+	testing.expect(t, bytes.buffer_length(&buf) == 0)
 }
 
 @(test)

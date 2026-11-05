@@ -157,6 +157,7 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 		`{"op":"add","id":1}`,
 		`{"op":"patch","id":1,"color":"red"}`,
 		`{"op":"delete","id":1,"name":"x"}`,
+		`{"op":"regen_thumbnail","id":1}`,
 		`{"op":"regen_thumbnail","id":1,"width":5}`,
 		`{"op":"regen_thumbnail","id":2}`,
 		`{"op":"delete","id":1}
@@ -287,7 +288,6 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 	text := `{"op":"add","id":1,"tags_xor":["cat"]}
 {"op":"patch","id":1,"tags_xor":["cat","dog"]}
 {"op":"patch","id":1,"tags_xor":["cat","dog"]}
-{"op":"regen_thumbnail","id":1,"width":0,"mtime":0}
 `
 	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 	testing.expect(t, replay(&s, {text}, context.allocator) == nil)

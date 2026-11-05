@@ -72,7 +72,7 @@ replay :: proc(
 			item, op, tags, err := parse_item(line, &record, alloc)
 			if err != nil {return err}
 			if item.id <= 0 {return .BadEvent}
-			if op == "delete" || op == "regen_thumbnail" {
+			if op == "delete" {
 				for field in record.fields {
 					if field.key == "op" || field.key == "id" || field.key == "version" {continue}
 					// Odin json omitempty still writes integer zeros; treat them as absent.
@@ -103,9 +103,6 @@ replay :: proc(
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				rc = store.delete_item(&tx, item.id, item_delete)
 				if full_replay {seen_ids[item.id] = false}
-			case "regen_thumbnail":
-				if full_replay && !seen_ids[item.id] {return .BadEvent}
-			// Derived artifact integrity is outside replay's scope.
 			case:
 				return .BadEvent
 			}
