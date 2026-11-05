@@ -19,7 +19,7 @@ comment_round_trip :: proc(t: ^testing.T) {
 			state.data_store,
 			library.Image{id = 1, oid = "oid", name = "match", comment = comment},
 			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-				return insert_item(tx, item)
+				return c.int(insert_item(tx, item))
 			},
 		) ==
 		sqlite.OK,
@@ -42,7 +42,7 @@ comment_round_trip :: proc(t: ^testing.T) {
 			state.data_store,
 			library.Image{id = 1, comment = "updated"},
 			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-				return patch_item(tx, item)
+				return c.int(patch_item(tx, item))
 			},
 		) ==
 		sqlite.OK,
@@ -53,7 +53,7 @@ comment_round_trip :: proc(t: ^testing.T) {
 			state.data_store,
 			library.Image{id = 1},
 			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-				return patch_item(tx, item)
+				return c.int(patch_item(tx, item))
 			},
 		) ==
 		sqlite.OK,

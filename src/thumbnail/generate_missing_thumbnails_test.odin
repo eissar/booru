@@ -42,7 +42,7 @@ generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
 			state.data_store,
 			images[0],
 			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-				return store.insert_item(tx, item)
+				return c.int(store.insert_item(tx, item))
 			},
 		) ==
 		sqlite.OK,

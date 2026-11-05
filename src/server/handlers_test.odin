@@ -69,7 +69,7 @@ image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
 				state.data_store,
 				img,
 				proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-					return store.insert_item(tx, item)
+					return c.int(store.insert_item(tx, item))
 				},
 			) ==
 			sqlite.OK,
@@ -116,7 +116,7 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 				s.data_store,
 				img,
 				proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-					return store.insert_item(tx, item)
+					return c.int(store.insert_item(tx, item))
 				},
 			) ==
 			sqlite.OK,

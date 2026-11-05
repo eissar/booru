@@ -83,6 +83,7 @@ replay :: proc(
 				}
 			}
 			rc: i32 = sqlite.OK
+			store_err: store.Error
 			switch op {
 			case "add":
 				if full_replay {
@@ -92,21 +93,27 @@ replay :: proc(
 						item_insert, rc = store.prepare_item_insert(db)
 						if rc != sqlite.OK {return .DATABASE_ERR}
 					}
-					rc = store.insert_item(&tx, item, item_insert)
+					store_err = store.insert_item(&tx, item, item_insert)
 				} else {
-					rc = store.insert_item(&tx, item)
+					store_err = store.insert_item(&tx, item)
 				}
 			case "patch":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
-				rc = store.patch_item(&tx, item, item_patch)
+				store_err = store.patch_item(&tx, item, item_patch)
 			case "delete":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
-				rc = store.delete_item(&tx, item.id, item_delete)
+				store_err = store.delete_item(&tx, item.id, item_delete)
 				if full_replay {seen_ids[item.id] = false}
 			case:
 				return .BadEvent
 			}
-			if rc != sqlite.OK {return .DATABASE_ERR}
+			#partial switch store_err {
+			case .None:
+			case .DuplicateID:
+				return .BadEvent
+			case:
+				return .DATABASE_ERR
+			}
 			if !full_replay {
 				if len(tags) != 0 {
 					if store.toggle_tags(&tx, item.id, tags) != sqlite.OK {

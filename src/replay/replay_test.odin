@@ -66,40 +66,42 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	if !testing.expect(t, store.Init(&live, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&live)
 	rc := sqlite.with_transaction(live.data_store, 1, proc(tx: ^sqlite.Tx, id: int) -> c.int {
-		rc := store.insert_item(
-			tx,
-			library.Image {
-				id = id,
-				oid = "oid",
-				path = "path",
-				ext = "png",
-				name = "before",
-				content_type = "image/png",
-				width = 42,
-				height = 43,
-				mtime = 44,
-				added_at = 45,
-				comment = "retained",
-			},
+		rc := c.int(
+			store.insert_item(
+				tx,
+				library.Image {
+					id = id,
+					oid = "oid",
+					path = "path",
+					ext = "png",
+					name = "before",
+					content_type = "image/png",
+					width = 42,
+					height = 43,
+					mtime = 44,
+					added_at = 45,
+					comment = "retained",
+				},
+			),
 		)
 		if rc != sqlite.OK {return rc}
 		rc = store.toggle_tags(tx, id, {"alpha", "beta"})
 		if rc != sqlite.OK {return rc}
-		rc = store.insert_item(tx, library.Image{id = 2})
+		rc = c.int(store.insert_item(tx, library.Image{id = 2}))
 		if rc != sqlite.OK {return rc}
-		rc = store.insert_item(tx, library.Image{id = 900001})
+		rc = c.int(store.insert_item(tx, library.Image{id = 900001}))
 		if rc != sqlite.OK {return rc}
 		rc = store.toggle_tags(tx, 900001, {"ghost"})
 		if rc != sqlite.OK {return rc}
-		rc = store.patch_item(tx, library.Image{id = id, name = "middle"})
+		rc = c.int(store.patch_item(tx, library.Image{id = id, name = "middle"}))
 		if rc != sqlite.OK {return rc}
 		rc = store.toggle_tags(tx, id, {"alpha", "gamma"})
 		if rc != sqlite.OK {return rc}
-		rc = store.patch_item(tx, library.Image{id = id, name = "final"})
+		rc = c.int(store.patch_item(tx, library.Image{id = id, name = "final"}))
 		if rc != sqlite.OK {return rc}
 		rc = store.toggle_tags(tx, id, {"beta", "dog"})
 		if rc != sqlite.OK {return rc}
-		return store.delete_item(tx, 900001)
+		return c.int(store.delete_item(tx, 900001))
 	})
 	testing.expect(t, rc == sqlite.OK)
 	actual, read_rc := store.read_images(rebuilt.data_store, alloc)

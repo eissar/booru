@@ -98,37 +98,44 @@ Close :: proc(state: ^library.State) {
 	}
 }
 
+// Error is c.int-backed so None == sqlite.OK and transaction bodies can cast it.
+Error :: enum c.int {
+	None        = 0,
+	Database    = 1, // any other sqlite failure
+	DuplicateID = 100, // insert reused an existing id
+}
+
 // Uses the caller's transaction. Foreign-key cascade removes item_tags.
-delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> c.int {
+delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> Error {
 	stmt := prepared
 	owned_stmt := stmt == nil
 	rc: c.int
 	if owned_stmt {
 		stmt, rc = prepare_item_delete(tx.db)
-		if rc != sqlite.OK {return rc}
+		if rc != sqlite.OK {return .Database}
 	}
 	defer {
 		if owned_stmt && stmt != nil {sqlite.finalize(stmt)}
 	}
 	rc = sqlite.bind_int64(stmt, 1, i64(id))
-	if rc != sqlite.OK {return rc}
+	if rc != sqlite.OK {return .Database}
 	rc = sqlite.step(stmt)
-	if rc != sqlite.DONE {return rc}
+	if rc != sqlite.DONE {return .Database}
 	if !owned_stmt {
-		return sqlite.reset(stmt)
+		return sqlite.reset(stmt) == sqlite.OK ? .None : .Database
 	}
-	return sqlite.OK
+	return .None
 }
 
 // Uses the caller's transaction. Empty/zero fields leave existing values alone.
 // Tags are never changed here; apply explicit deltas with toggle_tags.
-patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> c.int {
+patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> Error {
 	stmt := prepared
 	owned_stmt := stmt == nil
 	rc: c.int
 	if owned_stmt {
 		stmt, rc = prepare_item_patch(tx.db)
-		if rc != sqlite.OK {return rc}
+		if rc != sqlite.OK {return .Database}
 	}
 	defer {
 		if owned_stmt && stmt != nil {sqlite.finalize(stmt)}
@@ -136,25 +143,25 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt =
 
 	values := [5]string{item.oid, item.path, item.ext, item.name, item.content_type}
 	for value, i in values {
-		if !sqlite.bind_string(stmt, i + 1, value) {return 1} 	// SQLITE_ERROR
+		if !sqlite.bind_string(stmt, i + 1, value) {return .Database}
 	}
 	rc = sqlite.bind_int64(stmt, 6, item.mtime)
-	if rc != sqlite.OK {return rc}
+	if rc != sqlite.OK {return .Database}
 	rc = sqlite.bind_int64(stmt, 7, item.added_at)
-	if rc != sqlite.OK {return rc}
+	if rc != sqlite.OK {return .Database}
 	rc = sqlite.bind_int64(stmt, 8, i64(item.width))
-	if rc != sqlite.OK {return rc}
+	if rc != sqlite.OK {return .Database}
 	rc = sqlite.bind_int64(stmt, 9, i64(item.height))
-	if rc != sqlite.OK {return rc}
-	if !sqlite.bind_string(stmt, 11, item.comment) {return 1}
+	if rc != sqlite.OK {return .Database}
+	if !sqlite.bind_string(stmt, 11, item.comment) {return .Database}
 	rc = sqlite.bind_int64(stmt, 10, i64(item.id))
-	if rc != sqlite.OK {return rc}
+	if rc != sqlite.OK {return .Database}
 	rc = sqlite.step(stmt)
-	if rc != sqlite.DONE {return rc}
+	if rc != sqlite.DONE {return .Database}
 	if !owned_stmt {
-		return sqlite.reset(stmt)
+		return sqlite.reset(stmt) == sqlite.OK ? .None : .Database
 	}
-	return sqlite.OK
+	return .None
 }
 
 // The caller owns the returned statement and must finalize it.
@@ -196,13 +203,13 @@ prepare_item_patch :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 
 // Inserts item metadata; tags are stored separately in item_tags.
 // Uses the caller's transaction; never commits or rolls back.
-insert_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> c.int {
+insert_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> Error {
 	stmt := prepared
 	owned_stmt := stmt == nil
 	rc: c.int
 	if owned_stmt {
 		stmt, rc = prepare_item_insert(tx.db)
-		if rc != sqlite.OK {return rc}
+		if rc != sqlite.OK {return .Database}
 	}
 	defer {if owned_stmt {sqlite.finalize(stmt)}}
 
@@ -216,7 +223,7 @@ insert_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt 
 	integer_indices := [5]c.int{1, 7, 8, 9, 10}
 	for value, i in integer_values {
 		rc = sqlite.bind_int64(stmt, integer_indices[i], value)
-		if rc != sqlite.OK {return rc}
+		if rc != sqlite.OK {return .Database}
 	}
 
 	text_values := [6]string {
@@ -229,16 +236,16 @@ insert_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt 
 	}
 	text_indices := [6]c.int{2, 3, 4, 5, 6, 11}
 	for value, i in text_values {
-		if len(value) > 0x7fff_ffff {return 18} 	// SQLITE_TOOBIG
+		if len(value) > 0x7fff_ffff {return .Database}
 		p := cstring(raw_data(value))
 		if len(value) == 0 {p = cstring("")}
 		rc = sqlite.bind_text(stmt, text_indices[i], p, c.int(len(value)), sqlite.TRANSIENT)
-		if rc != sqlite.OK {return rc}
+		if rc != sqlite.OK {return .Database}
 	}
 
 	rc = sqlite.step(stmt)
-	if rc != sqlite.DONE {return rc}
-	return sqlite.reset(stmt)
+	if rc != sqlite.DONE {return rc == 19 ? .DuplicateID : .Database}
+	return sqlite.reset(stmt) == sqlite.OK ? .None : .Database
 }
 
 // The caller owns the returned statement and must finalize it.

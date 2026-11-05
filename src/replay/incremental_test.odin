@@ -90,11 +90,11 @@ incremental_application_and_cursor_roll_back_together :: proc(t: ^testing.T) {
 	next := cursor
 	next.offset += i64(len(patch))
 	if !testing.expect(t, elog.save_cursor(&tx, &next) == sqlite.OK) {return}
-	// A later event fails after both application and cursor advancement.
+	// A duplicate add fails after both application and cursor advancement.
 	testing.expect_value(
 		t,
 		replay(&s, {first}, context.allocator, full_replay = false),
-		Error.DATABASE_ERR,
+		Error.BadEvent,
 	)
 	if !testing.expect(t, sqlite.run(s.data_store, "ROLLBACK")) {return}
 	image, found, rc := store.read_image_by_id(s.data_store, 1, alloc)

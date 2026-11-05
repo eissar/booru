@@ -26,7 +26,7 @@ init_preserves_existing_store :: proc(t: ^testing.T) {
 			s.data_store,
 			library.Image{id = 1, name = "preserved"},
 			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-				return insert_item(tx, item)
+				return c.int(insert_item(tx, item))
 			},
 		) ==
 		sqlite.OK,
