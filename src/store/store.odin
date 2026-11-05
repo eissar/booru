@@ -53,7 +53,8 @@ create_tables :: proc(db: ^sqlite.DB) -> c.int {
 			width INTEGER NOT NULL,
 			height INTEGER NOT NULL,
 			mtime INTEGER NOT NULL,
-			added_at INTEGER NOT NULL
+			added_at INTEGER NOT NULL,
+			deleted INTEGER NOT NULL DEFAULT 0
 		);
 		CREATE TABLE IF NOT EXISTS item_tags (
 			item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -102,10 +103,12 @@ Close :: proc(state: ^library.State) {
 Error :: enum c.int {
 	None        = 0,
 	Database    = 1, // any other sqlite failure
-	DuplicateID = 100, // insert reused an existing id
+	NotFound    = 100, // no live row with this id (missing or soft-deleted)
+	DuplicateID = 101, // insert reused an existing id (deleted or not)
 }
 
-// Uses the caller's transaction. Foreign-key cascade removes item_tags.
+// Uses the caller's transaction. Soft delete: the row stays so IDs are never reused.
+// Fails if the item is missing or already deleted.
 delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> Error {
 	stmt := prepared
 	owned_stmt := stmt == nil
@@ -121,6 +124,10 @@ delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> Er
 	if rc != sqlite.OK {return .Database}
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return .Database}
+	if sqlite.changes64(tx.db) == 0 {
+		if !owned_stmt {sqlite.reset(stmt)}
+		return .NotFound
+	}
 	if !owned_stmt {
 		return sqlite.reset(stmt) == sqlite.OK ? .None : .Database
 	}
@@ -158,6 +165,10 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt =
 	if rc != sqlite.OK {return .Database}
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return .Database}
+	if sqlite.changes64(tx.db) == 0 {
+		if !owned_stmt {sqlite.reset(stmt)}
+		return .NotFound
+	}
 	if !owned_stmt {
 		return sqlite.reset(stmt) == sqlite.OK ? .None : .Database
 	}
@@ -166,7 +177,13 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt =
 
 // The caller owns the returned statement and must finalize it.
 prepare_item_delete :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
-	rc = sqlite.prepare_v2(db, "DELETE FROM items WHERE id == ?", -1, &stmt, nil)
+	rc = sqlite.prepare_v2(
+		db,
+		"UPDATE items SET deleted = 1 WHERE id = ? AND deleted = 0",
+		-1,
+		&stmt,
+		nil,
+	)
 	if rc != sqlite.OK && stmt != nil {
 		sqlite.finalize(stmt)
 		stmt = nil
@@ -189,7 +206,7 @@ prepare_item_patch :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 			width = COALESCE(NULLIF(?, 0), width),
 			height = COALESCE(NULLIF(?, 0), height),
 			comment = COALESCE(NULLIF(?11, ''), comment)
-		WHERE id = ?10`,
+		WHERE id = ?10 AND deleted = 0`,
 		-1,
 		&stmt,
 		nil,
@@ -254,8 +271,8 @@ prepare_item_insert :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 		db,
 		`INSERT INTO items (
 			id, oid, path, ext, name, content_type,
-			width, height, mtime, added_at, comment
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			width, height, mtime, added_at, comment, deleted
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 		-1,
 		&stmt,
 		nil,

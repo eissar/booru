@@ -109,7 +109,7 @@ replay :: proc(
 			}
 			#partial switch store_err {
 			case .None:
-			case .DuplicateID:
+			case .NotFound, .DuplicateID:
 				return .BadEvent
 			case:
 				return .DATABASE_ERR

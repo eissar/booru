@@ -6,6 +6,7 @@ Harden flat parser: validation, boundaries, tests/fuzzing.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
 
 - [ ] Review existing replay panic/error states and thoroughly evaluate when a failed incremental replay (`full_replay = false`) can safely fall back to full replay.
+- [ ] Classify startup store errors and rebuild only when restartable. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
 - [ ] Enforce the assumption that older event shards are fully applied: either deduplicate, clean, and compress historical shards so they are immutable (locked by convention), or check their persisted offsets against actual file lengths.
 
 # Store Write Path TODO

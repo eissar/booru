@@ -15,6 +15,8 @@ if we ever change event semantics, we will add a version key to the events.
 during replay, if we come across a version greater than our supported version,
 we panic on startup with 'upgrade'. libraries can be backwards but not forwards compatible.
 
+events are validated when written, against the SQLite projection and before they are appended to the log; replay trusts the log and does not re-validate, so writes pay for the checks and reads stay fast.
+
 ===
 
 ## Libraries

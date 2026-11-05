@@ -30,6 +30,7 @@ read_images :: proc(db: ^sqlite.DB, alloc: mem.Allocator) -> (images: []library.
 				)
 			) AS tags
 		FROM items AS i
+		WHERE i.deleted = 0
 		ORDER BY i.id`,
 		alloc,
 	)
@@ -71,7 +72,8 @@ search_images :: proc(
 				)
 			) AS tags
 		FROM items AS i
-		WHERE (instr(lower(i.name), lower(?1)) > 0
+		WHERE i.deleted = 0
+		  AND (instr(lower(i.name), lower(?1)) > 0
 		   OR EXISTS (
 				SELECT 1
 				FROM item_tags AS t
@@ -166,7 +168,7 @@ read_image_by_id :: proc(
 				)
 			) AS tags
 		FROM items AS i
-		WHERE i.id = ?`,
+		WHERE i.id = ? AND i.deleted = 0`,
 		alloc,
 		id = id,
 	)
@@ -187,7 +189,7 @@ read_oids_by_ids :: proc(
 	if len(ids) == 0 {return nil, sqlite.OK}
 
 	sql_str := fmt.caprintf(
-		"SELECT items.oid FROM (VALUES %s) LEFT JOIN items ON items.id = column1",
+		"SELECT items.oid FROM (VALUES %s) LEFT JOIN items ON items.id = column1 AND items.deleted = 0",
 		strings.trim_suffix(strings.repeat("(?),", len(ids), alloc), ","),
 		allocator = alloc,
 	)
@@ -243,7 +245,7 @@ read_image_by_oid :: proc(
 				)
 			) AS tags
 		FROM items AS i
-		WHERE i.oid = ? ORDER BY i.id LIMIT 1`,
+		WHERE i.oid = ? AND i.deleted = 0 ORDER BY i.id LIMIT 1`,
 		alloc,
 		oid = oid,
 	)
