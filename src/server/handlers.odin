@@ -780,6 +780,9 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		}
 	}
 	ev.tags_xor = delta[:]
+	// Timestamp patches only advance; omit redundant/backward inputs before append.
+	if ev.mtime <= current.mtime {ev.mtime = 0}
+	if ev.added_at <= current.added_at {ev.added_at = 0}
 	changed :=
 		len(delta) != 0 ||
 		(ev.name != "" && ev.name != current.name) ||

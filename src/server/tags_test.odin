@@ -37,6 +37,8 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 		id       = 1,
 		op       = "add",
 		name     = "original",
+		mtime    = 100,
+		added_at = 200,
 		tags_xor = {"fox", "night"},
 	}
 	if !testing.expect(t, elog.ev_append(&log, []elog.Event{initial}) == "") {return}
@@ -50,6 +52,9 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 		writes:      bool,
 		status:      http.STATUS,
 	} {
+		{"id=1&mtime=100&added_at=200", {"fox", "night"}, nil, "original", false, .OK},
+		{"id=1&mtime=99&added_at=-1", {"fox", "night"}, nil, "original", false, .OK},
+		{"id=1&mtime=101&added_at=199", {"fox", "night"}, nil, "original", true, .OK},
 		{"id=1&tags=fox,day", {"day", "fox"}, {"night", "day"}, "original", true, .OK},
 		// Repeating the request must not flip anything again.
 		{"id=1&tags=day,fox", {"day", "fox"}, nil, "original", false, .OK},
@@ -90,6 +95,12 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 		if !testing.expect(t, rc == sqlite.OK && found) {return}
 		testing.expect(t, slice.equal(img.tags, tc.tags), "desired membership applied")
 		testing.expect(t, img.name == tc.name)
+		testing.expect(t, img.added_at == 200)
+		testing.expect(
+			t,
+			img.mtime ==
+			(tc.body == "id=1&mtime=100&added_at=200" || tc.body == "id=1&mtime=99&added_at=-1" ? 100 : 101),
+		)
 
 		data, read_err := os.read_entire_file(path, alloc)
 		if !testing.expect(t, read_err == nil) {return}
@@ -111,6 +122,7 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 				nil,
 			) {return}
 			testing.expect(t, ev.op == "patch" && ev.id == 1)
+			testing.expect(t, ev.added_at == 0)
 			testing.expect(t, slice.equal(ev.tags_xor, tc.delta), "only changed keys are logged")
 			if len(tc.delta) == 0 {
 				testing.expect(
@@ -131,7 +143,10 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 		testing.expect(t, read_rc == sqlite.OK && exists)
 		testing.expect(
 			t,
-			slice.equal(img.tags, other.tags) && img.name == other.name,
+			slice.equal(img.tags, other.tags) &&
+			img.name == other.name &&
+			img.mtime == other.mtime &&
+			img.added_at == other.added_at,
 			"live and rebuilt state agree",
 		)
 		store.Close(&rebuilt)

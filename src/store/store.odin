@@ -135,6 +135,7 @@ delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> Er
 }
 
 // Uses the caller's transaction. Empty/zero fields leave existing values alone.
+// Timestamp patches are upward-only advances, reduced by max with the creation seed.
 // Tags are never changed here; apply explicit deltas with toggle_tags.
 patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> Error {
 	stmt := prepared
@@ -201,8 +202,8 @@ prepare_item_patch :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 			ext = COALESCE(NULLIF(?, ''), ext),
 			name = COALESCE(NULLIF(?, ''), name),
 			content_type = COALESCE(NULLIF(?, ''), content_type),
-			mtime = COALESCE(NULLIF(?, 0), mtime),
-			added_at = COALESCE(NULLIF(?, 0), added_at),
+			mtime = MAX(mtime, COALESCE(NULLIF(?, 0), mtime)),
+			added_at = MAX(added_at, COALESCE(NULLIF(?, 0), added_at)),
 			width = COALESCE(NULLIF(?, 0), width),
 			height = COALESCE(NULLIF(?, 0), height),
 			comment = COALESCE(NULLIF(?11, ''), comment)
