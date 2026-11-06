@@ -56,14 +56,5 @@
 - [ ] Replace empty/zero-as-absent writer handling with explicit field presence for editable values. Omission means unchanged; a supplied empty/zero value is an intentional edit where the field contract permits it.
 - [ ] Allow `name` and `comment` to become empty through their byte/length XOR deltas (or the chosen comment representation), not through overwrite assignments. Compute clears from validated current state and omit unchanged inputs.
 - [ ] Preserve tag clearing as an explicit empty desired membership, converted to membership XOR deltas; omitted tags remain unchanged.
-- [ ] Allow explicit empty strings and numeric zeros on LWW fields through `overwrite`, subject to field validity constraints. Do not permit invalid original references or bypass original-replacement conflict checks.
-- [ ] Define nullability explicitly before accepting JSON `null`: current string/integer fields do not represent a distinct nil state. Reject null for non-nullable fields rather than treating it as omission, empty, or zero. Any genuinely nullable field requires a presence-aware event representation, projection support, and a defined reducer before nil assignments are enabled.
+- [x] LWW fields: `0`/empty means unchanged for `ext`, `content_type`, `width`, `height` (explicit clears unsupported). Writers reject a present-but-empty `oid` or `path`; JSON `null` is rejected for every field (replay already returns `BadEvent` for non-string/non-integer tokens).
 - [ ] Keep timestamps upward-only: zero is not a timestamp reset, and clearing/lowering remains unsupported.
-
-## Completion checks
-
-- [ ] No replacement assignments remain in `patch`, and no commutative fields are accepted by `overwrite`.
-- [ ] Existing tag membership semantics remain unchanged.
-- [ ] Every committed XOR delta is processed exactly once; duplicate delivery remains explicitly unsafe.
-- [ ] Encoded events remain smaller than 2,048 bytes and oversized writes fail before append.
-- [ ] Run relevant tests and formatting checks without unrelated changes.

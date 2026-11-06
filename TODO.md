@@ -9,15 +9,24 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Classify startup store errors and rebuild only when restartable. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
 - [ ] Enforce the assumption that older event shards are fully applied: either deduplicate, clean, and compress historical shards so they are immutable (locked by convention), or check their persisted offsets against actual file lengths.
 
+- [ ] Test: every permutation of a small valid tag history yields the same final membership.
+- [ ] Test: independently reduced partitions merge to the same result as sequential replay.
+- [ ] Test: `name` XOR deltas (growth, shrink, clear, multibyte, shuffled order) reduce to the final name.
+- [ ] Test: comment patches at distinct anchors commute and reduce to the final text.
+- [ ] Test: overwrite applies in log order, last assignment per field wins, and later patches on commutative fields still apply.
+- [ ] Test: `slop_pijul` round trip for empty comments, repeated lines, whitespace, line endings, multibyte UTF-8.
+- [ ] Benchmark comment patches against direct XOR (high-water memory, shifted-suffix cost).
+- [ ] Define behavior when a mixed patch+overwrite batch fails partway through `ev_append` (`src/server/handlers.odin`).
+
+- [ ] Test: `handle_update_metadata` rejects a present-but-empty `oid` or `path` with 400 and appends nothing; JSON `null` on any field is a `BadEvent`.
+
 # Store Write Path TODO
 
-- [ ] Add `store.apply(tx, event)` as the only public store write proc; make `insert_*`, `patch_item`, `delete_item` in `src/store/store.odin` `@(private = "package")`. Move the op `switch` out of `replay.replay` (`src/replay/replay.odin`) so replay just loops `apply`. Unknown ops should error, not `continue`.
-- [ ] Route runtime upload/delete and Eagle import store writes through `store.apply`. Keep log-first ordering: a failed apply is recovered by replay.
-- [ ] `apply` advances the per-shard replay cursor in the same SQLite tx as the state change, so store and cursor can't drift (lfs-booru: `applyEvent(event, nextCursor)` in `src/index_store.ts`).
-- [ ] Serialize runtime applies (and `add` id allocation) if handlers run concurrently (lfs-booru: `this.mu` + `nextIdMutex`).
-- [ ] Keep a batch path: replay/import open one tx and `apply` every line (lfs-booru: `applyEventsFromFile`).
-- [ ] Rebuild path: defer secondary indexes (`items_added_at`, `item_tags_by_tag`) and the FK check during full replay. Create the indexes after the bulk insert, then run `PRAGMA foreign_key_check`. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
-- [ ] Optional: CI/pre-commit check that nothing outside `store` writes to the DB directly.
+Writes are log-first: handlers and Eagle import append events, then run incremental replay (`replay.initiate_replay(s, full_replay = false)`), which is the only caller of the store write procs and saves shard cursors in the same tx. No `store.apply` wrapper is planned.
+
+- [ ] Serialize appends, replay and `add` id allocation if handlers ever run concurrently; today `Serve` is synchronous.
+- [ ] Rebuild path: indexes are already deferred during full replay. Still missing: run `PRAGMA foreign_key_check` after the bulk insert. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
+- [ ] Optional: CI/pre-commit check that nothing outside `replay` calls the store write procs or writes to the DB directly.
 - [ ] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
 - [ ] Remove `core:log` (still used in `src/main.odin` and `src/server/server.odin`); use `fmt.eprint*` instead.

@@ -749,6 +749,17 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	_, comment_present := params["comment"]
 	oid := form_string(params, "oid", &ok)
 	path := form_string(params, "path", &ok)
+	for key in ([]string{"oid", "path"}) {
+		if value, present := params[key]; present && strings.trim_space(value) == "" {
+			res.headers["HX-Reswap"] = "beforeend"
+			http.res_html(
+				template.render_toast("oid and path must not be empty", .Error),
+				res,
+				.BadRequest,
+			)
+			return
+		}
+	}
 	ext := form_string(params, "ext", &ok)
 	content_type := form_string(params, "content_type", &ok)
 	mtime := form_i64(params, "mtime", &ok)
