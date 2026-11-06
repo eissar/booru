@@ -42,10 +42,10 @@ replay :: proc(
 	tag_indexes := make(map[string]int, alloc)
 	dictionary := make([dynamic]string, alloc)
 	// TODO: Migrate to packed bitsets eventually to reduce memory.
-	memberships := make(map[int][dynamic]u8, backing_alloc)
+	tag_memberships := make(map[int][dynamic]u8, backing_alloc)
 	defer {
-		for _, membership in memberships {delete(membership)}
-		delete(memberships)
+		for _, membership in tag_memberships {delete(membership)}
+		delete(tag_memberships)
 	}
 	seen_ids := make(map[int]bool, backing_alloc)
 	defer delete(seen_ids)
@@ -161,12 +161,12 @@ replay :: proc(
 					tag_indexes[owned_tag] = index
 					append(&dictionary, owned_tag)
 				}
-				membership := memberships[item.id]
+				membership := tag_memberships[item.id]
 				if membership.allocator.procedure ==
 				   nil {membership = make([dynamic]u8, backing_alloc)}
 				if len(membership) <= index {resize(&membership, index + 1)}
 				membership[index] ~= 1
-				memberships[item.id] = membership
+				tag_memberships[item.id] = membership
 			}
 			finished += 1
 			if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
@@ -203,7 +203,7 @@ replay :: proc(
 		nil,
 	)
 	if rc != sqlite.OK {return .DATABASE_ERR}
-	for id, membership in memberships {
+	for id, membership in tag_memberships {
 		// Deleted items have no row; the old SELECT dropped their tags implicitly.
 		if !seen_ids[id] {continue}
 		for present, index in membership {
