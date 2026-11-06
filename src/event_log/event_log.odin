@@ -154,7 +154,6 @@ encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -
 	switch event in e {
 	case Event:
 		if err := validate_tags(event.tags); err != "" {return err}
-		if event.op == "regen_thumbnail" {return "unsupported event operation"}
 		if event.op == "overwrite" {
 			if len(event.tags) != 0 ||
 			   event.name != "" ||
@@ -184,7 +183,6 @@ encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -
 			   event.height != 0 {return "delete events carry only id"}
 		}
 	case EventRemediation:
-		if event.op == "regen_thumbnail" {return "unsupported event operation"}
 		if err := validate_tags(event.tags); err != "" {return err}
 	case:
 		return "unsupported event type"

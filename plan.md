@@ -47,8 +47,6 @@
 - [x] Add the distinct `overwrite` operation and enforce per-operation allowed keys in writers and replay.
 - [x] Allow replacement assignments only for `oid`, `path`, `ext`, `content_type`, `width`, and `height`. Reject commutative fields, XOR payloads, and changes to item identity or lifecycle.
 - [x] Reject LWW field updates in `patch`; route their writers through `overwrite`. A user edit touching both field classes emits distinct operations, each validated before append.
-- [ ] Distinguish omitted values from explicit empty strings and zero values.
-- [ ] Route original replacement through overwrite, retaining its expected-current-version/content-hash conflict check.
 - [x] Implement the two-pass replay contract: parallel commutative reduction, followed by sequential overwrites in authoritative log order.
 - [x] Ensure live application uses the same disjoint field ownership as replay; later patches remain effective on commutative fields regardless of intervening overwrites.
 - [x] Verify live application, sequential reference reduction, parallel partition reduction, and full rebuild agree.
