@@ -114,7 +114,9 @@ replay :: proc(
 				}
 			case "patch":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
-				store_err = store.patch_item(&tx, item, item_patch)
+				if item.mtime != 0 || item.added_at != 0 {
+					store_err = store.patch_item(&tx, item, item_patch)
+				}
 			case "delete":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				store_err = store.delete_item(&tx, item.id, item_delete)
@@ -239,23 +241,12 @@ parse_item :: proc(
 	err: Error,
 ) {
 	elog.parse_flat(line, record)
-	for field in record.fields {
-		if field.key == "tags" {
-			if !field.is_array {return item, op, tags, .BadEvent}
-			tags = make([]string, len(field.values), alloc)
-			for token, i in field.values {
-				if token.kind != .String {return item, op, tags, .BadEvent}
-				tags[i] = replay_flat_string(token, alloc)
-			}
-			if elog.validate_tags(tags) != "" {return item, op, tags, .BadEvent}
-			continue
-		}
-		if field.key == "tags_xor" {return item, op, tags, .BadEvent}
-		if field.key == "name_xor" {return item, op, tags, .BadEvent}
-		if field.is_array || len(field.values) != 1 {return item, op, tags, .BadEvent}
-		token := field.values[0]
-		// Absent version means version 0.
-		if field.key == "version" {
+
+	// Extract op, id, version upfront
+	for f in record.fields {
+		if f.key == "version" {
+			if f.is_array || len(f.values) != 1 {return item, op, tags, .BadEvent}
+			token := f.values[0]
 			if token.kind != .Integer {return item, op, tags, .BadEvent}
 			value, ok := strconv.parse_int(token.text)
 			if !ok || value < 0 {return item, op, tags, .BadEvent}
@@ -263,109 +254,178 @@ parse_item :: proc(
 			   elog.MAX_SUPPORTED_EVENT_VERSION {return item, op, tags, .UnsupportedVersion}
 			continue
 		}
-		if field.key == "id" || field.key == "width" || field.key == "height" {
-			if token.kind != .Integer {return item, op, tags, .BadEvent}
-			value, ok := strconv.parse_int(token.text)
-			if !ok {return item, op, tags, .BadEvent}
-			switch field.key {
-			case "id":
-				item.id = value
-			case "width":
-				item.width = value
-			case "height":
-				item.height = value
-			}
-			continue
-		}
-		if field.key == "op" ||
-		   field.key == "oid" ||
-		   field.key == "path" ||
-		   field.key == "ext" ||
-		   field.key == "comment" ||
-		   field.key == "name" ||
-		   field.key == "content_type" {
-			if token.kind != .String {return item, op, tags, .BadEvent}
-			if token.text == `""` && field.key != "op" {return item, op, tags, .NotImplemented}
-		}
-		switch field.key {
+		if f.is_array || len(f.values) != 1 {continue}
+		token := f.values[0]
+		switch f.key {
 		case "op":
-			op = replay_flat_string(token, alloc)
-		case "oid":
-			item.oid = replay_flat_string(token, alloc)
-		case "path":
-			item.path = replay_flat_string(token, alloc)
-		case "ext":
-			item.ext = replay_flat_string(token, alloc)
-		case "comment":
-			text := replay_flat_string(token, alloc)
-			op_text := op
-			if op_text == "" {
-				for f in record.fields {
-					if f.key == "op" &&
-					   !f.is_array &&
-					   len(f.values) == 1 &&
-					   f.values[0].kind == .String {
-						op_text = replay_flat_string(f.values[0], alloc)
-						break
-					}
+			if token.kind == .String {
+				op = replay_flat_string(token, alloc)
+			}
+		case "id":
+			if token.kind == .Integer {
+				if value, ok := strconv.parse_int(token.text); ok {
+					item.id = value
 				}
 			}
-			switch op_text {
-			case "add":
-				item.comment = text
-			case "patch":
-				comment_patch^ = text
-			case "delete":
-				return item, op, tags, .BadEvent
+		}
+	}
+
+	if op == "" {return item, op, tags, .BadEvent}
+
+	switch op {
+	case "add":
+		for field in record.fields {
+			if field.key == "op" || field.key == "id" || field.key == "version" {continue}
+			if field.key == "tags" {
+				if !field.is_array {return item, op, tags, .BadEvent}
+				tags = make([]string, len(field.values), alloc)
+				for token, i in field.values {
+					if token.kind != .String {return item, op, tags, .BadEvent}
+					tags[i] = replay_flat_string(token, alloc)
+				}
+				if elog.validate_tags(tags) != "" {return item, op, tags, .BadEvent}
+				continue
+			}
+			if field.is_array || len(field.values) != 1 {return item, op, tags, .BadEvent}
+			token := field.values[0]
+			switch field.key {
+			case "oid":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				if token.text == `""` {return item, op, tags, .NotImplemented}
+				item.oid = replay_flat_string(token, alloc)
+			case "path":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				if token.text == `""` {return item, op, tags, .NotImplemented}
+				item.path = replay_flat_string(token, alloc)
+			case "ext":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				if token.text == `""` {return item, op, tags, .NotImplemented}
+				item.ext = replay_flat_string(token, alloc)
+			case "content_type":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				if token.text == `""` {return item, op, tags, .NotImplemented}
+				item.content_type = replay_flat_string(token, alloc)
+			case "name":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				if token.text == `""` {return item, op, tags, .NotImplemented}
+				item.name = replay_flat_string(token, alloc)
+			case "comment":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				if token.text == `""` {return item, op, tags, .NotImplemented}
+				item.comment = replay_flat_string(token, alloc)
+			case "width":
+				if token.kind != .Integer {return item, op, tags, .BadEvent}
+				if v, ok := strconv.parse_int(token.text);
+				   ok {item.width = v} else {return item, op, tags, .BadEvent}
+			case "height":
+				if token.kind != .Integer {return item, op, tags, .BadEvent}
+				if v, ok := strconv.parse_int(token.text);
+				   ok {item.height = v} else {return item, op, tags, .BadEvent}
+			case "mtime":
+				if token.kind != .Integer {return item, op, tags, .BadEvent}
+				if v, ok := strconv.parse_i64(token.text);
+				   ok {item.mtime = v} else {return item, op, tags, .BadEvent}
+			case "added_at":
+				if token.kind != .Integer {return item, op, tags, .BadEvent}
+				if v, ok := strconv.parse_i64(token.text);
+				   ok {item.added_at = v} else {return item, op, tags, .BadEvent}
 			case:
-				item.comment = text
+				return item, op, tags, .BadEvent
 			}
-		case "name":
-			text := replay_flat_string(token, alloc)
-			// In add events, name is the initial plaintext seed.
-			// In patch events, name is the hex UTF-8 byte XOR delta.
-			// If op field appears after name in JSON, look for op in record.fields:
-			op_text := op
-			if op_text == "" {
-				for f in record.fields {
-					if f.key == "op" &&
-					   !f.is_array &&
-					   len(f.values) == 1 &&
-					   f.values[0].kind == .String {
-						op_text = replay_flat_string(f.values[0], alloc)
-						break
-					}
+		}
+
+	case "patch":
+		for field in record.fields {
+			if field.key == "op" || field.key == "id" || field.key == "version" {continue}
+			if field.key == "tags" {
+				if !field.is_array {return item, op, tags, .BadEvent}
+				tags = make([]string, len(field.values), alloc)
+				for token, i in field.values {
+					if token.kind != .String {return item, op, tags, .BadEvent}
+					tags[i] = replay_flat_string(token, alloc)
 				}
+				if elog.validate_tags(tags) != "" {return item, op, tags, .BadEvent}
+				continue
 			}
-			switch op_text {
-			case "add":
-				item.name = text
-			case "patch":
+			if field.is_array || len(field.values) != 1 {return item, op, tags, .BadEvent}
+			token := field.values[0]
+			switch field.key {
+			case "name":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				if token.text == `""` {return item, op, tags, .NotImplemented}
+				text := replay_flat_string(token, alloc)
 				name_bytes^ = make([dynamic]u8, len(text) / 2, alloc)
 				_, hex_ok := hex.decode_into_buffer(transmute([]u8)text, name_bytes[:])
 				if len(text) % 2 != 0 || !hex_ok {return item, op, tags, .BadEvent}
-			case "delete":
+			case "comment":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				if token.text == `""` {return item, op, tags, .NotImplemented}
+				comment_patch^ = replay_flat_string(token, alloc)
+			case "mtime":
+				if token.kind == .Integer && token.text == "0" {continue}
+				if token.kind != .Integer {return item, op, tags, .BadEvent}
+				if v, ok := strconv.parse_i64(token.text);
+				   ok {item.mtime = v} else {return item, op, tags, .BadEvent}
+			case "added_at":
+				if token.kind == .Integer && token.text == "0" {continue}
+				if token.kind != .Integer {return item, op, tags, .BadEvent}
+				if v, ok := strconv.parse_i64(token.text);
+				   ok {item.added_at = v} else {return item, op, tags, .BadEvent}
+			case "width", "height":
+				if token.kind == .Integer && token.text == "0" {continue}
 				return item, op, tags, .BadEvent
 			case:
-				// If op is unknown or yet unparsed, default to storing name seed
-				item.name = text
+				return item, op, tags, .BadEvent
 			}
-		case "content_type":
-			item.content_type = replay_flat_string(token, alloc)
-		case "mtime":
-			if token.kind != .Integer {return item, op, tags, .BadEvent}
-			value, ok := strconv.parse_i64(token.text)
-			if !ok {return item, op, tags, .BadEvent}
-			item.mtime = value
-		case "added_at":
-			if token.kind != .Integer {return item, op, tags, .BadEvent}
-			value, ok := strconv.parse_i64(token.text)
-			if !ok {return item, op, tags, .BadEvent}
-			item.added_at = value
-		case:
+		}
+
+	case "overwrite":
+		for field in record.fields {
+			if field.key == "op" || field.key == "id" || field.key == "version" {continue}
+			if field.is_array || len(field.values) != 1 {return item, op, tags, .BadEvent}
+			token := field.values[0]
+			switch field.key {
+			case "oid":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				item.oid = replay_flat_string(token, alloc)
+			case "path":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				item.path = replay_flat_string(token, alloc)
+			case "ext":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				item.ext = replay_flat_string(token, alloc)
+			case "content_type":
+				if token.kind != .String {return item, op, tags, .BadEvent}
+				item.content_type = replay_flat_string(token, alloc)
+			case "width":
+				if token.kind != .Integer {return item, op, tags, .BadEvent}
+				if v, ok := strconv.parse_int(token.text);
+				   ok {item.width = v} else {return item, op, tags, .BadEvent}
+			case "height":
+				if token.kind != .Integer {return item, op, tags, .BadEvent}
+				if v, ok := strconv.parse_int(token.text);
+				   ok {item.height = v} else {return item, op, tags, .BadEvent}
+			case "mtime", "added_at":
+				if token.kind == .Integer && token.text == "0" {continue}
+				return item, op, tags, .BadEvent
+			case:
+				return item, op, tags, .BadEvent
+			}
+		}
+
+	case "delete":
+		for field in record.fields {
+			if field.key == "op" || field.key == "id" || field.key == "version" {continue}
+			if !field.is_array &&
+			   field.values[0].kind == .Integer &&
+			   field.values[0].text == "0" {continue}
 			return item, op, tags, .BadEvent
 		}
+
+	case:
+		return item, op, tags, .BadEvent
 	}
+
 	return
 }
 
