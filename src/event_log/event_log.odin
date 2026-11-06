@@ -28,12 +28,6 @@ Cursor :: struct {
 	offset: i64,
 }
 
-Op :: enum {
-	Add,
-	Patch,
-	Delete,
-}
-
 // One writer owns the filesystem log. SQLite owns derived replay progress.
 EventLog :: struct {
 	root:   string,
@@ -53,7 +47,7 @@ Event :: struct {
 	oid:          string `json:"oid,omitempty"`,
 	op:           string `json:"op,omitempty"`,
 	path:         string `json:"path,omitempty"`,
-	tags_xor:     []string `json:"tags_xor,omitempty"`,
+	tags:         []string `json:"tags,omitempty"`,
 	width:        int `json:"width,omitempty"`,
 }
 
@@ -141,7 +135,7 @@ get_current_event_shard :: proc(allocator := context.allocator) -> string {
 	return fmt.aprintf("%04d-%02d.ndjson", year, int(month), allocator = allocator)
 }
 
-validate_tags_xor :: proc(tags: []string) -> string {
+validate_tags :: proc(tags: []string) -> string {
 	for tag, i in tags {
 		if len(tag) == 0 {return "event tag must not be empty"}
 		for c in tag {
@@ -159,10 +153,10 @@ validate_tags_xor :: proc(tags: []string) -> string {
 encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -> string {
 	switch event in e {
 	case Event:
-		if err := validate_tags_xor(event.tags_xor); err != "" {return err}
+		if err := validate_tags(event.tags); err != "" {return err}
 		if event.op == "regen_thumbnail" {return "unsupported event operation"}
 		if event.op == "delete" {
-			if len(event.tags_xor) != 0 ||
+			if len(event.tags) != 0 ||
 			   event.oid != "" ||
 			   event.path != "" ||
 			   event.ext != "" ||
@@ -176,7 +170,7 @@ encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -
 		}
 	case EventRemediation:
 		if event.op == "regen_thumbnail" {return "unsupported event operation"}
-		if err := validate_tags_xor(event.tags_xor); err != "" {return err}
+		if err := validate_tags(event.tags); err != "" {return err}
 	case:
 		return "unsupported event type"
 	}

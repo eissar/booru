@@ -15,15 +15,15 @@ remediation_validates_before_writing :: proc(t: ^testing.T) {
 	file, open_err := os.open(path, {.Write, .Create}, os.Permissions_Default)
 	if !testing.expect(t, open_err == nil) {return}
 	defer os.close(file)
-	rem := EventRemediation{Event{id = 1, op = "add", tags_xor = {"cat"}}, {"Cat!"}}
+	rem := EventRemediation{Event{id = 1, op = "add", tags = {"cat"}}, {"Cat!"}}
 	if !testing.expect(t, ev_append(file, rem) == "") {return}
 	before, read_err := os.read_entire_file(path, context.temp_allocator)
 	if !testing.expect(t, read_err == nil) {return}
-	testing.expect(t, strings.contains(string(before), `"tags_xor":["cat"]`))
+	testing.expect(t, strings.contains(string(before), `"tags":["cat"]`))
 	testing.expect(t, strings.contains(string(before), `"REMEDIATE_tags":["Cat!"]`))
-	rem.tags_xor = {"cat", "cat"}
+	rem.tags = {"cat", "cat"}
 	testing.expect(t, ev_append(file, rem) != "")
-	rem.tags_xor = {"cat"}
+	rem.tags = {"cat"}
 	rem.REMEDIATE_tags = {strings.repeat("é", MAX_RECORD, context.temp_allocator)}
 	testing.expect(t, ev_append(file, rem) != "")
 	after, after_err := os.read_entire_file(path, context.temp_allocator)
@@ -46,7 +46,7 @@ validate_event_tags :: proc(t: ^testing.T) {
 		strings.builder_init(&ascii)
 		defer strings.builder_destroy(&ascii)
 		e := Event {
-			tags_xor = tags,
+			tags = tags,
 		}
 		testing.expect(t, encode_event(e, &ascii) != "")
 		buf: bytes.Buffer
@@ -59,10 +59,7 @@ validate_event_tags :: proc(t: ^testing.T) {
 		ascii: strings.Builder
 		strings.builder_init(&ascii)
 		defer strings.builder_destroy(&ascii)
-		testing.expect(
-			t,
-			encode_event(Event{tags_xor = {"lower-case", "other", "-"}}, &ascii) == "",
-		)
+		testing.expect(t, encode_event(Event{tags = {"lower-case", "other", "-"}}, &ascii) == "")
 	}
 	{
 		ascii: strings.Builder
@@ -92,10 +89,7 @@ validate_event_tags :: proc(t: ^testing.T) {
 		ascii: strings.Builder
 		strings.builder_init(&ascii)
 		defer strings.builder_destroy(&ascii)
-		testing.expect(
-			t,
-			encode_event(Event{id = 1, op = "delete", tags_xor = {"cat"}}, &ascii) != "",
-		)
+		testing.expect(t, encode_event(Event{id = 1, op = "delete", tags = {"cat"}}, &ascii) != "")
 	}
 }
 
@@ -120,10 +114,10 @@ encoded_event_size_and_field :: proc(t: ^testing.T) {
 	bytes.buffer_init_allocator(&buf, 0, 0)
 	defer bytes.buffer_destroy(&buf)
 	w := bytes.buffer_to_stream(&buf)
-	testing.expect(t, write_event(w, Event{tags_xor = {"a"}, name = "é😀"}) == "")
+	testing.expect(t, write_event(w, Event{tags = {"a"}, name = "é😀"}) == "")
 	text := bytes.buffer_to_string(&buf)
-	testing.expect(t, strings.contains(text, `"tags_xor":["a"]`))
-	testing.expect(t, !strings.contains(text, `"tags":`))
+	testing.expect(t, strings.contains(text, `"tags":["a"]`))
+	testing.expect(t, !strings.contains(text, `"tags_xor":`))
 	testing.expect(t, strings.contains(text, `\u00e9\ud83d\ude00`))
 	for b in text {testing.expect(t, b < 128)}
 
@@ -176,7 +170,7 @@ invalid_batch_writes_nothing :: proc(t: ^testing.T) {
 	offset := cursor.offset
 	oversized := strings.repeat("😀", 200)
 	defer delete(oversized)
-	invalid_events := []Event{{tags_xor = {"a", "a"}}, {tags_xor = {"Upper"}}, {name = oversized}}
+	invalid_events := []Event{{tags = {"a", "a"}}, {tags = {"Upper"}}, {name = oversized}}
 	for invalid in invalid_events {
 		testing.expect(t, ev_append(&log, []Event{{id = 2}, invalid}) != "")
 		after, err := os.read_entire_file(path, context.allocator)

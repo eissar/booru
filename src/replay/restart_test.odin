@@ -19,8 +19,8 @@ persistent_restart_catchup :: proc(t: ^testing.T) {
 	if !testing.expect(t, library.init_new_library(root) == nil) {return}
 	shard := elog.get_current_event_shard(alloc)
 	path := fmt.tprintf("%s/events/%s", root, shard)
-	first := "{\"op\":\"add\",\"id\":1,\"name\":\"before\",\"tags_xor\":[\"cat\"]}\n"
-	pending := "{\"op\":\"patch\",\"id\":1,\"name\":\"after\",\"tags_xor\":[\"cat\",\"dog\"]}\n"
+	first := "{\"op\":\"add\",\"id\":1,\"name\":\"before\",\"tags\":[\"cat\"]}\n"
+	pending := "{\"op\":\"patch\",\"id\":1,\"name\":\"after\",\"tags\":[\"cat\",\"dog\"]}\n"
 	if !testing.expect(t, os.write_entire_file(path, transmute([]u8)first) == nil) {return}
 	db_path := strings.clone_to_cstring(fmt.tprintf("%s/store.sqlite", root), alloc)
 	cursor: elog.Cursor

@@ -77,7 +77,7 @@ EagleItem_Event :: struct {
 	oid:          string `json:"-"`,
 	op:           string `json:"-"`,
 	path:         string `json:"-"`,
-	tags_xor:     []string `json:"tags"`, // Initial membership toggles from empty.
+	tags:         []string `json:"tags"`, // Initial membership toggles from empty.
 	width:        int,
 }
 
@@ -241,8 +241,8 @@ eagle_import :: proc(
 
 			remediate_tags := make([dynamic]string, allocator = event_alloc)
 
-			kept := make([dynamic]string, 0, len(item.tags_xor), event_alloc)
-			for raw in item.tags_xor {
+			kept := make([dynamic]string, 0, len(item.tags), event_alloc)
+			for raw in item.tags {
 				tag := library.lowercase_and_dash_whitespace(raw, event_alloc)
 
 				// if there are still bad chars
@@ -254,7 +254,7 @@ eagle_import :: proc(
 				if tag == "" || slice.contains(kept[:], tag) {continue}
 				append(&kept, tag)
 			}
-			item.tags_xor = kept[:]
+			item.tags = kept[:]
 			// need more complex condition
 			// for other importers
 			ev_needs_remediation := len(remediate_tags) > 0

@@ -39,7 +39,7 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 		name     = "original",
 		mtime    = 100,
 		added_at = 200,
-		tags_xor = {"fox", "night"},
+		tags     = {"fox", "night"},
 	}
 	if !testing.expect(t, elog.ev_append(&log, []elog.Event{initial}) == "") {return}
 	replay.initiate_replay(&s)
@@ -123,11 +123,11 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 			) {return}
 			testing.expect(t, ev.op == "patch" && ev.id == 1)
 			testing.expect(t, ev.added_at == 0)
-			testing.expect(t, slice.equal(ev.tags_xor, tc.delta), "only changed keys are logged")
+			testing.expect(t, slice.equal(ev.tags, tc.delta), "only changed keys are logged")
 			if len(tc.delta) == 0 {
 				testing.expect(
 					t,
-					!strings.contains(record, "\"tags_xor\""),
+					!strings.contains(record, "\"tags\""),
 					"unchanged membership has no delta field",
 				)
 			}

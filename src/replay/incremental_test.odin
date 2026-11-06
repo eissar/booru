@@ -31,7 +31,7 @@ full_then_incremental_replay_persists_progress :: proc(t: ^testing.T) {
 		t,
 		elog.ev_append(
 			&log,
-			[]elog.Event{{op = "add", id = 1, name = "before", tags_xor = {"cat"}}},
+			[]elog.Event{{op = "add", id = 1, name = "before", tags = {"cat"}}},
 		) ==
 		"",
 	) {return}
@@ -43,7 +43,7 @@ full_then_incremental_replay_persists_progress :: proc(t: ^testing.T) {
 		t,
 		elog.ev_append(
 			&log,
-			[]elog.Event{{op = "patch", id = 1, name = "after", tags_xor = {"cat", "dog"}}},
+			[]elog.Event{{op = "patch", id = 1, name = "after", tags = {"cat", "dog"}}},
 		) ==
 		"",
 	) {return}
@@ -70,7 +70,7 @@ incremental_application_and_cursor_roll_back_together :: proc(t: ^testing.T) {
 	}
 	cursor: elog.Cursor
 	copy(cursor.shard[:], "2026-01.ndjson")
-	first := "{\"op\":\"add\",\"id\":1,\"name\":\"before\",\"tags_xor\":[\"cat\"]}\n"
+	first := "{\"op\":\"add\",\"id\":1,\"name\":\"before\",\"tags\":[\"cat\"]}\n"
 	cursor.offset = i64(len(first))
 	tx := sqlite.Tx {
 		db = s.data_store,
@@ -81,7 +81,7 @@ incremental_application_and_cursor_roll_back_together :: proc(t: ^testing.T) {
 	if !testing.expect(t, elog.save_cursor(&tx, &cursor) == sqlite.OK) {return}
 	if !testing.expect(t, sqlite.run(s.data_store, "COMMIT")) {return}
 
-	patch := "{\"op\":\"patch\",\"id\":1,\"name\":\"after\",\"tags_xor\":[\"cat\",\"dog\"]}\n"
+	patch := "{\"op\":\"patch\",\"id\":1,\"name\":\"after\",\"tags\":[\"cat\",\"dog\"]}\n"
 	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 	if !testing.expect(
 		t,

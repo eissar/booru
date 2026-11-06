@@ -735,7 +735,6 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		if !slice.contains(tags[:], tag) {append(&tags, tag)}
 	}
 
-	// Scalar empty/zero values leave fields alone. Tags are desired membership.
 	ev := elog.Event {
 		id = id,
 		op = "patch",
@@ -779,7 +778,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 			if !slice.contains(current.tags, tag) {append(&delta, tag)}
 		}
 	}
-	ev.tags_xor = delta[:]
+	ev.tags = delta[:]
 	// Timestamp patches only advance; omit redundant/backward inputs before append.
 	if ev.mtime <= current.mtime {ev.mtime = 0}
 	if ev.added_at <= current.added_at {ev.added_at = 0}

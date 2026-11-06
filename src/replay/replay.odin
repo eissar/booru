@@ -185,18 +185,17 @@ parse_item :: proc(
 ) {
 	elog.parse_flat(line, record)
 	for field in record.fields {
-		// Legacy additive records are deliberately unsupported.
-		if field.key == "tags" {return item, op, tags, .BadEvent}
-		if field.key == "tags_xor" {
+		if field.key == "tags" {
 			if !field.is_array {return item, op, tags, .BadEvent}
 			tags = make([]string, len(field.values), alloc)
 			for token, i in field.values {
 				if token.kind != .String {return item, op, tags, .BadEvent}
 				tags[i] = replay_flat_string(token, alloc)
 			}
-			if elog.validate_tags_xor(tags) != "" {return item, op, tags, .BadEvent}
+			if elog.validate_tags(tags) != "" {return item, op, tags, .BadEvent}
 			continue
 		}
+		if field.key == "tags_xor" {return item, op, tags, .BadEvent}
 		if field.is_array || len(field.values) != 1 {return item, op, tags, .BadEvent}
 		token := field.values[0]
 		// Absent version means version 0.

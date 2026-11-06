@@ -20,13 +20,13 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	defer os.remove_all(root)
 	events := fmt.tprintf("%s/events", root)
 	if !testing.expect(t, os.mkdir_all(events, os.Permissions_Default_Directory) == nil) {return}
-	first := `{"op":"add","id":1,"oid":"oid","path":"path","ext":"png","name":"before","content_type":"image/png","width":42,"height":43,"mtime":44,"added_at":45,"comment":"retained","tags_xor":["alpha","beta"]}
+	first := `{"op":"add","id":1,"oid":"oid","path":"path","ext":"png","name":"before","content_type":"image/png","width":42,"height":43,"mtime":44,"added_at":45,"comment":"retained","tags":["alpha","beta"]}
 {"op":"add","id":2}
-{"op":"add","id":900001,"tags_xor":["ghost"]}
+{"op":"add","id":900001,"tags":["ghost"]}
 `
-	middle := `{"op":"patch","id":1,"name":"middle","tags_xor":["alpha","gamma"]}
+	middle := `{"op":"patch","id":1,"name":"middle","tags":["alpha","gamma"]}
 `
-	last := `{"op":"patch","id":1,"name":"final","tags_xor":["beta","\u0064og"]}
+	last := `{"op":"patch","id":1,"name":"final","tags":["beta","\u0064og"]}
 {"op":"delete","id":900001}
 `
 	// Deliberately create files out of lexical order.
@@ -151,10 +151,10 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
 	bad := []string {
-		`{"op":"patch","id":2,"tags_xor":["cat"]}
+		`{"op":"patch","id":2,"tags":["cat"]}
 {"op":"add","id":2}`,
 		`{"op":"delete","id":1}
-{"op":"patch","id":1,"tags_xor":["cat"]}`,
+{"op":"patch","id":1,"tags":["cat"]}`,
 		`{"op":"delete","id":2}`,
 		`{"op":"add","id":1}`,
 		`{"op":"patch","id":1,"color":"red"}`,
@@ -236,10 +236,10 @@ explicit_empty_scalars_are_not_implemented :: proc(t: ^testing.T) {
 cross_shard_reuse_rolls_back :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
-	first := `{"op":"add","id":7,"tags_xor":["cat"]}
+	first := `{"op":"add","id":7,"tags":["cat"]}
 {"op":"delete","id":7}
 `
-	last := `{"op":"add","id":7,"tags_xor":["dog"]}`
+	last := `{"op":"add","id":7,"tags":["dog"]}`
 	s: library.State
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
@@ -257,9 +257,9 @@ identical_tags_on_distinct_items_are_independent :: proc(t: ^testing.T) {
 	s: library.State
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
-	text := `{"op":"add","id":1,"tags_xor":["cat"]}
-{"op":"add","id":2,"tags_xor":["cat"]}
-{"op":"patch","id":1,"tags_xor":["cat"]}
+	text := `{"op":"add","id":1,"tags":["cat"]}
+{"op":"add","id":2,"tags":["cat"]}
+{"op":"patch","id":1,"tags":["cat"]}
 `
 	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 	if !testing.expect(t, replay(&s, {text}, context.allocator) == nil) {return}
@@ -275,7 +275,7 @@ identical_tags_on_distinct_items_are_independent :: proc(t: ^testing.T) {
 duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
-	source := `{"op":"patch","id":1,"tags_xor":["cat","\u0064og"]}`
+	source := `{"op":"patch","id":1,"tags":["cat","\u0064og"]}`
 	record := elog.Record {
 		fields = make([dynamic]elog.Field, 0, 16, alloc),
 	}
@@ -287,9 +287,9 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 	s: library.State
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
-	text := `{"op":"add","id":1,"tags_xor":["cat"]}
-{"op":"patch","id":1,"tags_xor":["cat","dog"]}
-{"op":"patch","id":1,"tags_xor":["cat","dog"]}
+	text := `{"op":"add","id":1,"tags":["cat"]}
+{"op":"patch","id":1,"tags":["cat","dog"]}
+{"op":"patch","id":1,"tags":["cat","dog"]}
 `
 	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 	testing.expect(t, replay(&s, {text}, context.allocator) == nil)
