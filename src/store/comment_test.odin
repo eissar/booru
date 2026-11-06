@@ -38,14 +38,13 @@ comment_round_trip :: proc(t: ^testing.T) {
 	}
 	testing.expect(
 		t,
-		sqlite.with_transaction(
-			state.data_store,
-			library.Image{id = 1, comment = "updated"},
-			proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-				return c.int(patch_item(tx, item))
-			},
-		) ==
-		sqlite.OK,
+		sqlite.with_transaction(state.data_store, 1, proc(tx: ^sqlite.Tx, id: int) -> c.int {
+				if !sqlite.run(
+					tx.db,
+					"UPDATE items SET comment = 'updated' WHERE id = 1",
+				) {return 1}
+				return 0
+			}) == sqlite.OK,
 	)
 	testing.expect(
 		t,

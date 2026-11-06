@@ -18,6 +18,7 @@ import "../library"
 import "../media"
 import "../progress"
 import "../replay"
+import pijul "../slop_pijul"
 import "../store"
 import "../template"
 import "../thumbnail"
@@ -748,7 +749,8 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		http.res_html(template.render_toast("name must be valid UTF-8", .Error), res, .BadRequest)
 		return
 	}
-	ev.comment = form_string(params, "comment", &ok)
+	comment := form_string(params, "comment", &ok)
+	_, comment_present := params["comment"]
 	ev.oid = form_string(params, "oid", &ok)
 	ev.path = form_string(params, "path", &ok)
 	ev.ext = form_string(params, "ext", &ok)
@@ -794,13 +796,16 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		}
 		ev.name = string(hex.encode(delta, req.alloc))
 	}
+	if comment_present && current.comment != comment {
+		ev.comment = pijul.generate_patch(current.comment, comment, req.alloc)
+	}
 	// Timestamp patches only advance; omit redundant/backward inputs before append.
 	if ev.mtime <= current.mtime {ev.mtime = 0}
 	if ev.added_at <= current.added_at {ev.added_at = 0}
 	changed :=
 		len(delta) != 0 ||
 		ev.name != "" ||
-		(ev.comment != "" && ev.comment != current.comment) ||
+		ev.comment != "" ||
 		(ev.oid != "" && ev.oid != current.oid) ||
 		(ev.path != "" && ev.path != current.path) ||
 		(ev.ext != "" && ev.ext != current.ext) ||

@@ -278,7 +278,8 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 		fields = make([dynamic]elog.Field, 0, 16, alloc),
 	}
 	parsed_name: [dynamic]u8
-	item, op, tags, err := parse_item(source, &record, &parsed_name, alloc)
+	parsed_comment: string
+	item, op, tags, err := parse_item(source, &record, &parsed_name, &parsed_comment, alloc)
 	testing.expect(t, err == nil)
 	testing.expect(t, item.id == 1 && op == "patch")
 	testing.expect_value(t, len(item.tags), 0)

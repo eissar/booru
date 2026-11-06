@@ -136,7 +136,7 @@ delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> Er
 
 // Uses the caller's transaction. Empty/zero fields leave existing values alone.
 // Timestamp patches are upward-only advances, reduced by max with the creation seed.
-// Name is never changed here: it is reduced from XOR deltas by replay.
+// Name and comment are never changed here: reduced by replay.
 // Tags are never changed here; apply explicit deltas with toggle_tags.
 patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> Error {
 	stmt := prepared
@@ -162,7 +162,6 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt =
 	if rc != sqlite.OK {return .Database}
 	rc = sqlite.bind_int64(stmt, 8, i64(item.height))
 	if rc != sqlite.OK {return .Database}
-	if !sqlite.bind_string(stmt, 10, item.comment) {return .Database}
 	rc = sqlite.bind_int64(stmt, 9, i64(item.id))
 	if rc != sqlite.OK {return .Database}
 	rc = sqlite.step(stmt)
@@ -205,8 +204,7 @@ prepare_item_patch :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 			mtime = MAX(mtime, COALESCE(NULLIF(?, 0), mtime)),
 			added_at = MAX(added_at, COALESCE(NULLIF(?, 0), added_at)),
 			width = COALESCE(NULLIF(?, 0), width),
-			height = COALESCE(NULLIF(?, 0), height),
-			comment = COALESCE(NULLIF(?10, ''), comment)
+			height = COALESCE(NULLIF(?, 0), height)
 		WHERE id = ?9 AND deleted = 0`,
 		-1,
 		&stmt,

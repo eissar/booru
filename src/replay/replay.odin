@@ -12,6 +12,7 @@ import "core:strings"
 import elog "../event_log"
 import "../library/"
 import "../progress"
+import pijul "../slop_pijul"
 import "../store"
 import "../vendor/sqlite"
 
@@ -45,6 +46,7 @@ replay :: proc(
 	seen_ids := make(map[int]bool, alloc)
 	// Name deltas keep their full byte extent until reduction against the seed name at finalization.
 	name_accs := make(map[int][dynamic]u8, alloc)
+	comment_accs := make(map[int]string, alloc)
 	finished: u64
 	db := s.data_store
 	tx := sqlite.Tx {
@@ -67,7 +69,14 @@ replay :: proc(
 		for line in strings.split_lines_iterator(data) {
 			if strings.trim_space(line) == "" {continue}
 			parsed_patch_name: [dynamic]u8
-			item, op, tags, err := parse_item(line, &record, &parsed_patch_name, alloc)
+			parsed_patch_comment: string
+			item, op, tags, err := parse_item(
+				line,
+				&record,
+				&parsed_patch_name,
+				&parsed_patch_comment,
+				alloc,
+			)
 			if err != nil {return err}
 			if item.id <= 0 {return .BadEvent}
 			if op == "delete" {
@@ -100,6 +109,9 @@ replay :: proc(
 					copy(acc[:], transmute([]u8)item.name)
 					name_accs[item.id] = acc
 				}
+				if len(item.comment) != 0 {
+					comment_accs[item.id] = strings.clone(item.comment, alloc)
+				}
 			case "patch":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				store_err = store.patch_item(&tx, item, item_patch)
@@ -129,6 +141,16 @@ replay :: proc(
 				if len(acc) < len(parsed_patch_name) {resize(&acc, len(parsed_patch_name))}
 				for b, idx in parsed_patch_name {acc[idx] ~= b}
 				name_accs[item.id] = acc
+			}
+			if len(parsed_patch_comment) != 0 {
+				curr_comment, has_comment := comment_accs[item.id]
+				if !has_comment {
+					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
+					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
+					curr_comment = curr.comment
+				}
+				new_comment := pijul.apply_patch(curr_comment, parsed_patch_comment, alloc)
+				comment_accs[item.id] = new_comment
 			}
 			if !full_replay {
 				if len(tags) != 0 {
@@ -161,15 +183,24 @@ replay :: proc(
 		}
 		if prog_callback != nil {prog_callback({phase = "replay files", finished = u64(i + 1)})}
 	}
-	name_stmt: ^sqlite.Stmt
+	name_stmt, comment_stmt: ^sqlite.Stmt
 	defer {
 		if name_stmt != nil {sqlite.finalize(name_stmt)}
+		if comment_stmt != nil {sqlite.finalize(comment_stmt)}
 	}
 	if sqlite.prepare_v2(
 		   db,
 		   "UPDATE items SET name = ?2 WHERE id = ?1 AND deleted = 0",
 		   -1,
 		   &name_stmt,
+		   nil,
+	   ) !=
+	   sqlite.OK {return .DATABASE_ERR}
+	if sqlite.prepare_v2(
+		   db,
+		   "UPDATE items SET comment = ?2 WHERE id = ?1 AND deleted = 0",
+		   -1,
+		   &comment_stmt,
 		   nil,
 	   ) !=
 	   sqlite.OK {return .DATABASE_ERR}
@@ -180,6 +211,12 @@ replay :: proc(
 		if !sqlite.bind_string(name_stmt, 2, string(acc[:length])) {return .DATABASE_ERR}
 		if sqlite.step(name_stmt) != sqlite.DONE {return .DATABASE_ERR}
 		if sqlite.reset(name_stmt) != sqlite.OK {return .DATABASE_ERR}
+	}
+	for id, comment in comment_accs {
+		if sqlite.bind_int64(comment_stmt, 1, i64(id)) != sqlite.OK {return .DATABASE_ERR}
+		if !sqlite.bind_string(comment_stmt, 2, comment) {return .DATABASE_ERR}
+		if sqlite.step(comment_stmt) != sqlite.DONE {return .DATABASE_ERR}
+		if sqlite.reset(comment_stmt) != sqlite.OK {return .DATABASE_ERR}
 	}
 	stmt: ^sqlite.Stmt
 	defer {if stmt != nil {sqlite.finalize(stmt)}}
@@ -212,6 +249,7 @@ parse_item :: proc(
 	line: string,
 	record: ^elog.Record,
 	name_bytes: ^[dynamic]u8,
+	comment_patch: ^string,
 	alloc: mem.Allocator,
 ) -> (
 	item: library.Image,
@@ -278,6 +316,7 @@ parse_item :: proc(
 		case "ext":
 			item.ext = replay_flat_string(token, alloc)
 		case "comment":
+			text := replay_flat_string(token, alloc)
 			op_text := op
 			if op_text == "" {
 				for f in record.fields {
@@ -290,10 +329,16 @@ parse_item :: proc(
 					}
 				}
 			}
-			if op_text == "patch" {
-				panic("unimplemented: comment delta reduction in patch")
+			switch op_text {
+			case "add":
+				item.comment = text
+			case "patch":
+				comment_patch^ = text
+			case "delete":
+				return item, op, tags, .BadEvent
+			case:
+				item.comment = text
 			}
-			item.comment = replay_flat_string(token, alloc)
 		case "name":
 			text := replay_flat_string(token, alloc)
 			// In add events, name is the initial plaintext seed.

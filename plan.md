@@ -38,9 +38,9 @@
   - Implemented cleanly in native Odin in package `src/slop_pijul/`.
   - Commutative across distinct context anchors: edits at different positions in the document commute without shifting absolute coordinates.
   - Projection stores final reconstructed text in `items.comment TEXT NOT NULL` without requiring new database tables.
-- [ ] Keep comment replacement assignments out of `patch`; compute deltas from validated preceding state.
-- [ ] Support exact text reconstruction, including empty comments, repeated lines, whitespace, line endings, and multibyte UTF-8.
-- [ ] Reduce anchored line patches commutatively during stream walk, and resolve final text at finalization.
+- [x] Keep comment replacement assignments out of `patch`; compute deltas from validated preceding state.
+- [x] Support exact text reconstruction, including empty comments, repeated lines, whitespace, line endings, and multibyte UTF-8.
+- [x] Reduce anchored line patches commutatively during stream walk, and resolve final text at finalization.
 
 ## Step 4: `overwrite`
 
