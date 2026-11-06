@@ -39,7 +39,10 @@ test_replay :: proc(t: ^testing.T) {
 	mib_per_second: [2]f64
 	for round in 0 ..< len(durations) {
 		state: library.State
-		if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
+		if !testing.expect(
+			t,
+			store.Init(&state, ":memory:", foreign_keys = false) == sqlite.OK,
+		) {return}
 		defer store.Close(&state)
 		arena: mem.Dynamic_Arena
 		mem.dynamic_arena_init(&arena)

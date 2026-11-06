@@ -7,7 +7,7 @@ import "core:c"
 // Init assigns data_store only on success. Close an existing connection first.
 // Secondary indexes are never created here; replay.initiate_replay builds them
 // after applying events.
-Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
+Init :: proc(state: ^library.State, path: cstring, foreign_keys := true) -> (rc: c.int) {
 	db, open_rc := sqlite.open(path)
 	if open_rc != sqlite.OK {
 		return open_rc
@@ -25,7 +25,13 @@ Init :: proc(state: ^library.State, path: cstring) -> (rc: c.int) {
 		}
 	}
 
-	rc = sqlite.exec(db, "PRAGMA foreign_keys = ON", nil, nil, nil)
+	rc = sqlite.exec(
+		db,
+		foreign_keys ? "PRAGMA foreign_keys = ON" : "PRAGMA foreign_keys = OFF",
+		nil,
+		nil,
+		nil,
+	)
 	if rc != sqlite.OK {return rc}
 
 	rc = create_tables(db)
