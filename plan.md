@@ -30,11 +30,17 @@
 
 ## Step 3: `comment`
 
-- [ ] Choose and document the comment delta representation before implementation: direct byte/length XOR, or immutable text chunks with an XOR-updated ordered manifest.
-- [ ] Compare direct XOR's historical high-water memory and shifted-suffix cost against chunk/manifest overhead using representative comments.
+- [x] Choose and document the comment delta representation before implementation: Pijul-inspired anchored line diff patch representation (`slop-pijul`).
+- [x] Compare direct XOR's historical high-water memory and shifted-suffix cost against patch representations using representative comments.
+- Representation:
+  - Wire format in event log is a human-readable, context-anchored patch in the `"comment"` field.
+  - Replaces absolute line indices with adjacent context anchors (`@@ <anchor> @@`), deleted lines (`- <line>`), and added lines (`+ <line>`).
+  - Implemented cleanly in native Odin in package `src/slop_pijul/`.
+  - Commutative across distinct context anchors: edits at different positions in the document commute without shifting absolute coordinates.
+  - Projection stores final reconstructed text in `items.comment TEXT NOT NULL` without requiring new database tables.
 - [ ] Keep comment replacement assignments out of `patch`; compute deltas from validated preceding state.
 - [ ] Support exact text reconstruction, including empty comments, repeated lines, whitespace, line endings, and multibyte UTF-8.
-- [ ] For direct XOR, retain full accumulator extent until finalization. For chunks, merge immutable definitions separately and resolve the final manifest after reduction.
+- [ ] Reduce anchored line patches commutatively during stream walk, and resolve final text at finalization.
 
 ## Step 4: `overwrite`
 
