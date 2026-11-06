@@ -7,6 +7,7 @@ import "core:strings"
 // anchor_curr: preceding context line 2 ("" if at top of document)
 // del_lines: lines removed at this anchor.
 // add_lines: lines inserted at this anchor.
+@(private)
 Hunk :: struct {
 	anchor_prev: string,
 	anchor_curr: string,
@@ -81,6 +82,7 @@ generate_patch :: proc(old_text, new_text: string, allocator := context.allocato
 }
 
 // Parses an anchored patch string into Hunks.
+@(private)
 parse_patch :: proc(patch_text: string, allocator := context.allocator) -> [dynamic]Hunk {
 	hunks := make([dynamic]Hunk, allocator)
 	lines := strings.split_lines(patch_text, context.temp_allocator)

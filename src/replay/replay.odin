@@ -82,16 +82,6 @@ replay :: proc(
 			)
 			if err != nil {return err}
 			if item.id <= 0 {return .BadEvent}
-			if op == "delete" {
-				for field in record.fields {
-					if field.key == "op" || field.key == "id" || field.key == "version" {continue}
-					// Odin json omitempty still writes integer zeros; treat them as absent.
-					if !field.is_array &&
-					   field.values[0].kind == .Integer &&
-					   field.values[0].text == "0" {continue}
-					return .BadEvent
-				}
-			}
 			rc: i32 = sqlite.OK
 			store_err: store.Error
 			switch op {

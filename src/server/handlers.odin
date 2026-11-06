@@ -789,17 +789,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		tags = delta[:],
 	}
 	if name_present && current.name != name {
-		d := make([]u8, max(len(current.name), len(name)), req.alloc)
-		min_len := min(len(current.name), len(name))
-		for i in 0 ..< min_len {
-			d[i] = current.name[i] ~ name[i]
-		}
-		if len(current.name) > min_len {
-			copy(d[min_len:], transmute([]u8)current.name[min_len:])
-		} else if len(name) > min_len {
-			copy(d[min_len:], transmute([]u8)name[min_len:])
-		}
-		patch_ev.name = string(hex.encode(d, req.alloc))
+		patch_ev.name = elog.name_delta(current.name, name, req.alloc)
 	}
 	if comment_present && current.comment != comment {
 		patch_ev.comment = pijul.generate_patch(current.comment, comment, req.alloc)

@@ -133,11 +133,13 @@ Record :: struct {
 	value_count: int,
 }
 
+@(private)
 Scanner :: struct {
 	data: string,
 	pos:  int,
 }
 
+@(private)
 hex4 :: proc(t: ^Scanner) -> int {
 	value := 0
 	for _ in 0 ..< 4 {
@@ -153,6 +155,7 @@ hex4 :: proc(t: ^Scanner) -> int {
 	return value
 }
 
+@(private)
 next :: proc(t: ^Scanner) -> Token {
 	for t.pos < len(t.data) {
 		b := t.data[t.pos]
@@ -247,10 +250,12 @@ next :: proc(t: ^Scanner) -> Token {
 	return Token{kind = kind, text = t.data[start:t.pos], has_escapes = has_escapes}
 }
 
+@(private)
 expect :: proc(t: ^Scanner, kind: json.Token_Kind) {
 	if next(t).kind != kind {panic("Cannot parse event: unexpected token")}
 }
 
+@(private)
 append_scalar :: proc(r: ^Record, token: Token) {
 	#partial switch token.kind {
 	case .String, .Integer, .Float, .True, .False, .Null:

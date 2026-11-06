@@ -1,6 +1,7 @@
 package event_log
 
 import "core:c"
+import "core:encoding/hex"
 import "core:encoding/json"
 import "core:fmt"
 import "core:io"
@@ -199,6 +200,22 @@ encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -
 	if len(strings.to_string(ascii^)) >=
 	   MAX_RECORD {return "event must be smaller than MAX_RECORD"}
 	return ""
+}
+
+// Computes the byte XOR delta of consecutive names. Returns empty string if unchanged.
+name_delta :: proc(old, new: string, allocator := context.allocator) -> string {
+	if old == new {return ""}
+	d := make([]u8, max(len(old), len(new)), context.temp_allocator)
+	min_len := min(len(old), len(new))
+	for i in 0 ..< min_len {
+		d[i] = old[i] ~ new[i]
+	}
+	if len(old) > min_len {
+		copy(d[min_len:], transmute([]u8)old[min_len:])
+	} else if len(new) > min_len {
+		copy(d[min_len:], transmute([]u8)new[min_len:])
+	}
+	return string(hex.encode(d, allocator))
 }
 
 // Writes one newline-terminated record to w. Does not flush or sync.
