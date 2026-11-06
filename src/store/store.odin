@@ -135,9 +135,8 @@ delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> Er
 }
 
 // Uses the caller's transaction. Empty/zero fields leave existing values alone.
-// Timestamp patches are upward-only advances, reduced by max with the creation seed.
-// Name and comment are never changed here: reduced by replay.
-// Tags are never changed here; apply explicit deltas with toggle_tags.
+// patch_item applies all commutative item fields (name, comment, mtime, added_at).
+// Tags are toggled separately via toggle_tags.
 patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> Error {
 	stmt := prepared
 	owned_stmt := stmt == nil
@@ -150,19 +149,53 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt =
 		if owned_stmt && stmt != nil {sqlite.finalize(stmt)}
 	}
 
+	if !sqlite.bind_string(stmt, 1, item.name) {return .Database}
+	if !sqlite.bind_string(stmt, 2, item.comment) {return .Database}
+	rc = sqlite.bind_int64(stmt, 3, item.mtime)
+	if rc != sqlite.OK {return .Database}
+	rc = sqlite.bind_int64(stmt, 4, item.added_at)
+	if rc != sqlite.OK {return .Database}
+	rc = sqlite.bind_int64(stmt, 5, i64(item.id))
+	if rc != sqlite.OK {return .Database}
+	rc = sqlite.step(stmt)
+	if rc != sqlite.DONE {return .Database}
+	if sqlite.changes64(tx.db) == 0 {
+		if !owned_stmt {sqlite.reset(stmt)}
+		return .NotFound
+	}
+	if !owned_stmt {
+		return sqlite.reset(stmt) == sqlite.OK ? .None : .Database
+	}
+	return .None
+}
+
+// Uses the caller's transaction. Empty/zero fields leave existing values alone.
+// overwrite_item applies all LWW fields (oid, path, ext, content_type, width, height).
+overwrite_item :: proc(
+	tx: ^sqlite.Tx,
+	item: library.Image,
+	prepared: ^sqlite.Stmt = nil,
+) -> Error {
+	stmt := prepared
+	owned_stmt := stmt == nil
+	rc: c.int
+	if owned_stmt {
+		stmt, rc = prepare_item_overwrite(tx.db)
+		if rc != sqlite.OK {return .Database}
+	}
+	defer {
+		if owned_stmt && stmt != nil {sqlite.finalize(stmt)}
+	}
+
 	values := [4]string{item.oid, item.path, item.ext, item.content_type}
 	for value, i in values {
 		if !sqlite.bind_string(stmt, i + 1, value) {return .Database}
 	}
-	rc = sqlite.bind_int64(stmt, 5, item.mtime)
+	rc = sqlite.bind_int64(stmt, 5, i64(item.width))
 	if rc != sqlite.OK {return .Database}
-	rc = sqlite.bind_int64(stmt, 6, item.added_at)
+	rc = sqlite.bind_int64(stmt, 6, i64(item.height))
 	if rc != sqlite.OK {return .Database}
-	rc = sqlite.bind_int64(stmt, 7, i64(item.width))
-	if rc != sqlite.OK {return .Database}
-	rc = sqlite.bind_int64(stmt, 8, i64(item.height))
-	if rc != sqlite.OK {return .Database}
-	rc = sqlite.bind_int64(stmt, 9, i64(item.id))
+	rc = sqlite.bind_int64(stmt, 7, i64(item.id))
 	if rc != sqlite.OK {return .Database}
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return .Database}
@@ -197,15 +230,34 @@ prepare_item_patch :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 	rc = sqlite.prepare_v2(
 		db,
 		`UPDATE items SET
-			oid = COALESCE(NULLIF(?, ''), oid),
-			path = COALESCE(NULLIF(?, ''), path),
-			ext = COALESCE(NULLIF(?, ''), ext),
-			content_type = COALESCE(NULLIF(?, ''), content_type),
-			mtime = MAX(mtime, COALESCE(NULLIF(?, 0), mtime)),
-			added_at = MAX(added_at, COALESCE(NULLIF(?, 0), added_at)),
-			width = COALESCE(NULLIF(?, 0), width),
-			height = COALESCE(NULLIF(?, 0), height)
-		WHERE id = ?9 AND deleted = 0`,
+			name = COALESCE(NULLIF(?1, ''), name),
+			comment = COALESCE(NULLIF(?2, ''), comment),
+			mtime = MAX(mtime, COALESCE(NULLIF(?3, 0), mtime)),
+			added_at = MAX(added_at, COALESCE(NULLIF(?4, 0), added_at))
+		WHERE id = ?5 AND deleted = 0`,
+		-1,
+		&stmt,
+		nil,
+	)
+	if rc != sqlite.OK && stmt != nil {
+		sqlite.finalize(stmt)
+		stmt = nil
+	}
+	return
+}
+
+// The caller owns the returned statement and must finalize it.
+prepare_item_overwrite :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
+	rc = sqlite.prepare_v2(
+		db,
+		`UPDATE items SET
+			oid = COALESCE(NULLIF(?1, ''), oid),
+			path = COALESCE(NULLIF(?2, ''), path),
+			ext = COALESCE(NULLIF(?3, ''), ext),
+			content_type = COALESCE(NULLIF(?4, ''), content_type),
+			width = COALESCE(NULLIF(?5, 0), width),
+			height = COALESCE(NULLIF(?6, 0), height)
+		WHERE id = ?7 AND deleted = 0`,
 		-1,
 		&stmt,
 		nil,

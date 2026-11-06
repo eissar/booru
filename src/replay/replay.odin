@@ -183,40 +183,21 @@ replay :: proc(
 		}
 		if prog_callback != nil {prog_callback({phase = "replay files", finished = u64(i + 1)})}
 	}
-	name_stmt, comment_stmt: ^sqlite.Stmt
-	defer {
-		if name_stmt != nil {sqlite.finalize(name_stmt)}
-		if comment_stmt != nil {sqlite.finalize(comment_stmt)}
-	}
-	if sqlite.prepare_v2(
-		   db,
-		   "UPDATE items SET name = ?2 WHERE id = ?1 AND deleted = 0",
-		   -1,
-		   &name_stmt,
-		   nil,
-	   ) !=
-	   sqlite.OK {return .DATABASE_ERR}
-	if sqlite.prepare_v2(
-		   db,
-		   "UPDATE items SET comment = ?2 WHERE id = ?1 AND deleted = 0",
-		   -1,
-		   &comment_stmt,
-		   nil,
-	   ) !=
-	   sqlite.OK {return .DATABASE_ERR}
 	for id, &acc in name_accs {
-		if sqlite.bind_int64(name_stmt, 1, i64(id)) != sqlite.OK {return .DATABASE_ERR}
 		length := len(acc)
 		for length > 0 && acc[length - 1] == 0 {length -= 1}
-		if !sqlite.bind_string(name_stmt, 2, string(acc[:length])) {return .DATABASE_ERR}
-		if sqlite.step(name_stmt) != sqlite.DONE {return .DATABASE_ERR}
-		if sqlite.reset(name_stmt) != sqlite.OK {return .DATABASE_ERR}
+		c := comment_accs[id]
+		err := store.patch_item(
+			&tx,
+			library.Image{id = id, name = string(acc[:length]), comment = c},
+			item_patch,
+		)
+		if err != .None && err != .NotFound {return .DATABASE_ERR}
 	}
 	for id, comment in comment_accs {
-		if sqlite.bind_int64(comment_stmt, 1, i64(id)) != sqlite.OK {return .DATABASE_ERR}
-		if !sqlite.bind_string(comment_stmt, 2, comment) {return .DATABASE_ERR}
-		if sqlite.step(comment_stmt) != sqlite.DONE {return .DATABASE_ERR}
-		if sqlite.reset(comment_stmt) != sqlite.OK {return .DATABASE_ERR}
+		if id in name_accs {continue}
+		err := store.patch_item(&tx, library.Image{id = id, comment = comment}, item_patch)
+		if err != .None && err != .NotFound {return .DATABASE_ERR}
 	}
 	stmt: ^sqlite.Stmt
 	defer {if stmt != nil {sqlite.finalize(stmt)}}

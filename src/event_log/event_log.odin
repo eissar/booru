@@ -155,6 +155,21 @@ encode_event :: proc(e: any, ascii: ^strings.Builder, loc := #caller_location) -
 	case Event:
 		if err := validate_tags(event.tags); err != "" {return err}
 		if event.op == "regen_thumbnail" {return "unsupported event operation"}
+		if event.op == "overwrite" {
+			if len(event.tags) != 0 ||
+			   event.name != "" ||
+			   event.comment != "" ||
+			   event.mtime != 0 ||
+			   event.added_at != 0 {return "overwrite events carry only LWW fields"}
+		}
+		if event.op == "patch" {
+			if event.oid != "" ||
+			   event.path != "" ||
+			   event.ext != "" ||
+			   event.content_type != "" ||
+			   event.width != 0 ||
+			   event.height != 0 {return "patch events carry only commutative fields"}
+		}
 		if event.op == "delete" {
 			if len(event.tags) != 0 ||
 			   event.oid != "" ||
