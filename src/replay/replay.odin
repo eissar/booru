@@ -1,5 +1,7 @@
 package replay
 
+import "core:encoding/hex"
+import "core:encoding/json"
 import "core:fmt"
 import "core:mem"
 import "core:os"
@@ -47,6 +49,12 @@ replay :: proc(
 	}
 	seen_ids := make(map[int]bool, backing_alloc)
 	defer delete(seen_ids)
+	// Name deltas keep their full byte extent until reduction against the seed name at finalization.
+	name_accs := make(map[int][dynamic]u8, backing_alloc)
+	defer {
+		for _, acc in name_accs {delete(acc)}
+		delete(name_accs)
+	}
 	finished: u64
 	db := s.data_store
 	tx := sqlite.Tx {
@@ -69,7 +77,8 @@ replay :: proc(
 		data := &text
 		for line in strings.split_lines_iterator(data) {
 			if strings.trim_space(line) == "" {continue}
-			item, op, tags, err := parse_item(line, &record, alloc)
+			parsed_patch_name: [dynamic]u8
+			item, op, tags, err := parse_item(line, &record, &parsed_patch_name, alloc)
 			if err != nil {return err}
 			if item.id <= 0 {return .BadEvent}
 			if op == "delete" {
@@ -97,6 +106,11 @@ replay :: proc(
 				} else {
 					store_err = store.insert_item(&tx, item)
 				}
+				if len(item.name) != 0 {
+					acc := make([dynamic]u8, len(item.name), backing_alloc)
+					copy(acc[:], transmute([]u8)item.name)
+					name_accs[item.id] = acc
+				}
 			case "patch":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				store_err = store.patch_item(&tx, item, item_patch)
@@ -113,6 +127,19 @@ replay :: proc(
 				return .BadEvent
 			case:
 				return .DATABASE_ERR
+			}
+			if len(parsed_patch_name) != 0 {
+				acc, has_acc := name_accs[item.id]
+				if !has_acc {
+					// In incremental replay without the add event, read the current name as seed.
+					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
+					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
+					acc = make([dynamic]u8, len(curr.name), backing_alloc)
+					copy(acc[:], transmute([]u8)curr.name)
+				}
+				if len(acc) < len(parsed_patch_name) {resize(&acc, len(parsed_patch_name))}
+				for b, idx in parsed_patch_name {acc[idx] ~= b}
+				name_accs[item.id] = acc
 			}
 			if !full_replay {
 				if len(tags) != 0 {
@@ -146,6 +173,26 @@ replay :: proc(
 		}
 		if prog_callback != nil {prog_callback({phase = "replay files", finished = u64(i + 1)})}
 	}
+	name_stmt: ^sqlite.Stmt
+	defer {
+		if name_stmt != nil {sqlite.finalize(name_stmt)}
+	}
+	if sqlite.prepare_v2(
+		   db,
+		   "UPDATE items SET name = ?2 WHERE id = ?1 AND deleted = 0",
+		   -1,
+		   &name_stmt,
+		   nil,
+	   ) !=
+	   sqlite.OK {return .DATABASE_ERR}
+	for id, &acc in name_accs {
+		if sqlite.bind_int64(name_stmt, 1, i64(id)) != sqlite.OK {return .DATABASE_ERR}
+		length := len(acc)
+		for length > 0 && acc[length - 1] == 0 {length -= 1}
+		if !sqlite.bind_string(name_stmt, 2, string(acc[:length])) {return .DATABASE_ERR}
+		if sqlite.step(name_stmt) != sqlite.DONE {return .DATABASE_ERR}
+		if sqlite.reset(name_stmt) != sqlite.OK {return .DATABASE_ERR}
+	}
 	stmt: ^sqlite.Stmt
 	defer {if stmt != nil {sqlite.finalize(stmt)}}
 	rc := sqlite.prepare_v2(
@@ -176,6 +223,7 @@ replay :: proc(
 parse_item :: proc(
 	line: string,
 	record: ^elog.Record,
+	name_bytes: ^[dynamic]u8,
 	alloc: mem.Allocator,
 ) -> (
 	item: library.Image,
@@ -196,6 +244,7 @@ parse_item :: proc(
 			continue
 		}
 		if field.key == "tags_xor" {return item, op, tags, .BadEvent}
+		if field.key == "name_xor" {return item, op, tags, .BadEvent}
 		if field.is_array || len(field.values) != 1 {return item, op, tags, .BadEvent}
 		token := field.values[0]
 		// Absent version means version 0.
@@ -241,9 +290,52 @@ parse_item :: proc(
 		case "ext":
 			item.ext = replay_flat_string(token, alloc)
 		case "comment":
+			op_text := op
+			if op_text == "" {
+				for f in record.fields {
+					if f.key == "op" &&
+					   !f.is_array &&
+					   len(f.values) == 1 &&
+					   f.values[0].kind == .String {
+						op_text = replay_flat_string(f.values[0], alloc)
+						break
+					}
+				}
+			}
+			if op_text == "patch" {
+				panic("unimplemented: comment delta reduction in patch")
+			}
 			item.comment = replay_flat_string(token, alloc)
 		case "name":
-			item.name = replay_flat_string(token, alloc)
+			text := replay_flat_string(token, alloc)
+			// In add events, name is the initial plaintext seed.
+			// In patch events, name is the hex UTF-8 byte XOR delta.
+			// If op field appears after name in JSON, look for op in record.fields:
+			op_text := op
+			if op_text == "" {
+				for f in record.fields {
+					if f.key == "op" &&
+					   !f.is_array &&
+					   len(f.values) == 1 &&
+					   f.values[0].kind == .String {
+						op_text = replay_flat_string(f.values[0], alloc)
+						break
+					}
+				}
+			}
+			switch op_text {
+			case "add":
+				item.name = text
+			case "patch":
+				name_bytes^ = make([dynamic]u8, len(text) / 2, alloc)
+				_, hex_ok := hex.decode_into_buffer(transmute([]u8)text, name_bytes[:])
+				if len(text) % 2 != 0 || !hex_ok {return item, op, tags, .BadEvent}
+			case "delete":
+				return item, op, tags, .BadEvent
+			case:
+				// If op is unknown or yet unparsed, default to storing name seed
+				item.name = text
+			}
 		case "content_type":
 			item.content_type = replay_flat_string(token, alloc)
 		case "mtime":
@@ -266,8 +358,8 @@ parse_item :: proc(
 replay_flat_string :: proc(token: elog.Token, alloc: mem.Allocator) -> string {
 	assert(token.kind == .String)
 	if !token.has_escapes {return token.text[1:len(token.text) - 1]}
-	value, _, ok := strconv.unquote_string(token.text, alloc)
-	assert(ok)
+	value, err := json.unquote_string(json.Token{kind = .String, text = token.text}, .JSON, alloc)
+	assert(err == .None)
 	return value
 }
 

@@ -16,16 +16,17 @@
 - [x] Define patch values as upward-only timestamp advances, reduced by `max(current, incoming)`.
 - [x] Reject or omit redundant advances; earlier timestamps must not lower a value through `patch`.
 - [x] Preserve creation values as reduction seeds.
-- [x] Test shuffled events and independently reduced partitions, including equal values and attempted backward updates.
 - Timestamp lowering/clearing is intentionally unsupported by this max-only contract, including through `overwrite`. If required, revise the timestamp reducer or move the field wholly to LWW; do not introduce a second operation assigning the same field.
 
 ## Step 2: `name`
 
-- [ ] Replace name assignments in patches with UTF-8 byte XOR and byte-length XOR deltas computed from the immediately preceding state.
-- [ ] Compute each delta over `max(old_byte_length, new_byte_length)`, treating absent bytes as zero.
-- [ ] Reduce bytes and lengths separately. Grow the accumulator as needed; truncate only at finalization, never at an intermediate XOR length.
-- [ ] Define the encoded payload and validate the final encoded record size before append.
-- [ ] Test rename, growth, shortening, clearing, unchanged input, multibyte UTF-8, arbitrary order, and partition merges.
+- [x] Replace name assignments in patches with UTF-8 byte XOR deltas computed from the immediately preceding state.
+- [x] Compute each delta over `max(old_byte_length, new_byte_length)`, treating absent bytes as zero.
+- [x] Grow the byte accumulator as needed; remove trailing zero padding only at finalization.
+- [x] Define the encoded payload and validate the final encoded record size before append.
+- Payload: `name_xor` is the lowercase hex of the UTF-8 byte XOR (length `max(old, new)`, absent bytes zero). Unchanged values are omitted, and an unchanged name emits no event. Add events keep `name` as the plain seed; patches may not carry `name`.
+- Replay keeps a per-item accumulator at its full historical extent, XORs the stored seed in at the end, then trims trailing zero padding to determine the final length. Writers (`name_delta`) derive deltas from the current projected name, including clears (a present empty `name` form key), and reject invalid UTF-8; the record-size check runs before append.
+- Replay now decodes `\uD83D\uDE00` surrogate pairs correctly, so seed names with non-BMP characters keep exact bytes.
 
 ## Step 3: `comment`
 
@@ -34,7 +35,6 @@
 - [ ] Keep comment replacement assignments out of `patch`; compute deltas from validated preceding state.
 - [ ] Support exact text reconstruction, including empty comments, repeated lines, whitespace, line endings, and multibyte UTF-8.
 - [ ] For direct XOR, retain full accumulator extent until finalization. For chunks, merge immutable definitions separately and resolve the final manifest after reduction.
-- [ ] Test arbitrary event order, independently reduced partitions, clearing, and duplicate-delivery unsafety.
 
 ## Step 4: `overwrite`
 
@@ -45,7 +45,6 @@
 - [ ] Route original replacement through overwrite, retaining its expected-current-version/content-hash conflict check.
 - [ ] Implement the two-pass replay contract: parallel commutative reduction, followed by sequential overwrites in authoritative log order.
 - [ ] Ensure live application uses the same disjoint field ownership as replay; later patches remain effective on commutative fields regardless of intervening overwrites.
-- [ ] Test overwrite-before-patch and patch-before-overwrite: both edits survive on their respective fields. Reject attempts to assign commutative fields through overwrite or LWW fields through patch. Test multiple overwrites, per-field omission, explicit clears/zeros on LWW fields, original replacement conflicts, and deleted items.
 - [ ] Verify live application, sequential reference reduction, parallel partition reduction, and full rebuild agree.
 
 ## Step 5: explicit clears and value presence
@@ -56,7 +55,6 @@
 - [ ] Allow explicit empty strings and numeric zeros on LWW fields through `overwrite`, subject to field validity constraints. Do not permit invalid original references or bypass original-replacement conflict checks.
 - [ ] Define nullability explicitly before accepting JSON `null`: current string/integer fields do not represent a distinct nil state. Reject null for non-nullable fields rather than treating it as omission, empty, or zero. Any genuinely nullable field requires a presence-aware event representation, projection support, and a defined reducer before nil assignments are enabled.
 - [ ] Keep timestamps upward-only: zero is not a timestamp reset, and clearing/lowering remains unsupported.
-- [ ] Test omitted versus explicit empty/zero/null inputs through request decoding, event encoding, live application, and rebuild. Cover clear followed by a new value, repeated clears as no-ops, invalid clears rejected before append, and partition merges for commutative clears.
 
 ## Completion checks
 

@@ -20,7 +20,7 @@ persistent_restart_catchup :: proc(t: ^testing.T) {
 	shard := elog.get_current_event_shard(alloc)
 	path := fmt.tprintf("%s/events/%s", root, shard)
 	first := "{\"op\":\"add\",\"id\":1,\"name\":\"before\",\"tags\":[\"cat\"]}\n"
-	pending := "{\"op\":\"patch\",\"id\":1,\"name\":\"after\",\"tags\":[\"cat\",\"dog\"]}\n"
+	pending := "{\"op\":\"patch\",\"id\":1,\"name\":\"0303120a0065\",\"tags\":[\"cat\",\"dog\"]}\n"
 	if !testing.expect(t, os.write_entire_file(path, transmute([]u8)first) == nil) {return}
 	db_path := strings.clone_to_cstring(fmt.tprintf("%s/store.sqlite", root), alloc)
 	cursor: elog.Cursor

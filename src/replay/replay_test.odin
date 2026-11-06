@@ -24,9 +24,9 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 {"op":"add","id":2}
 {"op":"add","id":900001,"tags":["ghost"]}
 `
-	middle := `{"op":"patch","id":1,"name":"middle","tags":["alpha","gamma"]}
+	middle := `{"op":"patch","id":1,"name":"0f0c020b1e00","tags":["alpha","gamma"]}
 `
-	last := `{"op":"patch","id":1,"name":"final","tags":["beta","\u0064og"]}
+	last := `{"op":"patch","id":1,"name":"0b000a050065","tags":["beta","\u0064og"]}
 {"op":"delete","id":900001}
 `
 	// Deliberately create files out of lexical order.
@@ -93,12 +93,10 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 		if rc != sqlite.OK {return rc}
 		rc = store.toggle_tags(tx, 900001, {"ghost"})
 		if rc != sqlite.OK {return rc}
-		rc = c.int(store.patch_item(tx, library.Image{id = id, name = "middle"}))
-		if rc != sqlite.OK {return rc}
+		if !sqlite.run(tx.db, "UPDATE items SET name = 'middle' WHERE id = 1") {return 1}
 		rc = store.toggle_tags(tx, id, {"alpha", "gamma"})
 		if rc != sqlite.OK {return rc}
-		rc = c.int(store.patch_item(tx, library.Image{id = id, name = "final"}))
-		if rc != sqlite.OK {return rc}
+		if !sqlite.run(tx.db, "UPDATE items SET name = 'final' WHERE id = 1") {return 1}
 		rc = store.toggle_tags(tx, id, {"beta", "dog"})
 		if rc != sqlite.OK {return rc}
 		return c.int(store.delete_item(tx, 900001))
@@ -171,7 +169,7 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 		s: library.State
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 		text := strings.concatenate(
-			{"{\"op\":\"add\",\"id\":1,\"tags_xor\":[\"cat\"]}\n", event, "\n"},
+			{"{\"op\":\"add\",\"id\":1,\"tags\":[\"cat\"]}\n", event, "\n"},
 			alloc,
 		)
 		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
@@ -220,7 +218,7 @@ validate_event_versions :: proc(t: ^testing.T) {
 explicit_empty_scalars_are_not_implemented :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
-	cleared := []string{`{"op":"patch","id":1,"comment":""}`, `{"op":"patch","id":1,"name":""}`}
+	cleared := []string{`{"op":"patch","id":1,"comment":""}`}
 	for event in cleared {
 		s: library.State
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
@@ -279,7 +277,8 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 	record := elog.Record {
 		fields = make([dynamic]elog.Field, 0, 16, alloc),
 	}
-	item, op, tags, err := parse_item(source, &record, alloc)
+	parsed_name: [dynamic]u8
+	item, op, tags, err := parse_item(source, &record, &parsed_name, alloc)
 	testing.expect(t, err == nil)
 	testing.expect(t, item.id == 1 && op == "patch")
 	testing.expect_value(t, len(item.tags), 0)

@@ -11,6 +11,7 @@ import "core:slice"
 import "core:strconv"
 import "core:strings"
 import "core:time"
+import "core:unicode/utf8"
 
 import "../http"
 import "../library"
@@ -740,7 +741,13 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		op = "patch",
 	}
 	ok := true
-	ev.name = form_string(params, "name", &ok)
+	name := form_string(params, "name", &ok)
+	_, name_present := params["name"]
+	if !utf8.valid_string(name) {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(template.render_toast("name must be valid UTF-8", .Error), res, .BadRequest)
+		return
+	}
 	ev.comment = form_string(params, "comment", &ok)
 	ev.oid = form_string(params, "oid", &ok)
 	ev.path = form_string(params, "path", &ok)
@@ -779,12 +786,20 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		}
 	}
 	ev.tags = delta[:]
+	if name_present && current.name != name {
+		delta := make([]u8, max(len(current.name), len(name)), req.alloc)
+		for i in 0 ..< len(delta) {
+			if i < len(current.name) {delta[i] ~= current.name[i]}
+			if i < len(name) {delta[i] ~= name[i]}
+		}
+		ev.name = string(hex.encode(delta, req.alloc))
+	}
 	// Timestamp patches only advance; omit redundant/backward inputs before append.
 	if ev.mtime <= current.mtime {ev.mtime = 0}
 	if ev.added_at <= current.added_at {ev.added_at = 0}
 	changed :=
 		len(delta) != 0 ||
-		(ev.name != "" && ev.name != current.name) ||
+		ev.name != "" ||
 		(ev.comment != "" && ev.comment != current.comment) ||
 		(ev.oid != "" && ev.oid != current.oid) ||
 		(ev.path != "" && ev.path != current.path) ||

@@ -43,7 +43,7 @@ full_then_incremental_replay_persists_progress :: proc(t: ^testing.T) {
 		t,
 		elog.ev_append(
 			&log,
-			[]elog.Event{{op = "patch", id = 1, name = "after", tags = {"cat", "dog"}}},
+			[]elog.Event{{op = "patch", id = 1, name = "0303120a0065", tags = {"cat", "dog"}}},
 		) ==
 		"",
 	) {return}
@@ -81,7 +81,7 @@ incremental_application_and_cursor_roll_back_together :: proc(t: ^testing.T) {
 	if !testing.expect(t, elog.save_cursor(&tx, &cursor) == sqlite.OK) {return}
 	if !testing.expect(t, sqlite.run(s.data_store, "COMMIT")) {return}
 
-	patch := "{\"op\":\"patch\",\"id\":1,\"name\":\"after\",\"tags\":[\"cat\",\"dog\"]}\n"
+	patch := "{\"op\":\"patch\",\"id\":1,\"name\":\"0303120a0065\",\"tags\":[\"cat\",\"dog\"]}\n"
 	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 	if !testing.expect(
 		t,

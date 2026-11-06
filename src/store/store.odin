@@ -136,6 +136,7 @@ delete_item :: proc(tx: ^sqlite.Tx, id: int, prepared: ^sqlite.Stmt = nil) -> Er
 
 // Uses the caller's transaction. Empty/zero fields leave existing values alone.
 // Timestamp patches are upward-only advances, reduced by max with the creation seed.
+// Name is never changed here: it is reduced from XOR deltas by replay.
 // Tags are never changed here; apply explicit deltas with toggle_tags.
 patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> Error {
 	stmt := prepared
@@ -149,20 +150,20 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt =
 		if owned_stmt && stmt != nil {sqlite.finalize(stmt)}
 	}
 
-	values := [5]string{item.oid, item.path, item.ext, item.name, item.content_type}
+	values := [4]string{item.oid, item.path, item.ext, item.content_type}
 	for value, i in values {
 		if !sqlite.bind_string(stmt, i + 1, value) {return .Database}
 	}
-	rc = sqlite.bind_int64(stmt, 6, item.mtime)
+	rc = sqlite.bind_int64(stmt, 5, item.mtime)
 	if rc != sqlite.OK {return .Database}
-	rc = sqlite.bind_int64(stmt, 7, item.added_at)
+	rc = sqlite.bind_int64(stmt, 6, item.added_at)
 	if rc != sqlite.OK {return .Database}
-	rc = sqlite.bind_int64(stmt, 8, i64(item.width))
+	rc = sqlite.bind_int64(stmt, 7, i64(item.width))
 	if rc != sqlite.OK {return .Database}
-	rc = sqlite.bind_int64(stmt, 9, i64(item.height))
+	rc = sqlite.bind_int64(stmt, 8, i64(item.height))
 	if rc != sqlite.OK {return .Database}
-	if !sqlite.bind_string(stmt, 11, item.comment) {return .Database}
-	rc = sqlite.bind_int64(stmt, 10, i64(item.id))
+	if !sqlite.bind_string(stmt, 10, item.comment) {return .Database}
+	rc = sqlite.bind_int64(stmt, 9, i64(item.id))
 	if rc != sqlite.OK {return .Database}
 	rc = sqlite.step(stmt)
 	if rc != sqlite.DONE {return .Database}
@@ -200,14 +201,13 @@ prepare_item_patch :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 			oid = COALESCE(NULLIF(?, ''), oid),
 			path = COALESCE(NULLIF(?, ''), path),
 			ext = COALESCE(NULLIF(?, ''), ext),
-			name = COALESCE(NULLIF(?, ''), name),
 			content_type = COALESCE(NULLIF(?, ''), content_type),
 			mtime = MAX(mtime, COALESCE(NULLIF(?, 0), mtime)),
 			added_at = MAX(added_at, COALESCE(NULLIF(?, 0), added_at)),
 			width = COALESCE(NULLIF(?, 0), width),
 			height = COALESCE(NULLIF(?, 0), height),
-			comment = COALESCE(NULLIF(?11, ''), comment)
-		WHERE id = ?10 AND deleted = 0`,
+			comment = COALESCE(NULLIF(?10, ''), comment)
+		WHERE id = ?9 AND deleted = 0`,
 		-1,
 		&stmt,
 		nil,
