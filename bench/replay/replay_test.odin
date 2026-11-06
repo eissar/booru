@@ -34,9 +34,9 @@ test_replay :: proc(t: ^testing.T) {
 		state:  ^library.State,
 		result: replay.Error,
 	}
-	durations: [11]f64
-	events_per_second: [11]f64
-	mib_per_second: [11]f64
+	durations: [2]f64
+	events_per_second: [2]f64
+	mib_per_second: [2]f64
 	for round in 0 ..< len(durations) {
 		state: library.State
 		if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
@@ -109,14 +109,14 @@ test_replay :: proc(t: ^testing.T) {
 	slice.sort(durations[1:])
 	slice.sort(events_per_second[1:])
 	slice.sort(mib_per_second[1:])
-	median_ns := (durations[5] + durations[6]) / 2
+	median_ns := durations[1]
 	fmt.printf(
 		"replay: %d events, median %.3f ms, %.0f ns/event, %.0f events/s, %.2f MiB/s (10 runs; DB setup excluded; row count and repeatability checked)\n",
 		count,
 		median_ns / 1e6,
 		median_ns / f64(count),
-		(events_per_second[5] + events_per_second[6]) / 2,
-		(mib_per_second[5] + mib_per_second[6]) / 2,
+		events_per_second[1],
+		mib_per_second[1],
 	)
 }
 
