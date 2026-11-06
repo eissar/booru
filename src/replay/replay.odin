@@ -19,7 +19,6 @@ import "../vendor/sqlite"
 Error :: enum {
 	None,
 	BadEvent,
-	Corrupted,
 	UnsupportedVersion,
 	// Writers omit empty strings; explicit string clears are not implemented yet.
 	NotImplemented,

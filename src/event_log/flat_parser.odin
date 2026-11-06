@@ -17,7 +17,7 @@ package event_log
 
     Escapes in keys are forbidden, even when they would decode to an otherwise valid key. For example, "content\u0054ype" is ASCII-encoded valid JSON, but it violates the key rules.
 
-    Event keys must use lower snake_case; thumbnailOid must be changed in writers and development logs before using this parser.
+    Event keys must use lower snake_case.
 
     Invalid keys are rejected rather than normalized. The parser does not lowercase names or replace punctuation.
 
@@ -130,7 +130,6 @@ Field :: struct {
 Record :: struct {
 	fields:      [dynamic]Field,
 	values:      [MAX_RECORD]Token,
-	field_count: int,
 	value_count: int,
 }
 
@@ -269,7 +268,6 @@ parse_flat :: proc(line: string, r: ^Record) {
 	if len(line) >=
 	   MAX_RECORD {panic("Cannot parse event: record must contain fewer than 2048 bytes")}
 	clear(&r.fields)
-	r.field_count = 0
 	r.value_count = 0
 	t := Scanner {
 		data = line,
@@ -294,8 +292,8 @@ parse_flat :: proc(line: string, r: ^Record) {
 				"Cannot parse event: key must contain only lowercase ASCII letters, digits, and underscores",
 			)
 		}
-		for i in 0 ..< r.field_count {
-			if r.fields[i].key == key {panic("Cannot parse event: duplicate key")}
+		for f in r.fields {
+			if f.key == key {panic("Cannot parse event: duplicate key")}
 		}
 		expect(&t, .Colon)
 		first := r.value_count
@@ -321,7 +319,6 @@ parse_flat :: proc(line: string, r: ^Record) {
 		}
 		field.values = r.values[first:r.value_count]
 		append(&r.fields, field)
-		r.field_count += 1
 		separator := next(&t)
 		if separator.kind == .Close_Brace {break}
 		if separator.kind != .Comma {panic("Cannot parse event: expected an object separator")}

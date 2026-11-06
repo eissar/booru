@@ -1,7 +1,5 @@
 package slop_pijul
 
-import "core:mem"
-import "core:slice"
 import "core:strings"
 
 // Hunk represents an anchored line modification block:
@@ -121,19 +119,6 @@ parse_patch :: proc(patch_text: string, allocator := context.allocator) -> [dyna
 	}
 
 	return hunks
-}
-
-// Frees hunks parsed by parse_patch.
-destroy_hunks :: proc(hunks: ^[dynamic]Hunk, allocator := context.allocator) {
-	for &h in hunks {
-		delete(h.anchor_prev, allocator)
-		delete(h.anchor_curr, allocator)
-		for l in h.del_lines {delete(l, allocator)}
-		delete(h.del_lines)
-		for l in h.add_lines {delete(l, allocator)}
-		delete(h.add_lines)
-	}
-	delete(hunks^)
 }
 
 // Applies an anchored patch to current_text using 2-line context matching.
