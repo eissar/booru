@@ -33,28 +33,18 @@ replay :: proc(
 	prog_callback: progress.Callback = nil,
 	full_replay := true,
 ) -> Error {
-	// Own decoded strings until replay ends, including tags retained across shards.
+	// Own all temporary reduction state and decoded strings until replay ends.
 	arena: mem.Dynamic_Arena
 	mem.dynamic_arena_init(&arena, backing_alloc, backing_alloc)
 	defer mem.dynamic_arena_destroy(&arena)
 	alloc := mem.dynamic_arena_allocator(&arena)
-	// First-seen positions are deterministic for the ordered event stream.
 	tag_indexes := make(map[string]int, alloc)
 	dictionary := make([dynamic]string, alloc)
 	// TODO: Migrate to packed bitsets eventually to reduce memory.
-	tag_memberships := make(map[int][dynamic]u8, backing_alloc)
-	defer {
-		for _, membership in tag_memberships {delete(membership)}
-		delete(tag_memberships)
-	}
-	seen_ids := make(map[int]bool, backing_alloc)
-	defer delete(seen_ids)
+	tag_memberships := make(map[int][dynamic]u8, alloc)
+	seen_ids := make(map[int]bool, alloc)
 	// Name deltas keep their full byte extent until reduction against the seed name at finalization.
-	name_accs := make(map[int][dynamic]u8, backing_alloc)
-	defer {
-		for _, acc in name_accs {delete(acc)}
-		delete(name_accs)
-	}
+	name_accs := make(map[int][dynamic]u8, alloc)
 	finished: u64
 	db := s.data_store
 	tx := sqlite.Tx {
@@ -63,7 +53,6 @@ replay :: proc(
 	if prog_callback != nil {prog_callback({phase = "replay events"})}
 	record: elog.Record
 	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
-	defer delete(record.fields)
 	item_insert: ^sqlite.Stmt
 	defer {if item_insert != nil {sqlite.finalize(item_insert)}}
 	item_patch, patch_rc := store.prepare_item_patch(db)
@@ -107,7 +96,7 @@ replay :: proc(
 					store_err = store.insert_item(&tx, item)
 				}
 				if len(item.name) != 0 {
-					acc := make([dynamic]u8, len(item.name), backing_alloc)
+					acc := make([dynamic]u8, len(item.name), alloc)
 					copy(acc[:], transmute([]u8)item.name)
 					name_accs[item.id] = acc
 				}
@@ -134,7 +123,7 @@ replay :: proc(
 					// In incremental replay without the add event, read the current name as seed.
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
 					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
-					acc = make([dynamic]u8, len(curr.name), backing_alloc)
+					acc = make([dynamic]u8, len(curr.name), alloc)
 					copy(acc[:], transmute([]u8)curr.name)
 				}
 				if len(acc) < len(parsed_patch_name) {resize(&acc, len(parsed_patch_name))}
@@ -162,8 +151,7 @@ replay :: proc(
 					append(&dictionary, owned_tag)
 				}
 				membership := tag_memberships[item.id]
-				if membership.allocator.procedure ==
-				   nil {membership = make([dynamic]u8, backing_alloc)}
+				if membership.allocator.procedure == nil {membership = make([dynamic]u8, alloc)}
 				if len(membership) <= index {resize(&membership, index + 1)}
 				membership[index] ~= 1
 				tag_memberships[item.id] = membership
