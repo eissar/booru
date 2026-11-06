@@ -737,10 +737,6 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		if !slice.contains(tags[:], tag) {append(&tags, tag)}
 	}
 
-	ev := elog.Event {
-		id = id,
-		op = "patch",
-	}
 	ok := true
 	name := form_string(params, "name", &ok)
 	_, name_present := params["name"]
@@ -751,14 +747,14 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	}
 	comment := form_string(params, "comment", &ok)
 	_, comment_present := params["comment"]
-	ev.oid = form_string(params, "oid", &ok)
-	ev.path = form_string(params, "path", &ok)
-	ev.ext = form_string(params, "ext", &ok)
-	ev.content_type = form_string(params, "content_type", &ok)
-	ev.mtime = form_i64(params, "mtime", &ok)
-	ev.added_at = form_i64(params, "added_at", &ok)
-	ev.width = int(form_i64(params, "width", &ok))
-	ev.height = int(form_i64(params, "height", &ok))
+	oid := form_string(params, "oid", &ok)
+	path := form_string(params, "path", &ok)
+	ext := form_string(params, "ext", &ok)
+	content_type := form_string(params, "content_type", &ok)
+	mtime := form_i64(params, "mtime", &ok)
+	added_at := form_i64(params, "added_at", &ok)
+	width := int(form_i64(params, "width", &ok))
+	height := int(form_i64(params, "height", &ok))
 	if !ok {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(template.render_toast("bad metadata", .Error), res, .BadRequest)
@@ -777,7 +773,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	}
 
 	// Serve is synchronous: no other writer can interleave this read/append/apply.
-	// Missing tags leave membership alone; an explicit empty list clears it.
+	// Commutative changes emit a patch event; LWW replacements emit an overwrite event.
 	delta := make([dynamic]string)
 	if _, present := params["tags"]; present {
 		for tag in current.tags {
@@ -787,38 +783,65 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 			if !slice.contains(current.tags, tag) {append(&delta, tag)}
 		}
 	}
-	ev.tags = delta[:]
+	patch_ev := elog.Event {
+		id   = id,
+		op   = "patch",
+		tags = delta[:],
+	}
 	if name_present && current.name != name {
-		delta := make([]u8, max(len(current.name), len(name)), req.alloc)
-		for i in 0 ..< len(delta) {
-			if i < len(current.name) {delta[i] ~= current.name[i]}
-			if i < len(name) {delta[i] ~= name[i]}
+		d := make([]u8, max(len(current.name), len(name)), req.alloc)
+		min_len := min(len(current.name), len(name))
+		for i in 0 ..< min_len {
+			d[i] = current.name[i] ~ name[i]
 		}
-		ev.name = string(hex.encode(delta, req.alloc))
+		if len(current.name) > min_len {
+			copy(d[min_len:], transmute([]u8)current.name[min_len:])
+		} else if len(name) > min_len {
+			copy(d[min_len:], transmute([]u8)name[min_len:])
+		}
+		patch_ev.name = string(hex.encode(d, req.alloc))
 	}
 	if comment_present && current.comment != comment {
-		ev.comment = pijul.generate_patch(current.comment, comment, req.alloc)
+		patch_ev.comment = pijul.generate_patch(current.comment, comment, req.alloc)
 	}
-	// Timestamp patches only advance; omit redundant/backward inputs before append.
-	if ev.mtime <= current.mtime {ev.mtime = 0}
-	if ev.added_at <= current.added_at {ev.added_at = 0}
-	changed :=
+	if mtime > current.mtime {patch_ev.mtime = mtime}
+	if added_at > current.added_at {patch_ev.added_at = added_at}
+
+	patch_changed :=
 		len(delta) != 0 ||
-		ev.name != "" ||
-		ev.comment != "" ||
-		(ev.oid != "" && ev.oid != current.oid) ||
-		(ev.path != "" && ev.path != current.path) ||
-		(ev.ext != "" && ev.ext != current.ext) ||
-		(ev.content_type != "" && ev.content_type != current.content_type) ||
-		(ev.mtime != 0 && ev.mtime != current.mtime) ||
-		(ev.added_at != 0 && ev.added_at != current.added_at) ||
-		(ev.width != 0 && ev.width != current.width) ||
-		(ev.height != 0 && ev.height != current.height)
-	if changed {
-		if err := elog.ev_append(s.event_log, []elog.Event{ev}); err != "" {
+		patch_ev.name != "" ||
+		patch_ev.comment != "" ||
+		patch_ev.mtime != 0 ||
+		patch_ev.added_at != 0
+
+	overwrite_ev := elog.Event {
+		id = id,
+		op = "overwrite",
+	}
+	if oid != "" && oid != current.oid {overwrite_ev.oid = oid}
+	if path != "" && path != current.path {overwrite_ev.path = path}
+	if ext != "" && ext != current.ext {overwrite_ev.ext = ext}
+	if content_type != "" &&
+	   content_type != current.content_type {overwrite_ev.content_type = content_type}
+	if width != 0 && width != current.width {overwrite_ev.width = width}
+	if height != 0 && height != current.height {overwrite_ev.height = height}
+
+	overwrite_changed :=
+		overwrite_ev.oid != "" ||
+		overwrite_ev.path != "" ||
+		overwrite_ev.ext != "" ||
+		overwrite_ev.content_type != "" ||
+		overwrite_ev.width != 0 ||
+		overwrite_ev.height != 0
+
+	if patch_changed || overwrite_changed {
+		batch := make([dynamic]elog.Event, req.alloc)
+		if patch_changed {append(&batch, patch_ev)}
+		if overwrite_changed {append(&batch, overwrite_ev)}
+		if err := elog.ev_append(s.event_log, batch[:]); err != "" {
 			res.headers["HX-Reswap"] = "beforeend"
 			http.res_html(
-				template.render_toast("could not write patch event", .Error),
+				template.render_toast("could not write metadata event", .Error),
 				res,
 				.BadRequest,
 			)

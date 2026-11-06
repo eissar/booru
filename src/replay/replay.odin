@@ -62,6 +62,10 @@ replay :: proc(
 	item_delete, delete_rc := store.prepare_item_delete(db)
 	if delete_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(item_delete)
+	item_overwrite, overwrite_rc := store.prepare_item_overwrite(db)
+	if overwrite_rc != sqlite.OK {return .DATABASE_ERR}
+	defer sqlite.finalize(item_overwrite)
+	overwrites := make([dynamic]library.Image, alloc)
 	for stream, i in streams {
 		text := stream
 		data := &text
@@ -116,6 +120,10 @@ replay :: proc(
 				if item.mtime != 0 || item.added_at != 0 {
 					store_err = store.patch_item(&tx, item, item_patch)
 				}
+			case "overwrite":
+				if full_replay && !seen_ids[item.id] {return .BadEvent}
+				// Collect overwrites in log order for Pass 2 application
+				append(&overwrites, item)
 			case "delete":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				store_err = store.delete_item(&tx, item.id, item_delete)
@@ -183,6 +191,11 @@ replay :: proc(
 			if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
 		}
 		if prog_callback != nil {prog_callback({phase = "replay files", finished = u64(i + 1)})}
+	}
+	// Pass 2: Sequential Overwrites in authoritative log order
+	for ow in overwrites {
+		store_err := store.overwrite_item(&tx, ow, item_overwrite)
+		if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
 	}
 	for id, &acc in name_accs {
 		length := len(acc)
