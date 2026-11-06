@@ -13,12 +13,15 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Test: independently reduced partitions merge to the same result as sequential replay.
 - [ ] Test: `name` XOR deltas (growth, shrink, clear, multibyte, shuffled order) reduce to the final name.
 - [ ] Test: comment patches at distinct anchors commute and reduce to the final text.
-- [ ] Test: overwrite applies in log order, last assignment per field wins, and later patches on commutative fields still apply.
+- [ ] Test: overwrite applies in log order across shards; the last assignment per LWW field wins.
 - [ ] Test: `slop_pijul` round trip for empty comments, repeated lines, whitespace, line endings, multibyte UTF-8.
 - [ ] Benchmark comment patches against direct XOR (high-water memory, shifted-suffix cost).
 - [ ] Define behavior when a mixed patch+overwrite batch fails partway through `ev_append` (`src/server/handlers.odin`).
 
 - [ ] Test: `handle_update_metadata` rejects a present-but-empty `oid` or `path` with 400 and appends nothing; JSON `null` on any field is a `BadEvent`.
+
+- [ ] Test: `mtime` and `added_at` never decrease: a lower or zero value in a `patch` is ignored, `overwrite` carrying either is rejected, and the writer omits them when not greater than current.
+- [ ] Test: patches clearing `name`, `comment` and tags replay to empty values, in both full and incremental replay.
 
 # Store Write Path TODO
 

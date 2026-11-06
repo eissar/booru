@@ -169,6 +169,87 @@ patch_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt =
 	return .None
 }
 
+// HACK: bad boundary — allows overwriting any property directly, including
+// commutative fields, bypassing delta rules.
+// Pointer arguments: nil leaves the column unchanged; non-nil writes the dereferenced value.
+force_write_item :: proc(
+	tx: ^sqlite.Tx,
+	id: int,
+	oid: ^string = nil,
+	path: ^string = nil,
+	ext: ^string = nil,
+	content_type: ^string = nil,
+	width: ^int = nil,
+	height: ^int = nil,
+	name: ^string = nil,
+	comment: ^string = nil,
+	mtime: ^i64 = nil,
+	added_at: ^i64 = nil,
+) -> Error {
+	stmt: ^sqlite.Stmt
+	rc := sqlite.prepare_v2(
+		tx.db,
+		`UPDATE items SET
+			oid = COALESCE(?1, oid),
+			path = COALESCE(?2, path),
+			ext = COALESCE(?3, ext),
+			content_type = COALESCE(?4, content_type),
+			width = COALESCE(?5, width),
+			height = COALESCE(?6, height),
+			name = COALESCE(?7, name),
+			comment = COALESCE(?8, comment),
+			mtime = COALESCE(?9, mtime),
+			added_at = COALESCE(?10, added_at)
+		WHERE id = ?11 AND deleted = 0`,
+		-1,
+		&stmt,
+		nil,
+	)
+	if rc != sqlite.OK {return .Database}
+	defer sqlite.finalize(stmt)
+
+	strings_to_bind := [4]^string{oid, path, ext, content_type}
+	for ptr, i in strings_to_bind {
+		if ptr == nil {
+			if sqlite.bind_null(stmt, c.int(i + 1)) != sqlite.OK {return .Database}
+		} else if !sqlite.bind_string(stmt, i + 1, ptr^) {
+			return .Database
+		}
+	}
+
+	int_to_bind := [2]^int{width, height}
+	for ptr, i in int_to_bind {
+		if ptr == nil {
+			if sqlite.bind_null(stmt, c.int(i + 5)) != sqlite.OK {return .Database}
+		} else if sqlite.bind_int64(stmt, c.int(i + 5), i64(ptr^)) != sqlite.OK {
+			return .Database
+		}
+	}
+
+	text_to_bind := [2]^string{name, comment}
+	for ptr, i in text_to_bind {
+		if ptr == nil {
+			if sqlite.bind_null(stmt, c.int(i + 7)) != sqlite.OK {return .Database}
+		} else if !sqlite.bind_string(stmt, i + 7, ptr^) {
+			return .Database
+		}
+	}
+
+	i64_to_bind := [2]^i64{mtime, added_at}
+	for ptr, i in i64_to_bind {
+		if ptr == nil {
+			if sqlite.bind_null(stmt, c.int(i + 9)) != sqlite.OK {return .Database}
+		} else if sqlite.bind_int64(stmt, c.int(i + 9), ptr^) != sqlite.OK {
+			return .Database
+		}
+	}
+
+	if sqlite.bind_int64(stmt, 11, i64(id)) != sqlite.OK {return .Database}
+	if sqlite.step(stmt) != sqlite.DONE {return .Database}
+	if sqlite.changes64(tx.db) == 0 {return .NotFound}
+	return .None
+}
+
 // Uses the caller's transaction. Empty/zero fields leave existing values alone.
 // overwrite_item applies all LWW fields (oid, path, ext, content_type, width, height).
 overwrite_item :: proc(

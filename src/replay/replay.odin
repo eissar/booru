@@ -190,17 +190,19 @@ replay :: proc(
 	for id, &acc in name_accs {
 		length := len(acc)
 		for length > 0 && acc[length - 1] == 0 {length -= 1}
-		c := comment_accs[id]
-		err := store.patch_item(
+		name := string(acc[:length])
+		comment, has_comment := comment_accs[id]
+		err := store.force_write_item(
 			&tx,
-			library.Image{id = id, name = string(acc[:length]), comment = c},
-			item_patch,
+			id,
+			name = &name,
+			comment = has_comment ? &comment : nil,
 		)
 		if err != .None && err != .NotFound {return .DATABASE_ERR}
 	}
-	for id, comment in comment_accs {
+	for id, &comment in comment_accs {
 		if id in name_accs {continue}
-		err := store.patch_item(&tx, library.Image{id = id, comment = comment}, item_patch)
+		err := store.force_write_item(&tx, id, comment = &comment)
 		if err != .None && err != .NotFound {return .DATABASE_ERR}
 	}
 	stmt: ^sqlite.Stmt
