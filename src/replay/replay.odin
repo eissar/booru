@@ -66,6 +66,9 @@ replay :: proc(
 	if overwrite_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(item_overwrite)
 	overwrites := make([dynamic]library.Image, alloc)
+	force_write, force_write_rc := store.prepare_item_force_write(db)
+	if force_write_rc != sqlite.OK {return .DATABASE_ERR}
+	defer sqlite.finalize(force_write)
 	for stream, i in streams {
 		text := stream
 		data := &text
@@ -197,12 +200,13 @@ replay :: proc(
 			id,
 			name = &name,
 			comment = has_comment ? &comment : nil,
+			prepared = force_write,
 		)
 		if err != .None && err != .NotFound {return .DATABASE_ERR}
 	}
 	for id, &comment in comment_accs {
 		if id in name_accs {continue}
-		err := store.force_write_item(&tx, id, comment = &comment)
+		err := store.force_write_item(&tx, id, comment = &comment, prepared = force_write)
 		if err != .None && err != .NotFound {return .DATABASE_ERR}
 	}
 	stmt: ^sqlite.Stmt

@@ -191,28 +191,15 @@ force_write_item :: proc(
 	comment: ^string = nil,
 	mtime: ^i64 = nil,
 	added_at: ^i64 = nil,
+	prepared: ^sqlite.Stmt = nil,
 ) -> Error {
-	stmt: ^sqlite.Stmt
-	rc := sqlite.prepare_v2(
-		tx.db,
-		`UPDATE items SET
-			oid = COALESCE(?1, oid),
-			path = COALESCE(?2, path),
-			ext = COALESCE(?3, ext),
-			content_type = COALESCE(?4, content_type),
-			width = COALESCE(?5, width),
-			height = COALESCE(?6, height),
-			name = COALESCE(?7, name),
-			comment = COALESCE(?8, comment),
-			mtime = COALESCE(?9, mtime),
-			added_at = COALESCE(?10, added_at)
-		WHERE id = ?11 AND deleted = 0`,
-		-1,
-		&stmt,
-		nil,
-	)
-	if rc != sqlite.OK {return .Database}
-	defer sqlite.finalize(stmt)
+	stmt := prepared
+	if stmt == nil {
+		rc: c.int
+		stmt, rc = prepare_item_force_write(tx.db)
+		if rc != sqlite.OK {return .Database}
+	}
+	defer {if prepared == nil {sqlite.finalize(stmt)} else {sqlite.reset(stmt)}}
 
 	strings_to_bind := [4]^string{oid, path, ext, content_type}
 	for ptr, i in strings_to_bind {
@@ -322,6 +309,33 @@ prepare_item_patch :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 			mtime = MAX(mtime, COALESCE(NULLIF(?3, 0), mtime)),
 			added_at = MAX(added_at, COALESCE(NULLIF(?4, 0), added_at))
 		WHERE id = ?5 AND deleted = 0`,
+		-1,
+		&stmt,
+		nil,
+	)
+	if rc != sqlite.OK && stmt != nil {
+		sqlite.finalize(stmt)
+		stmt = nil
+	}
+	return
+}
+
+// The caller owns the returned statement and must finalize it.
+prepare_item_force_write :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
+	rc = sqlite.prepare_v2(
+		db,
+		`UPDATE items SET
+			oid = COALESCE(?1, oid),
+			path = COALESCE(?2, path),
+			ext = COALESCE(?3, ext),
+			content_type = COALESCE(?4, content_type),
+			width = COALESCE(?5, width),
+			height = COALESCE(?6, height),
+			name = COALESCE(?7, name),
+			comment = COALESCE(?8, comment),
+			mtime = COALESCE(?9, mtime),
+			added_at = COALESCE(?10, added_at)
+		WHERE id = ?11 AND deleted = 0`,
 		-1,
 		&stmt,
 		nil,
