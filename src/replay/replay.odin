@@ -1,5 +1,6 @@
 package replay
 
+import "core:container/lru"
 import "core:encoding/hex"
 import "core:encoding/json"
 import "core:fmt"
@@ -8,6 +9,7 @@ import "core:os"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
+import "core:sys/posix"
 
 import elog "../event_log"
 import "../library/"
@@ -48,8 +50,17 @@ replay :: proc(
 	alloc := mem.dynamic_arena_allocator(&arena)
 	tag_indexes := make(map[string]int, alloc)
 	dictionary := make([dynamic]string, alloc)
-	// TODO: Migrate to packed bitsets eventually to reduce memory.
-	patch_states := make(map[int]Patch_State, alloc)
+
+	swap := init_swap(s.library_path)
+	defer destroy_swap(&swap)
+
+	// Bounded in-memory working set; evictions spill to swap.bin
+	patch_states: lru.Cache(int, Patch_State)
+	lru.init(&patch_states, capacity = 10_000, entries_allocator = alloc, node_allocator = alloc)
+	defer lru.destroy(&patch_states, call_on_remove = false)
+	patch_states.on_remove = on_evict_to_swap
+	patch_states.on_remove_user_data = &swap
+
 	seen_ids := make(map[int]bool, alloc)
 	finished: u64
 
@@ -119,7 +130,7 @@ replay :: proc(
 					if len(item.comment) != 0 {
 						state.comment = strings.clone(item.comment, alloc)
 					}
-					patch_states[item.id] = state
+					lru.set(&patch_states, item.id, state)
 				} else {
 					store_err = store.insert_item(&tx, item)
 				}
@@ -128,10 +139,11 @@ replay :: proc(
 				if !full_replay && (item.mtime != 0 || item.added_at != 0) {
 					store_err = store.patch_item(&tx, item, item_patch)
 				} else if full_replay {
-					state := patch_states[item.id]
+					state, ok := lru.get(&patch_states, item.id)
+					if !ok && seen_ids[item.id] {state = swap_read(&swap, item.id, alloc)}
 					if item.mtime != 0 {state.mtime = max(state.mtime, item.mtime)}
 					if item.added_at != 0 {state.added_at = max(state.added_at, item.added_at)}
-					patch_states[item.id] = state
+					lru.set(&patch_states, item.id, state)
 				}
 			case "overwrite":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
@@ -152,7 +164,8 @@ replay :: proc(
 				return .DATABASE_ERR
 			}
 			if len(parsed_patch_name) != 0 {
-				state := patch_states[item.id]
+				state, ok := lru.get(&patch_states, item.id)
+				if !ok && seen_ids[item.id] {state = swap_read(&swap, item.id, alloc)}
 				if !full_replay && state.name == nil {
 					// In incremental replay without the add event, read the current name as seed.
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
@@ -163,17 +176,18 @@ replay :: proc(
 				if len(state.name) <
 				   len(parsed_patch_name) {resize(&state.name, len(parsed_patch_name))}
 				for b, idx in parsed_patch_name {state.name[idx] ~= b}
-				patch_states[item.id] = state
+				lru.set(&patch_states, item.id, state)
 			}
 			if len(parsed_patch_comment) != 0 {
-				state := patch_states[item.id]
+				state, ok := lru.get(&patch_states, item.id)
+				if !ok && seen_ids[item.id] {state = swap_read(&swap, item.id, alloc)}
 				if !full_replay && len(state.comment) == 0 {
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
 					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
 					state.comment = curr.comment
 				}
 				state.comment = pijul.apply_patch(state.comment, parsed_patch_comment, alloc)
-				patch_states[item.id] = state
+				lru.set(&patch_states, item.id, state)
 			}
 			if !full_replay {
 				if len(tags) != 0 {
@@ -195,11 +209,12 @@ replay :: proc(
 					tag_indexes[owned_tag] = index
 					append(&dictionary, owned_tag)
 				}
-				state := patch_states[item.id]
+				state, ok := lru.get(&patch_states, item.id)
+				if !ok && seen_ids[item.id] {state = swap_read(&swap, item.id, alloc)}
 				if state.tags.allocator.procedure == nil {state.tags = make([dynamic]u8, alloc)}
 				if len(state.tags) <= index {resize(&state.tags, index + 1)}
 				state.tags[index] ~= 1
-				patch_states[item.id] = state
+				lru.set(&patch_states, item.id, state)
 			}
 			finished += 1
 			if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
@@ -211,7 +226,15 @@ replay :: proc(
 		store_err := store.overwrite_item(&tx, ow, item_overwrite)
 		if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
 	}
-	for id, &state in patch_states {
+	// Flush remaining hot items in LRU cache to swap backing
+	for id, node in patch_states.entries {
+		swap_write(&swap, id, &node.value)
+	}
+
+	for id := 1; id <= swap.max_id; id += 1 {
+		if swap.index[id] == 0 {continue}
+		if full_replay && !seen_ids[id] {continue}
+		state := swap_read(&swap, id, context.temp_allocator)
 		length := len(state.name)
 		for length > 0 && state.name[length - 1] == 0 {length -= 1}
 		name := string(state.name[:length])
@@ -236,9 +259,11 @@ replay :: proc(
 		nil,
 	)
 	if rc != sqlite.OK {return .DATABASE_ERR}
-	for id, state in patch_states {
-		// Deleted items have no row; the old SELECT dropped their tags implicitly.
+	for id := 1; id <= swap.max_id; id += 1 {
+		if !full_replay {break}
+		if swap.index[id] == 0 {continue}
 		if !seen_ids[id] {continue}
+		state := swap_read(&swap, id, context.temp_allocator)
 		for present, index in state.tags {
 			if present == 0 {continue}
 			rc = sqlite.bind_int64(stmt, 1, i64(id))
