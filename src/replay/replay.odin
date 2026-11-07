@@ -74,8 +74,8 @@ replay :: proc(
 	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
 
 	// prepare statements
-	item_insert: ^sqlite.Stmt
-	defer {if item_insert != nil {sqlite.finalize(item_insert)}}
+	item_add: ^sqlite.Stmt
+	defer {if item_add != nil {sqlite.finalize(item_add)}}
 	item_patch, patch_rc := store.prepare_item_patch(db)
 	if patch_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(item_patch)
@@ -114,11 +114,11 @@ replay :: proc(
 				if full_replay {
 					if _, seen := seen_ids[item.id]; seen {return .BadEvent}
 					seen_ids[item.id] = true
-					if item_insert == nil {
-						item_insert, rc = store.prepare_item_insert(db)
+					if item_add == nil {
+						item_add, rc = store.prepare_item_insert(db)
 						if rc != sqlite.OK {return .DATABASE_ERR}
 					}
-					store_err = store.insert_item(&tx, item, item_insert)
+					store_err = store.insert_item(&tx, item, item_add)
 					state := Patch_State {
 						mtime    = item.mtime,
 						added_at = item.added_at,
