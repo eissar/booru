@@ -221,16 +221,23 @@ replay :: proc(
 		}
 		if prog_callback != nil {prog_callback({phase = "replay files", finished = u64(i + 1)})}
 	}
-	// Pass 2: Sequential Overwrites in authoritative log order
-	for ow in overwrites {
-		store_err := store.overwrite_item(&tx, ow, item_overwrite)
-		if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
-	}
 	// Flush remaining hot items in LRU cache to swap backing
 	for id, node in patch_states.entries {
 		swap_write(&swap, id, &node.value)
 	}
 
+	tag_stmt: ^sqlite.Stmt
+	defer {if tag_stmt != nil {sqlite.finalize(tag_stmt)}}
+	rc := sqlite.prepare_v2(
+		db,
+		"INSERT INTO item_tags (item_id, tag) VALUES (?1, ?2)",
+		-1,
+		&tag_stmt,
+		nil,
+	)
+	if rc != sqlite.OK {return .DATABASE_ERR}
+
+	// Commutative finalization: write reduced metadata and tags from swap
 	for id := 1; id <= swap.max_id; id += 1 {
 		if swap.index[id] == 0 {continue}
 		if full_replay && !seen_ids[id] {continue}
@@ -248,32 +255,24 @@ replay :: proc(
 			prepared = force_write,
 		)
 		if err != .None && err != .NotFound {return .DATABASE_ERR}
-	}
-	stmt: ^sqlite.Stmt
-	defer {if stmt != nil {sqlite.finalize(stmt)}}
-	rc := sqlite.prepare_v2(
-		db,
-		"INSERT INTO item_tags (item_id, tag) VALUES (?1, ?2)",
-		-1,
-		&stmt,
-		nil,
-	)
-	if rc != sqlite.OK {return .DATABASE_ERR}
-	for id := 1; id <= swap.max_id; id += 1 {
-		if !full_replay {break}
-		if swap.index[id] == 0 {continue}
-		if !seen_ids[id] {continue}
-		state := swap_read(&swap, id, context.temp_allocator)
+
+		if !full_replay {continue}
 		for present, index in state.tags {
 			if present == 0 {continue}
-			rc = sqlite.bind_int64(stmt, 1, i64(id))
+			rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
 			if rc != sqlite.OK {return .DATABASE_ERR}
-			if !sqlite.bind_string(stmt, 2, dictionary[index]) {return .DATABASE_ERR}
-			rc = sqlite.step(stmt)
+			if !sqlite.bind_string(tag_stmt, 2, dictionary[index]) {return .DATABASE_ERR}
+			rc = sqlite.step(tag_stmt)
 			if rc != sqlite.DONE {return .DATABASE_ERR}
-			rc = sqlite.reset(stmt)
+			rc = sqlite.reset(tag_stmt)
 			if rc != sqlite.OK {return .DATABASE_ERR}
 		}
+	}
+
+	// LWW finalization: sequential overwrites in authoritative log order
+	for ow in overwrites {
+		store_err := store.overwrite_item(&tx, ow, item_overwrite)
+		if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
 	}
 	return nil
 }
