@@ -35,6 +35,12 @@ Patch_State :: struct {
 	tags:     [dynamic]u8,
 }
 
+Item_Status :: enum u8 {
+	Absent,
+	Live,
+	Deleted,
+}
+
 // Applies event streams inside the caller's transaction.
 replay :: proc(
 	s: ^library.State,
@@ -61,7 +67,7 @@ replay :: proc(
 	patch_states.on_remove = on_evict_to_swap
 	patch_states.on_remove_user_data = &swap
 
-	seen_ids := make(map[int]bool, alloc)
+	seen_ids := make(map[int]Item_Status, alloc)
 	finished: u64
 
 	db := s.data_store
@@ -110,15 +116,10 @@ replay :: proc(
 			switch op {
 			case "add":
 				if full_replay {
-					if _, seen := seen_ids[item.id]; seen {return .BadEvent}
-					seen_ids[item.id] = true
+					if seen := seen_ids[item.id]; seen != .Absent {return .BadEvent}
+					seen_ids[item.id] = .Live
 					// seed
 					lww_items[item.id] = item
-					if item_add == nil {
-						item_add, rc = store.prepare_item_insert(db)
-						if rc != sqlite.OK {return .DATABASE_ERR}
-					}
-					store_err = store.insert_item(&tx, item, item_add)
 					state := Patch_State {
 						mtime    = item.mtime,
 						added_at = item.added_at,
@@ -135,18 +136,19 @@ replay :: proc(
 					store_err = store.insert_item(&tx, item)
 				}
 			case "patch":
-				if full_replay && !seen_ids[item.id] {return .BadEvent}
+				if full_replay && seen_ids[item.id] != .Live {return .BadEvent}
 				if !full_replay && (item.mtime != 0 || item.added_at != 0) {
 					store_err = store.patch_item(&tx, item, item_patch)
 				} else if full_replay {
 					state, ok := lru.get(&patch_states, item.id)
-					if !ok && seen_ids[item.id] {state = swap_read(&swap, item.id, alloc)}
+					if !ok &&
+					   seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
 					if item.mtime != 0 {state.mtime = max(state.mtime, item.mtime)}
 					if item.added_at != 0 {state.added_at = max(state.added_at, item.added_at)}
 					lru.set(&patch_states, item.id, state)
 				}
 			case "overwrite":
-				if full_replay && !seen_ids[item.id] {return .BadEvent}
+				if full_replay && seen_ids[item.id] != .Live {return .BadEvent}
 				if full_replay {
 					existing := lww_items[item.id]
 					if len(item.oid) > 0 {existing.oid = item.oid}
@@ -161,9 +163,13 @@ replay :: proc(
 					store_err = store.overwrite_item(&tx, item)
 				}
 			case "delete":
-				if full_replay && !seen_ids[item.id] {return .BadEvent}
-				store_err = store.delete_item(&tx, item.id, item_delete)
-				if full_replay {seen_ids[item.id] = false}
+				if full_replay && seen_ids[item.id] != .Live {return .BadEvent}
+				if full_replay {
+					// TODO: this is provisional until delete is a tombstone
+					seen_ids[item.id] = .Deleted
+				} else {
+					store_err = store.delete_item(&tx, item.id, item_delete)
+				}
 			case:
 				return .BadEvent
 			}
@@ -176,7 +182,7 @@ replay :: proc(
 			}
 			if len(parsed_patch_name) != 0 {
 				state, ok := lru.get(&patch_states, item.id)
-				if !ok && seen_ids[item.id] {state = swap_read(&swap, item.id, alloc)}
+				if !ok && seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
 				if !full_replay && state.name == nil {
 					// In incremental replay without the add event, read the current name as seed.
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
@@ -191,7 +197,7 @@ replay :: proc(
 			}
 			if len(parsed_patch_comment) != 0 {
 				state, ok := lru.get(&patch_states, item.id)
-				if !ok && seen_ids[item.id] {state = swap_read(&swap, item.id, alloc)}
+				if !ok && seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
 				if !full_replay && len(state.comment) == 0 {
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
 					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
@@ -221,7 +227,7 @@ replay :: proc(
 					append(&dictionary, owned_tag)
 				}
 				state, ok := lru.get(&patch_states, item.id)
-				if !ok && seen_ids[item.id] {state = swap_read(&swap, item.id, alloc)}
+				if !ok && seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
 				if state.tags.allocator.procedure == nil {state.tags = make([dynamic]u8, alloc)}
 				if len(state.tags) <= index {resize(&state.tags, index + 1)}
 				state.tags[index] ~= 1
@@ -241,6 +247,12 @@ replay :: proc(
 	if force_write_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(force_write)
 
+	if full_replay {
+		insert_rc: i32
+		item_add, insert_rc = store.prepare_item_insert(db)
+		if insert_rc != sqlite.OK {return .DATABASE_ERR}
+	}
+
 	tag_stmt: ^sqlite.Stmt
 	defer {if tag_stmt != nil {sqlite.finalize(tag_stmt)}}
 	rc := sqlite.prepare_v2(
@@ -252,26 +264,42 @@ replay :: proc(
 	)
 	if rc != sqlite.OK {return .DATABASE_ERR}
 
-	// Commutative finalization: write reduced metadata and tags from swap
+	// Finalization: insert complete item rows in ascending ID order
 	for id := 1; id <= swap.max_id; id += 1 {
 		if swap.index[id] == 0 {continue}
-		if full_replay && !seen_ids[id] {continue}
+		status := seen_ids[id]
+		if full_replay && status == .Absent {continue}
 		state := swap_read(&swap, id, context.temp_allocator)
 		length := len(state.name)
 		for length > 0 && state.name[length - 1] == 0 {length -= 1}
 		name := string(state.name[:length])
-		err := store.force_write_item(
-			&tx,
-			id,
-			name = len(name) > 0 ? &name : nil,
-			comment = len(state.comment) > 0 ? &state.comment : nil,
-			mtime = state.mtime > 0 ? &state.mtime : nil,
-			added_at = state.added_at > 0 ? &state.added_at : nil,
-			prepared = force_write,
-		)
-		if err != .None && err != .NotFound {return .DATABASE_ERR}
 
-		if !full_replay {continue}
+		if full_replay {
+			// Single write: insert surviving row (or soft-deleted) with fully-reduced fields
+			row := lww_items[id]
+			row.id = id
+			row.name = name
+			row.comment = state.comment
+			if state.mtime > 0 {row.mtime = state.mtime}
+			if state.added_at > 0 {row.added_at = state.added_at}
+			deleted_flag: i64 = 0
+			if status == .Deleted {deleted_flag = 1}
+			store_err := store.insert_item(&tx, row, item_add, deleted = deleted_flag)
+			if store_err != .None {return .DATABASE_ERR}
+		} else {
+			err := store.force_write_item(
+				&tx,
+				id,
+				name = len(name) > 0 ? &name : nil,
+				comment = len(state.comment) > 0 ? &state.comment : nil,
+				mtime = state.mtime > 0 ? &state.mtime : nil,
+				added_at = state.added_at > 0 ? &state.added_at : nil,
+				prepared = force_write,
+			)
+			if err != .None && err != .NotFound {return .DATABASE_ERR}
+		}
+
+		if !full_replay || status == .Deleted {continue}
 		for present, index in state.tags {
 			if present == 0 {continue}
 			rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
@@ -281,20 +309,6 @@ replay :: proc(
 			if rc != sqlite.DONE {return .DATABASE_ERR}
 			rc = sqlite.reset(tag_stmt)
 			if rc != sqlite.OK {return .DATABASE_ERR}
-		}
-	}
-
-	// LWW finalization: apply compressed LWW state in ascending ID order
-	if full_replay && len(lww_items) > 0 {
-		item_overwrite, overwrite_rc := store.prepare_item_overwrite(db)
-		if overwrite_rc != sqlite.OK {return .DATABASE_ERR}
-		defer sqlite.finalize(item_overwrite)
-		for id := 1; id <= swap.max_id; id += 1 {
-			if !seen_ids[id] {continue}
-			ow, ok := lww_items[id]
-			if !ok {continue}
-			store_err := store.overwrite_item(&tx, ow, item_overwrite)
-			if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
 		}
 	}
 	return nil
