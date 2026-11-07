@@ -17,6 +17,46 @@ when ODIN_OS == .Windows {
 DB :: struct {} // opaque sqlite3
 Stmt :: struct {} // opaque sqlite3_stmt
 
+Module :: struct {
+	iVersion:    c.int,
+	xCreate:     rawptr, // nil for eponymous-only modules (queried directly without CREATE VIRTUAL TABLE)
+	xConnect:    proc "c" (
+		db: ^DB,
+		pAux: rawptr,
+		argc: c.int,
+		argv: [^]cstring,
+		ppVTab: ^^VTab,
+		pzErr: ^cstring,
+	) -> c.int,
+	xBestIndex:  proc "c" (pVTab: ^VTab, pIndexInfo: rawptr) -> c.int,
+	xDisconnect: proc "c" (pVTab: ^VTab) -> c.int,
+	xDestroy:    rawptr, // nil for eponymous-only modules
+	xOpen:       proc "c" (pVTab: ^VTab, ppCursor: ^^VTab_Cursor) -> c.int,
+	xClose:      proc "c" (pCursor: ^VTab_Cursor) -> c.int,
+	xFilter:     proc "c" (
+		pCursor: ^VTab_Cursor,
+		idxNum: c.int,
+		idxStr: cstring,
+		argc: c.int,
+		argv: [^]rawptr,
+	) -> c.int,
+	xNext:       proc "c" (pCursor: ^VTab_Cursor) -> c.int,
+	xEof:        proc "c" (pCursor: ^VTab_Cursor) -> c.int,
+	xColumn:     proc "c" (pCursor: ^VTab_Cursor, pCtx: rawptr, col: c.int) -> c.int,
+	xRowid:      proc "c" (pCursor: ^VTab_Cursor, pRowid: ^i64) -> c.int,
+	_unused:     [7]rawptr, // xUpdate..xRename (read-only v0 module leaves these nil)
+}
+
+VTab :: struct {
+	pModule: ^Module,
+	nRef:    c.int,
+	zErrMsg: cstring,
+}
+
+VTab_Cursor :: struct {
+	pVTab: ^VTab,
+}
+
 // Result codes (subset).
 OK :: 0
 ROW :: 100
@@ -74,6 +114,12 @@ foreign sqlite {
 	column_blob :: proc(stmt: ^Stmt, i: c.int) -> rawptr ---
 	column_type :: proc(stmt: ^Stmt, i: c.int) -> Column_Type ---
 	column_count :: proc(stmt: ^Stmt) -> c.int ---
+
+	// Virtual table API subset
+	create_module :: proc(db: ^DB, zName: cstring, pModule: rawptr, pClientData: rawptr) -> c.int ---
+	declare_vtab :: proc(db: ^DB, zSQL: cstring) -> c.int ---
+	result_int64 :: proc(ctx: rawptr, val: i64) ---
+	result_text :: proc(ctx: rawptr, str: cstring, len: c.int, xDestroy: rawptr) ---
 
 	// get_autocommit is nonzero when no transaction is open (BEGIN or SAVEPOINT).
 	// Transactions are driven with run(db, "BEGIN"/"COMMIT"/"ROLLBACK") for now.
