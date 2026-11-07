@@ -25,6 +25,14 @@ Error :: enum {
 	DATABASE_ERR,
 }
 
+Patch_State :: struct {
+	mtime:    i64,
+	added_at: i64,
+	name:     [dynamic]u8,
+	comment:  string,
+	tags:     [dynamic]u8,
+}
+
 // Applies event streams inside the caller's transaction.
 replay :: proc(
 	s: ^library.State,
@@ -41,19 +49,20 @@ replay :: proc(
 	tag_indexes := make(map[string]int, alloc)
 	dictionary := make([dynamic]string, alloc)
 	// TODO: Migrate to packed bitsets eventually to reduce memory.
-	tag_memberships := make(map[int][dynamic]u8, alloc)
+	patch_states := make(map[int]Patch_State, alloc)
 	seen_ids := make(map[int]bool, alloc)
-	// Name deltas keep their full byte extent until reduction against the seed name at finalization.
-	name_accs := make(map[int][dynamic]u8, alloc)
-	comment_accs := make(map[int]string, alloc)
 	finished: u64
+
 	db := s.data_store
 	tx := sqlite.Tx {
 		db = db,
 	}
 	if prog_callback != nil {prog_callback({phase = "replay events"})}
+
 	record: elog.Record
 	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
+
+	// prepare statements
 	item_insert: ^sqlite.Stmt
 	defer {if item_insert != nil {sqlite.finalize(item_insert)}}
 	item_patch, patch_rc := store.prepare_item_patch(db)
@@ -69,6 +78,8 @@ replay :: proc(
 	force_write, force_write_rc := store.prepare_item_force_write(db)
 	if force_write_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(force_write)
+
+	// process event streams
 	for stream, i in streams {
 		text := stream
 		data := &text
@@ -97,21 +108,30 @@ replay :: proc(
 						if rc != sqlite.OK {return .DATABASE_ERR}
 					}
 					store_err = store.insert_item(&tx, item, item_insert)
+					state := Patch_State {
+						mtime    = item.mtime,
+						added_at = item.added_at,
+					}
+					if len(item.name) != 0 {
+						state.name = make([dynamic]u8, len(item.name), alloc)
+						copy(state.name[:], transmute([]u8)item.name)
+					}
+					if len(item.comment) != 0 {
+						state.comment = strings.clone(item.comment, alloc)
+					}
+					patch_states[item.id] = state
 				} else {
 					store_err = store.insert_item(&tx, item)
 				}
-				if len(item.name) != 0 {
-					acc := make([dynamic]u8, len(item.name), alloc)
-					copy(acc[:], transmute([]u8)item.name)
-					name_accs[item.id] = acc
-				}
-				if len(item.comment) != 0 {
-					comment_accs[item.id] = strings.clone(item.comment, alloc)
-				}
 			case "patch":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
-				if item.mtime != 0 || item.added_at != 0 {
+				if !full_replay && (item.mtime != 0 || item.added_at != 0) {
 					store_err = store.patch_item(&tx, item, item_patch)
+				} else if full_replay {
+					state := patch_states[item.id]
+					if item.mtime != 0 {state.mtime = max(state.mtime, item.mtime)}
+					if item.added_at != 0 {state.added_at = max(state.added_at, item.added_at)}
+					patch_states[item.id] = state
 				}
 			case "overwrite":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
@@ -132,27 +152,28 @@ replay :: proc(
 				return .DATABASE_ERR
 			}
 			if len(parsed_patch_name) != 0 {
-				acc, has_acc := name_accs[item.id]
-				if !has_acc {
+				state := patch_states[item.id]
+				if !full_replay && state.name == nil {
 					// In incremental replay without the add event, read the current name as seed.
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
 					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
-					acc = make([dynamic]u8, len(curr.name), alloc)
-					copy(acc[:], transmute([]u8)curr.name)
+					state.name = make([dynamic]u8, len(curr.name), alloc)
+					copy(state.name[:], transmute([]u8)curr.name)
 				}
-				if len(acc) < len(parsed_patch_name) {resize(&acc, len(parsed_patch_name))}
-				for b, idx in parsed_patch_name {acc[idx] ~= b}
-				name_accs[item.id] = acc
+				if len(state.name) <
+				   len(parsed_patch_name) {resize(&state.name, len(parsed_patch_name))}
+				for b, idx in parsed_patch_name {state.name[idx] ~= b}
+				patch_states[item.id] = state
 			}
 			if len(parsed_patch_comment) != 0 {
-				curr_comment, has_comment := comment_accs[item.id]
-				if !has_comment {
+				state := patch_states[item.id]
+				if !full_replay && len(state.comment) == 0 {
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
 					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
-					curr_comment = curr.comment
+					state.comment = curr.comment
 				}
-				new_comment := pijul.apply_patch(curr_comment, parsed_patch_comment, alloc)
-				comment_accs[item.id] = new_comment
+				state.comment = pijul.apply_patch(state.comment, parsed_patch_comment, alloc)
+				patch_states[item.id] = state
 			}
 			if !full_replay {
 				if len(tags) != 0 {
@@ -174,11 +195,11 @@ replay :: proc(
 					tag_indexes[owned_tag] = index
 					append(&dictionary, owned_tag)
 				}
-				membership := tag_memberships[item.id]
-				if membership.allocator.procedure == nil {membership = make([dynamic]u8, alloc)}
-				if len(membership) <= index {resize(&membership, index + 1)}
-				membership[index] ~= 1
-				tag_memberships[item.id] = membership
+				state := patch_states[item.id]
+				if state.tags.allocator.procedure == nil {state.tags = make([dynamic]u8, alloc)}
+				if len(state.tags) <= index {resize(&state.tags, index + 1)}
+				state.tags[index] ~= 1
+				patch_states[item.id] = state
 			}
 			finished += 1
 			if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
@@ -190,23 +211,19 @@ replay :: proc(
 		store_err := store.overwrite_item(&tx, ow, item_overwrite)
 		if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
 	}
-	for id, &acc in name_accs {
-		length := len(acc)
-		for length > 0 && acc[length - 1] == 0 {length -= 1}
-		name := string(acc[:length])
-		comment, has_comment := comment_accs[id]
+	for id, &state in patch_states {
+		length := len(state.name)
+		for length > 0 && state.name[length - 1] == 0 {length -= 1}
+		name := string(state.name[:length])
 		err := store.force_write_item(
 			&tx,
 			id,
-			name = &name,
-			comment = has_comment ? &comment : nil,
+			name = len(name) > 0 ? &name : nil,
+			comment = len(state.comment) > 0 ? &state.comment : nil,
+			mtime = state.mtime > 0 ? &state.mtime : nil,
+			added_at = state.added_at > 0 ? &state.added_at : nil,
 			prepared = force_write,
 		)
-		if err != .None && err != .NotFound {return .DATABASE_ERR}
-	}
-	for id, &comment in comment_accs {
-		if id in name_accs {continue}
-		err := store.force_write_item(&tx, id, comment = &comment, prepared = force_write)
 		if err != .None && err != .NotFound {return .DATABASE_ERR}
 	}
 	stmt: ^sqlite.Stmt
@@ -219,10 +236,10 @@ replay :: proc(
 		nil,
 	)
 	if rc != sqlite.OK {return .DATABASE_ERR}
-	for id, membership in tag_memberships {
+	for id, state in patch_states {
 		// Deleted items have no row; the old SELECT dropped their tags implicitly.
 		if !seen_ids[id] {continue}
-		for present, index in membership {
+		for present, index in state.tags {
 			if present == 0 {continue}
 			rc = sqlite.bind_int64(stmt, 1, i64(id))
 			if rc != sqlite.OK {return .DATABASE_ERR}
