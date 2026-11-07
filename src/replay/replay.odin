@@ -73,22 +73,20 @@ replay :: proc(
 	record: elog.Record
 	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
 
-	// prepare statements
+	// Statements for event stream reduction
 	item_add: ^sqlite.Stmt
 	defer {if item_add != nil {sqlite.finalize(item_add)}}
-	item_patch, patch_rc := store.prepare_item_patch(db)
-	if patch_rc != sqlite.OK {return .DATABASE_ERR}
-	defer sqlite.finalize(item_patch)
+	item_patch: ^sqlite.Stmt
+	if !full_replay {
+		patch_rc: i32
+		item_patch, patch_rc = store.prepare_item_patch(db)
+		if patch_rc != sqlite.OK {return .DATABASE_ERR}
+	}
+	defer {if item_patch != nil {sqlite.finalize(item_patch)}}
 	item_delete, delete_rc := store.prepare_item_delete(db)
 	if delete_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(item_delete)
-	item_overwrite, overwrite_rc := store.prepare_item_overwrite(db)
-	if overwrite_rc != sqlite.OK {return .DATABASE_ERR}
-	defer sqlite.finalize(item_overwrite)
 	overwrites := make([dynamic]library.Image, alloc)
-	force_write, force_write_rc := store.prepare_item_force_write(db)
-	if force_write_rc != sqlite.OK {return .DATABASE_ERR}
-	defer sqlite.finalize(force_write)
 
 	// process event streams
 	for stream, i in streams {
@@ -226,6 +224,10 @@ replay :: proc(
 		swap_write(&swap, id, &node.value)
 	}
 
+	force_write, force_write_rc := store.prepare_item_force_write(db)
+	if force_write_rc != sqlite.OK {return .DATABASE_ERR}
+	defer sqlite.finalize(force_write)
+
 	tag_stmt: ^sqlite.Stmt
 	defer {if tag_stmt != nil {sqlite.finalize(tag_stmt)}}
 	rc := sqlite.prepare_v2(
@@ -270,9 +272,14 @@ replay :: proc(
 	}
 
 	// LWW finalization: sequential overwrites in authoritative log order
-	for ow in overwrites {
-		store_err := store.overwrite_item(&tx, ow, item_overwrite)
-		if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
+	if len(overwrites) > 0 {
+		item_overwrite, overwrite_rc := store.prepare_item_overwrite(db)
+		if overwrite_rc != sqlite.OK {return .DATABASE_ERR}
+		defer sqlite.finalize(item_overwrite)
+		for ow in overwrites {
+			store_err := store.overwrite_item(&tx, ow, item_overwrite)
+			if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
+		}
 	}
 	return nil
 }
