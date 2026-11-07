@@ -1,4 +1,4 @@
-package replay_bench
+package replay_mixed_bench
 
 import "core:fmt"
 import "core:mem"
