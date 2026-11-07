@@ -177,6 +177,13 @@ bind_string :: proc(stmt: ^Stmt, i: int, s: string) -> bool {
 	return bind_text(stmt, c.int(i), p, c.int(len(s)), TRANSIENT) == OK
 }
 
+// result_string sets a UTF-8 text result; SQLite assumes static storage until step/result ends.
+result_string :: proc "contextless" (ctx: rawptr, s: string) {
+	p := cstring(raw_data(s))
+	if len(s) == 0 {p = cstring("")}
+	result_text(ctx, p, c.int(len(s)), nil)
+}
+
 // column_string returns a borrowed view valid until the next step/reset/finalize.
 // Clone it (strings.clone) if you need to keep it.
 // An index outside [0, column_count) returns "" (as for NULL), never another column.

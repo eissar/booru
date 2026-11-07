@@ -247,10 +247,9 @@ replay :: proc(
 	if force_write_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(force_write)
 
+	items: [dynamic]library.Image
 	if full_replay {
-		insert_rc: i32
-		item_add, insert_rc = store.prepare_item_insert(db)
-		if insert_rc != sqlite.OK {return .DATABASE_ERR}
+		items = make([dynamic]library.Image, 0, len(lww_items), alloc)
 	}
 
 	tag_stmt: ^sqlite.Stmt
@@ -282,10 +281,8 @@ replay :: proc(
 			row.comment = state.comment
 			if state.mtime > 0 {row.mtime = state.mtime}
 			if state.added_at > 0 {row.added_at = state.added_at}
-			deleted_flag: i64 = 0
-			if status == .Deleted {deleted_flag = 1}
-			store_err := store.insert_item(&tx, row, item_add, deleted = deleted_flag)
-			if store_err != .None {return .DATABASE_ERR}
+			if status != .Deleted {append(&items, row); continue}
+			if store.insert_item(&tx, row, deleted = 1) != .None {return .DATABASE_ERR}
 		} else {
 			err := store.force_write_item(
 				&tx,
@@ -297,18 +294,40 @@ replay :: proc(
 				prepared = force_write,
 			)
 			if err != .None && err != .NotFound {return .DATABASE_ERR}
+			if len(state.tags) != 0 {
+				for present, index in state.tags {
+					if present == 0 {continue}
+					rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
+					if rc != sqlite.OK {return .DATABASE_ERR}
+					if !sqlite.bind_string(tag_stmt, 2, dictionary[index]) {return .DATABASE_ERR}
+					rc = sqlite.step(tag_stmt)
+					if rc != sqlite.DONE {return .DATABASE_ERR}
+					rc = sqlite.reset(tag_stmt)
+					if rc != sqlite.OK {return .DATABASE_ERR}
+				}
+			}
 		}
+	}
 
-		if !full_replay || status == .Deleted {continue}
-		for present, index in state.tags {
-			if present == 0 {continue}
-			rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
-			if rc != sqlite.OK {return .DATABASE_ERR}
-			if !sqlite.bind_string(tag_stmt, 2, dictionary[index]) {return .DATABASE_ERR}
-			rc = sqlite.step(tag_stmt)
-			if rc != sqlite.DONE {return .DATABASE_ERR}
-			rc = sqlite.reset(tag_stmt)
-			if rc != sqlite.OK {return .DATABASE_ERR}
+	if full_replay && len(items) > 0 {
+		rc := vtab_insert_items(db, items[:])
+		if rc != sqlite.OK {return .DATABASE_ERR}
+
+		for id := 1; id <= swap.max_id; id += 1 {
+			if swap.index[id] == 0 {continue}
+			status := seen_ids[id]
+			if status == .Absent || status == .Deleted {continue}
+			state := swap_read(&swap, id, context.temp_allocator)
+			for present, index in state.tags {
+				if present == 0 {continue}
+				rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
+				if rc != sqlite.OK {return .DATABASE_ERR}
+				if !sqlite.bind_string(tag_stmt, 2, dictionary[index]) {return .DATABASE_ERR}
+				rc = sqlite.step(tag_stmt)
+				if rc != sqlite.DONE {return .DATABASE_ERR}
+				rc = sqlite.reset(tag_stmt)
+				if rc != sqlite.OK {return .DATABASE_ERR}
+			}
 		}
 	}
 	return nil
