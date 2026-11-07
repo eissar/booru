@@ -6,14 +6,58 @@ import "core:c"
 import "../library"
 import "../vendor/sqlite"
 
-// vtab_insert_items bulk inserts an array of library.Image rows into the items table
+// vtab_insert_items bulk inserts full replay items from swap and lww_items into the items table
 // using an eponymous-only virtual table scan in a single SQLite statement.
-vtab_insert_items :: proc(db: ^sqlite.DB, items: []library.Image) -> c.int {
+vtab_insert_items :: proc(
+	db: ^sqlite.DB,
+	swap: ^Swap_Store,
+	lww_items: ^map[int]library.Image,
+	seen_ids: ^map[int]Item_Status,
+) -> c.int {
 	Items_VTab :: struct {
-		base:   sqlite.VTab,
-		cursor: sqlite.VTab_Cursor,
-		items:  []library.Image,
-		i:      int,
+		base:      sqlite.VTab,
+		cursor:    sqlite.VTab_Cursor,
+		swap:      ^Swap_Store,
+		lww_items: ^map[int]library.Image,
+		seen_ids:  ^map[int]Item_Status,
+		id:        int,
+		row:       library.Image,
+		deleted:   i64,
+	}
+
+	advance :: proc "contextless" (tab: ^Items_VTab) {
+		for tab.id += 1; tab.id <= tab.swap.max_id; tab.id += 1 {
+			off := int(tab.swap.index[tab.id])
+			if off == 0 {continue}
+			status := tab.seen_ids[tab.id]
+			if status == .Absent {continue}
+
+			src := tab.swap.ptr[off:]
+			mtime := (^i64)(&src[0])^
+			added_at := (^i64)(&src[8])^
+			pos := 16
+
+			n_len := int((^u16)(&src[pos])^)
+			pos += 2
+			name_bytes := src[pos:pos + n_len]
+			pos += n_len
+			for n_len > 0 && name_bytes[n_len - 1] == 0 {n_len -= 1}
+
+			c_len := int((^u16)(&src[pos])^)
+			pos += 2
+			comment := string(src[pos:pos + c_len])
+
+			row := tab.lww_items[tab.id]
+			row.id = tab.id
+			row.name = string(name_bytes[:n_len])
+			row.comment = comment
+			if mtime > 0 {row.mtime = mtime}
+			if added_at > 0 {row.added_at = added_at}
+
+			tab.row = row
+			tab.deleted = status == .Deleted ? 1 : 0
+			return
+		}
 	}
 
 	@(static) module := sqlite.Module {
@@ -70,20 +114,22 @@ vtab_insert_items :: proc(db: ^sqlite.DB, items: []library.Image) -> c.int {
 			argc: c.int,
 			argv: [^]rawptr,
 		) -> c.int {
-			(cast(^Items_VTab)pCursor.pVTab).i = 0
+			tab := cast(^Items_VTab)pCursor.pVTab
+			tab.id = 0
+			advance(tab)
 			return sqlite.OK
 		},
 		xNext = proc "c" (pCursor: ^sqlite.VTab_Cursor) -> c.int {
-			(cast(^Items_VTab)pCursor.pVTab).i += 1
+			advance(cast(^Items_VTab)pCursor.pVTab)
 			return sqlite.OK
 		},
 		xEof = proc "c" (pCursor: ^sqlite.VTab_Cursor) -> c.int {
 			tab := cast(^Items_VTab)pCursor.pVTab
-			return tab.i >= len(tab.items) ? 1 : 0
+			return tab.id > tab.swap.max_id ? 1 : 0
 		},
 		xColumn = proc "c" (pCursor: ^sqlite.VTab_Cursor, pCtx: rawptr, col: c.int) -> c.int {
 			tab := cast(^Items_VTab)pCursor.pVTab
-			item := tab.items[tab.i]
+			item := tab.row
 			switch col {
 			case 0:
 				sqlite.result_int64(pCtx, i64(item.id))
@@ -108,19 +154,21 @@ vtab_insert_items :: proc(db: ^sqlite.DB, items: []library.Image) -> c.int {
 			case 10:
 				sqlite.result_int64(pCtx, item.added_at)
 			case 11:
-				sqlite.result_int64(pCtx, 0)
+				sqlite.result_int64(pCtx, tab.deleted)
 			}
 			return sqlite.OK
 		},
 		xRowid = proc "c" (pCursor: ^sqlite.VTab_Cursor, pRowid: ^i64) -> c.int {
 			tab := cast(^Items_VTab)pCursor.pVTab
-			pRowid^ = i64(tab.items[tab.i].id)
+			pRowid^ = i64(tab.row.id)
 			return sqlite.OK
 		},
 	}
 
 	tab := Items_VTab {
-		items = items,
+		swap      = swap,
+		lww_items = lww_items,
+		seen_ids  = seen_ids,
 	}
 	rc := sqlite.create_module(db, "vtab_items", &module, &tab)
 	if rc != sqlite.OK {return rc}

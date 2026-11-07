@@ -80,8 +80,6 @@ replay :: proc(
 	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
 
 	// Statements for event stream reduction
-	item_add: ^sqlite.Stmt
-	defer {if item_add != nil {sqlite.finalize(item_add)}}
 	item_patch: ^sqlite.Stmt
 	if !full_replay {
 		patch_rc: i32
@@ -243,15 +241,6 @@ replay :: proc(
 		swap_write(&swap, id, &node.value)
 	}
 
-	force_write, force_write_rc := store.prepare_item_force_write(db)
-	if force_write_rc != sqlite.OK {return .DATABASE_ERR}
-	defer sqlite.finalize(force_write)
-
-	items: [dynamic]library.Image
-	if full_replay {
-		items = make([dynamic]library.Image, 0, len(lww_items), alloc)
-	}
-
 	tag_stmt: ^sqlite.Stmt
 	defer {if tag_stmt != nil {sqlite.finalize(tag_stmt)}}
 	rc := sqlite.prepare_v2(
@@ -264,26 +253,38 @@ replay :: proc(
 	if rc != sqlite.OK {return .DATABASE_ERR}
 
 	// Finalization: insert complete item rows in ascending ID order
-	for id := 1; id <= swap.max_id; id += 1 {
-		if swap.index[id] == 0 {continue}
-		status := seen_ids[id]
-		if full_replay && status == .Absent {continue}
-		state := swap_read(&swap, id, context.temp_allocator)
-		length := len(state.name)
-		for length > 0 && state.name[length - 1] == 0 {length -= 1}
-		name := string(state.name[:length])
+	if full_replay {
+		if vtab_insert_items(db, &swap, &lww_items, &seen_ids) != sqlite.OK {
+			return .DATABASE_ERR
+		}
+		for id := 1; id <= swap.max_id; id += 1 {
+			if swap.index[id] == 0 {continue}
+			status := seen_ids[id]
+			if status == .Absent || status == .Deleted {continue}
+			state := swap_read(&swap, id, context.temp_allocator)
+			for present, index in state.tags {
+				if present == 0 {continue}
+				rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
+				if rc != sqlite.OK {return .DATABASE_ERR}
+				if !sqlite.bind_string(tag_stmt, 2, dictionary[index]) {return .DATABASE_ERR}
+				rc = sqlite.step(tag_stmt)
+				if rc != sqlite.DONE {return .DATABASE_ERR}
+				rc = sqlite.reset(tag_stmt)
+				if rc != sqlite.OK {return .DATABASE_ERR}
+			}
+		}
+	} else {
+		force_write, force_write_rc := store.prepare_item_force_write(db)
+		if force_write_rc != sqlite.OK {return .DATABASE_ERR}
+		defer sqlite.finalize(force_write)
 
-		if full_replay {
-			// Single write: insert surviving row (or soft-deleted) with fully-reduced fields
-			row := lww_items[id]
-			row.id = id
-			row.name = name
-			row.comment = state.comment
-			if state.mtime > 0 {row.mtime = state.mtime}
-			if state.added_at > 0 {row.added_at = state.added_at}
-			if status != .Deleted {append(&items, row); continue}
-			if store.insert_item(&tx, row, deleted = 1) != .None {return .DATABASE_ERR}
-		} else {
+		for id := 1; id <= swap.max_id; id += 1 {
+			if swap.index[id] == 0 {continue}
+			state := swap_read(&swap, id, context.temp_allocator)
+			length := len(state.name)
+			for length > 0 && state.name[length - 1] == 0 {length -= 1}
+			name := string(state.name[:length])
+
 			err := store.force_write_item(
 				&tx,
 				id,
@@ -305,28 +306,6 @@ replay :: proc(
 					rc = sqlite.reset(tag_stmt)
 					if rc != sqlite.OK {return .DATABASE_ERR}
 				}
-			}
-		}
-	}
-
-	if full_replay && len(items) > 0 {
-		rc := vtab_insert_items(db, items[:])
-		if rc != sqlite.OK {return .DATABASE_ERR}
-
-		for id := 1; id <= swap.max_id; id += 1 {
-			if swap.index[id] == 0 {continue}
-			status := seen_ids[id]
-			if status == .Absent || status == .Deleted {continue}
-			state := swap_read(&swap, id, context.temp_allocator)
-			for present, index in state.tags {
-				if present == 0 {continue}
-				rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
-				if rc != sqlite.OK {return .DATABASE_ERR}
-				if !sqlite.bind_string(tag_stmt, 2, dictionary[index]) {return .DATABASE_ERR}
-				rc = sqlite.step(tag_stmt)
-				if rc != sqlite.DONE {return .DATABASE_ERR}
-				rc = sqlite.reset(tag_stmt)
-				if rc != sqlite.OK {return .DATABASE_ERR}
 			}
 		}
 	}
