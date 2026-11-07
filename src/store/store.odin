@@ -372,7 +372,12 @@ prepare_item_overwrite :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int
 
 // Inserts item metadata; tags are stored separately in item_tags.
 // Uses the caller's transaction; never commits or rolls back.
-insert_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt = nil) -> Error {
+insert_item :: proc(
+	tx: ^sqlite.Tx,
+	item: library.Image,
+	prepared: ^sqlite.Stmt = nil,
+	deleted: i64 = 0,
+) -> Error {
 	stmt := prepared
 	owned_stmt := stmt == nil
 	rc: c.int
@@ -382,14 +387,15 @@ insert_item :: proc(tx: ^sqlite.Tx, item: library.Image, prepared: ^sqlite.Stmt 
 	}
 	defer {if owned_stmt {sqlite.finalize(stmt)}}
 
-	integer_values := [5]i64 {
+	integer_values := [6]i64 {
 		i64(item.id),
 		i64(item.width),
 		i64(item.height),
 		item.mtime,
 		item.added_at,
+		deleted,
 	}
-	integer_indices := [5]c.int{1, 7, 8, 9, 10}
+	integer_indices := [6]c.int{1, 7, 8, 9, 10, 12}
 	for value, i in integer_values {
 		rc = sqlite.bind_int64(stmt, integer_indices[i], value)
 		if rc != sqlite.OK {return .Database}
@@ -424,7 +430,7 @@ prepare_item_insert :: proc(db: ^sqlite.DB) -> (stmt: ^sqlite.Stmt, rc: c.int) {
 		`INSERT INTO items (
 			id, oid, path, ext, name, content_type,
 			width, height, mtime, added_at, comment, deleted
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		-1,
 		&stmt,
 		nil,
