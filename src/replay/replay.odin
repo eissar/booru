@@ -86,7 +86,7 @@ replay :: proc(
 	item_delete, delete_rc := store.prepare_item_delete(db)
 	if delete_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(item_delete)
-	overwrites := make([dynamic]library.Image, alloc)
+	lww_items := make(map[int]library.Image, alloc)
 
 	// process event streams
 	for stream, i in streams {
@@ -112,6 +112,8 @@ replay :: proc(
 				if full_replay {
 					if _, seen := seen_ids[item.id]; seen {return .BadEvent}
 					seen_ids[item.id] = true
+					// seed
+					lww_items[item.id] = item
 					if item_add == nil {
 						item_add, rc = store.prepare_item_insert(db)
 						if rc != sqlite.OK {return .DATABASE_ERR}
@@ -145,8 +147,19 @@ replay :: proc(
 				}
 			case "overwrite":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
-				// Collect overwrites in log order for Pass 2 application
-				append(&overwrites, item)
+				if full_replay {
+					existing := lww_items[item.id]
+					if len(item.oid) > 0 {existing.oid = item.oid}
+					if len(item.path) > 0 {existing.path = item.path}
+					if len(item.ext) > 0 {existing.ext = item.ext}
+					if len(item.content_type) > 0 {existing.content_type = item.content_type}
+					if item.width > 0 {existing.width = item.width}
+					if item.height > 0 {existing.height = item.height}
+					lww_items[item.id] = existing
+				} else {
+					// In incremental replay, apply overwrite directly
+					store_err = store.overwrite_item(&tx, item)
+				}
 			case "delete":
 				if full_replay && !seen_ids[item.id] {return .BadEvent}
 				store_err = store.delete_item(&tx, item.id, item_delete)
@@ -271,12 +284,15 @@ replay :: proc(
 		}
 	}
 
-	// LWW finalization: sequential overwrites in authoritative log order
-	if len(overwrites) > 0 {
+	// LWW finalization: apply compressed LWW state in ascending ID order
+	if full_replay && len(lww_items) > 0 {
 		item_overwrite, overwrite_rc := store.prepare_item_overwrite(db)
 		if overwrite_rc != sqlite.OK {return .DATABASE_ERR}
 		defer sqlite.finalize(item_overwrite)
-		for ow in overwrites {
+		for id := 1; id <= swap.max_id; id += 1 {
+			if !seen_ids[id] {continue}
+			ow, ok := lww_items[id]
+			if !ok {continue}
 			store_err := store.overwrite_item(&tx, ow, item_overwrite)
 			if store_err != .None && store_err != .NotFound {return .DATABASE_ERR}
 		}
