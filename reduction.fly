@@ -1,0 +1,46 @@
+# Reduction
+#
+# The log reduced into the library. Item semantics are abstract here: lifecycle.fly,
+# commutative.fly and last_write.fly are instances of item, next and accepts.
+
+sort id
+sort event
+sort item
+sort library
+sort row
+
+immutable owner(event): id
+
+# [^library]
+immutable at(library, id): item
+immutable apply(library, event): library
+
+# [^next]
+immutable next(item, event): item
+immutable accepts(item, event): bool
+
+# [^project]
+immutable project(item): row
+
+# apply reduces one event into the library: the owner advances by next, every other item is untouched
+assume always forall l:library, e:event. at(apply(l, e), owner(e)) = next(at(l, owner(e)), e)
+assume always forall l:library, e:event, j:id. j != owner(e) -> at(apply(l, e), j) = at(l, j)
+
+# Lemma: 1. Independence - events on different items commute
+assert always forall l:library, e:event, f:event, j:id. owner(e) != owner(f) ->
+    at(apply(apply(l, e), f), j) = at(apply(apply(l, f), e), j)
+
+# Lemma: 2. Local acceptance - an event on another item does not change whether an event is accepted
+assert always forall l:library, e:event, f:event. owner(e) != owner(f) ->
+    (accepts(at(apply(l, f), owner(e)), e) <-> accepts(at(l, owner(e)), e))
+
+# Since L1, L2 -> reducing a log is reducing each item's events independently;
+#   item correctness implies library correctness (cutoff premise)
+# Since L1 -> project(at(l, i)), an item's row, depends only on its own events
+
+# ==============================================================================
+# TERMS
+# ==============================================================================
+# [^library]: Every item's state, at : library × id → item; apply : library × event → library reduces one event
+# [^next]: Item transition and guard, next : item × event → item, accepts : item × event → bool
+# [^project]: Finalization of one item, project : item → row
