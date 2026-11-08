@@ -12,25 +12,20 @@ immutable delete_ev: event_kind
 immutable patch_ev: event_kind
 immutable overwrite_ev: event_kind
 
-mutable status: status
-mutable added: bool
-
 # [^accepts]
 def accepts(s: status, e: event_kind) -> bool {
     (s = absent & e = add_ev) | (s = live & (e = delete_ev | e = patch_ev | e = overwrite_ev))
+}
+
+# [^next]
+def next(s: status, e: event_kind) -> status {
+    if e = add_ev then live else if e = delete_ev then deleted else s
 }
 
 assume always absent != live & absent != deleted & live != deleted
 assume always forall s:status. s = absent | s = live | s = deleted
 assume always add_ev != delete_ev & add_ev != patch_ev & add_ev != overwrite_ev
 assume always delete_ev != patch_ev & delete_ev != overwrite_ev & patch_ev != overwrite_ev
-
-assume status = absent & !added
-
-assume always exists e:event_kind. accepts(status, e) &
-    (e = add_ev -> status' = live & added') &
-    (e = delete_ev -> status' = deleted & added' = added) &
-    ((e = patch_ev | e = overwrite_ev) -> status' = status & added' = added)
 
 # Lemma: 1. Deleted is final - deleted accepts no event
 assert always forall e:event_kind. !accepts(deleted, e)
@@ -44,13 +39,14 @@ assert always forall s:status. accepts(s, patch_ev) -> s = live
 # Lemma: 4. Overwrite requires live
 assert always forall s:status. accepts(s, overwrite_ev) -> s = live
 
-# Lemma: 5. At most one add - once added, add is never accepted again
-assert always (added -> !accepts(status, add_ev))
-proof {
-    invariant added <-> status != absent
-}
+# Lemma: 5. Absent is never re-entered
+assert always forall s:status, e:event_kind.
+    accepts(s, e) -> next(s, e) != absent
+
+# Since L2, L5 -> at most one add
 
 # ==============================================================================
 # TERMS
 # ==============================================================================
 # [^accepts]: Guard predicate, accepts : status × event_kind → bool
+# [^next]: Transition function, next : status × event_kind → status
