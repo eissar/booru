@@ -1,0 +1,90 @@
+# Property operations
+#
+# Discharges the commutative.fly assumptions (neutral property, associativity,
+# commutativity) for each concrete patch property.
+#
+# Comment is out of scope. Comment patches follow pijul, whose patch theory is
+# mathematically validated; our implementation (src/slop_pijul) is bespoke and is
+# validated against the pijul reference in its own suite. Provisional: anchors are
+# resolved by content, and expanding duplicate-line anchors until unique is the
+# caller's responsibility for now.
+
+sort time
+sort tags
+sort tag
+sort name
+sort bit
+
+# [^neutral property]
+immutable bot: time
+immutable le(time, time): bool
+
+# [^neutral property]
+immutable empty: tags
+immutable mem(tags, tag): bool
+immutable txor(tags, tags): tags
+
+# [^neutral property]
+immutable blank: name
+immutable set(name, bit): bool
+immutable nxor(name, name): name
+
+# [^max]
+def tmax(x: time, y: time) -> time {
+    if le(x, y) then y else x
+}
+
+# mtime, added_at: total order with bottom
+assume always forall x:time. le(x, x)
+assume always forall x:time, y:time. le(x, y) & le(y, x) -> x = y
+assume always forall x:time, y:time, z:time. le(x, y) & le(y, z) -> le(x, z)
+assume always forall x:time, y:time. le(x, y) | le(y, x)
+assume always forall x:time. le(bot, x)
+
+# tags: membership, symmetric difference, extensionality
+assume always forall t:tag. !mem(empty, t)
+assume always forall a:tags, b:tags, t:tag. mem(txor(a, b), t) <-> (mem(a, t) != mem(b, t))
+assume always forall a:tags, b:tags. (forall t:tag. mem(a, t) <-> mem(b, t)) -> a = b
+
+# name: set bits (position, bit), byte XOR, extensionality [^padding]
+assume always forall i:bit. !set(blank, i)
+assume always forall a:name, b:name, i:bit. set(nxor(a, b), i) <-> (set(a, i) != set(b, i))
+assume always forall a:name, b:name. (forall i:bit. set(a, i) <-> set(b, i)) -> a = b
+
+# Lemma: 1. Max neutral property - bot
+assert always forall x:time. tmax(bot, x) = x & tmax(x, bot) = x
+
+# Lemma: 2. Max commutative
+assert always forall x:time, y:time. tmax(x, y) = tmax(y, x)
+
+# Lemma: 3. Max associative
+assert always forall x:time, y:time, z:time, a:time, b:time.
+    a = tmax(x, y) & b = tmax(y, z) -> tmax(a, z) = tmax(x, b)
+
+# Lemma: 4. Tags XOR neutral property - empty
+assert always forall a:tags. txor(empty, a) = a & txor(a, empty) = a
+
+# Lemma: 5. Tags XOR commutative
+assert always forall a:tags, b:tags. txor(a, b) = txor(b, a)
+
+# Lemma: 6. Tags XOR associative
+assert always forall a:tags, b:tags, c:tags. txor(txor(a, b), c) = txor(a, txor(b, c))
+
+# Lemma: 7. Name XOR neutral property - blank
+assert always forall a:name. nxor(blank, a) = a & nxor(a, blank) = a
+
+# Lemma: 8. Name XOR commutative
+assert always forall a:name, b:name. nxor(a, b) = nxor(b, a)
+
+# Lemma: 9. Name XOR associative
+assert always forall a:name, b:name, c:name. nxor(nxor(a, b), c) = nxor(a, nxor(b, c))
+
+# Since L1–L9 -> mtime, added_at, tags, name each satisfy the commutative.fly assumptions
+
+# ==============================================================================
+# TERMS
+# ==============================================================================
+# [^neutral property]: Two-sided identity element (e)
+# [^max]: Join of a total order, tmax : time × time → time
+# [^padding]: Implementation zero-pads the shorter name; a name and its NUL-padded
+#             form are equal here; trailing NULs are trimmed on materialization

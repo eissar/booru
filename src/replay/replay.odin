@@ -111,11 +111,15 @@ replay :: proc(
 			if item.id <= 0 {return .BadEvent}
 			rc: i32 = sqlite.OK
 			store_err: store.Error
+			// Lifecycle: the only place item status is decided (lifecycle.fly).
+			if full_replay {
+				next_status, ok := lifecycle_step(seen_ids[item.id], op)
+				if !ok {return .BadEvent}
+				seen_ids[item.id] = next_status
+			}
 			switch op {
 			case "add":
 				if full_replay {
-					if seen := seen_ids[item.id]; seen != .Absent {return .BadEvent}
-					seen_ids[item.id] = .Live
 					// seed
 					lww_items[item.id] = item
 					state := Patch_State {
@@ -134,7 +138,6 @@ replay :: proc(
 					store_err = store.insert_item(&tx, item)
 				}
 			case "patch":
-				if full_replay && seen_ids[item.id] != .Live {return .BadEvent}
 				if !full_replay && (item.mtime != 0 || item.added_at != 0) {
 					store_err = store.patch_item(&tx, item, item_patch)
 				} else if full_replay {
@@ -146,7 +149,6 @@ replay :: proc(
 					lru.set(&patch_states, item.id, state)
 				}
 			case "overwrite":
-				if full_replay && seen_ids[item.id] != .Live {return .BadEvent}
 				if full_replay {
 					existing := lww_items[item.id]
 					if len(item.oid) > 0 {existing.oid = item.oid}
@@ -161,11 +163,8 @@ replay :: proc(
 					store_err = store.overwrite_item(&tx, item)
 				}
 			case "delete":
-				if full_replay && seen_ids[item.id] != .Live {return .BadEvent}
-				if full_replay {
-					// TODO: this is provisional until delete is a tombstone
-					seen_ids[item.id] = .Deleted
-				} else {
+				if !full_replay {
+					// TODO: full replay's delete is provisional until delete is a tombstone
 					store_err = store.delete_item(&tx, item.id, item_delete)
 				}
 			case:
@@ -636,4 +635,21 @@ initiate_replay :: proc(
 			s.event_log.cursor.offset = i64(len(streams[len(streams) - 1]))
 		}
 	}
+}
+
+// lifecycle_step is accepts/next from lifecycle.fly. It sees only the owning item's
+// status and the op, so events on different items are independent.
+lifecycle_step :: proc(s: Item_Status, op: string) -> (next: Item_Status, ok: bool) {
+	switch op {
+	case "add":
+		if s != .Absent {return s, false}
+		return .Live, true
+	case "patch", "overwrite":
+		if s != .Live {return s, false}
+		return .Live, true
+	case "delete":
+		if s != .Live {return s, false}
+		return .Deleted, true
+	}
+	return s, false
 }
