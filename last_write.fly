@@ -1,0 +1,30 @@
+# Last write
+
+sort value
+sort overwrite
+
+# [^present]
+immutable present(overwrite): bool
+immutable val(overwrite): value
+
+# [^next]
+def next(v: value, o: overwrite) -> value {
+    if present(o) then val(o) else v
+}
+
+# Lemma: 1. Absent keeps - an absent field does not erase
+assert always forall v:value, o:overwrite. !present(o) -> next(v, o) = v
+
+# Lemma: 2. Present replaces - the prior value is discarded
+assert always forall v:value, w:value, o:overwrite. present(o) -> next(v, o) = next(w, o)
+
+# Since L1, L2 -> the last present overwrite wins
+
+# Lemma: 3. Idempotent - a repeated overwrite changes nothing
+assert always forall v:value, w:value, o:overwrite. w = next(v, o) -> next(w, o) = w
+
+# ==============================================================================
+# TERMS
+# ==============================================================================
+# [^present]: Field presence, present : overwrite → bool
+# [^next]: Transition function, next : value × overwrite → value
