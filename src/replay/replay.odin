@@ -144,20 +144,16 @@ replay :: proc(
 					state, ok := lru.get(&patch_states, item.id)
 					if !ok &&
 					   seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
-					if item.mtime != 0 {state.mtime = max(state.mtime, item.mtime)}
-					if item.added_at != 0 {state.added_at = max(state.added_at, item.added_at)}
+					state = patch_fold(
+						state,
+						{mtime = item.mtime, added_at = item.added_at, tag = -1},
+						alloc,
+					)
 					lru.set(&patch_states, item.id, state)
 				}
 			case "overwrite":
 				if full_replay {
-					existing := lww_items[item.id]
-					if len(item.oid) > 0 {existing.oid = item.oid}
-					if len(item.path) > 0 {existing.path = item.path}
-					if len(item.ext) > 0 {existing.ext = item.ext}
-					if len(item.content_type) > 0 {existing.content_type = item.content_type}
-					if item.width > 0 {existing.width = item.width}
-					if item.height > 0 {existing.height = item.height}
-					lww_items[item.id] = existing
+					lww_items[item.id] = overwrite_step(lww_items[item.id], item)
 				} else {
 					// In incremental replay, apply overwrite directly
 					store_err = store.overwrite_item(&tx, item)
@@ -187,9 +183,7 @@ replay :: proc(
 					state.name = make([dynamic]u8, len(curr.name), alloc)
 					copy(state.name[:], transmute([]u8)curr.name)
 				}
-				if len(state.name) <
-				   len(parsed_patch_name) {resize(&state.name, len(parsed_patch_name))}
-				for b, idx in parsed_patch_name {state.name[idx] ~= b}
+				state = patch_fold(state, {name = parsed_patch_name[:], tag = -1}, alloc)
 				lru.set(&patch_states, item.id, state)
 			}
 			if len(parsed_patch_comment) != 0 {
@@ -225,9 +219,7 @@ replay :: proc(
 				}
 				state, ok := lru.get(&patch_states, item.id)
 				if !ok && seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
-				if state.tags.allocator.procedure == nil {state.tags = make([dynamic]u8, alloc)}
-				if len(state.tags) <= index {resize(&state.tags, index + 1)}
-				state.tags[index] ~= 1
+				state = patch_fold(state, {tag = index}, alloc)
 				lru.set(&patch_states, item.id, state)
 			}
 			finished += 1
@@ -652,4 +644,37 @@ lifecycle_step :: proc(s: Item_Status, op: string) -> (next: Item_Status, ok: bo
 		return .Deleted, true
 	}
 	return s, false
+}
+
+Patch_Delta :: struct {
+	mtime, added_at: i64,
+	name:            []u8,
+	tag:             int, // dictionary index to toggle, -1 for none
+}
+
+// patch_fold is rfold from commutative.fly over the property-op.fly monoids.
+patch_fold :: proc(state: Patch_State, p: Patch_Delta, alloc: mem.Allocator) -> Patch_State {
+	state := state
+	if p.mtime != 0 {state.mtime = max(state.mtime, p.mtime)}
+	if p.added_at != 0 {state.added_at = max(state.added_at, p.added_at)}
+	if len(state.name) < len(p.name) {resize(&state.name, len(p.name))}
+	for b, idx in p.name {state.name[idx] ~= b}
+	if p.tag >= 0 {
+		if state.tags.allocator.procedure == nil {state.tags = make([dynamic]u8, alloc)}
+		if len(state.tags) <= p.tag {resize(&state.tags, p.tag + 1)}
+		state.tags[p.tag] ~= 1
+	}
+	return state
+}
+
+// overwrite_step is next from last_write.fly applied to every overwrite property.
+overwrite_step :: proc(existing: library.Image, o: library.Image) -> library.Image {
+	existing := existing
+	if len(o.oid) > 0 {existing.oid = o.oid}
+	if len(o.path) > 0 {existing.path = o.path}
+	if len(o.ext) > 0 {existing.ext = o.ext}
+	if len(o.content_type) > 0 {existing.content_type = o.content_type}
+	if o.width > 0 {existing.width = o.width}
+	if o.height > 0 {existing.height = o.height}
+	return existing
 }
