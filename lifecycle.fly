@@ -1,0 +1,56 @@
+# Lifecycle
+
+sort event_kind
+sort status
+
+immutable absent: status
+immutable live: status
+immutable deleted: status
+
+immutable add_ev: event_kind
+immutable delete_ev: event_kind
+immutable patch_ev: event_kind
+immutable overwrite_ev: event_kind
+
+mutable status: status
+mutable added: bool
+
+# [^accepts]
+def accepts(s: status, e: event_kind) -> bool {
+    (s = absent & e = add_ev) | (s = live & (e = delete_ev | e = patch_ev | e = overwrite_ev))
+}
+
+assume always absent != live & absent != deleted & live != deleted
+assume always forall s:status. s = absent | s = live | s = deleted
+assume always add_ev != delete_ev & add_ev != patch_ev & add_ev != overwrite_ev
+assume always delete_ev != patch_ev & delete_ev != overwrite_ev & patch_ev != overwrite_ev
+
+assume status = absent & !added
+
+assume always exists e:event_kind. accepts(status, e) &
+    (e = add_ev -> status' = live & added') &
+    (e = delete_ev -> status' = deleted & added' = added) &
+    ((e = patch_ev | e = overwrite_ev) -> status' = status & added' = added)
+
+# Lemma: 1. Deleted is final - deleted accepts no event
+assert always forall e:event_kind. !accepts(deleted, e)
+
+# Lemma: 2. Absent only accepts add
+assert always forall e:event_kind. accepts(absent, e) -> e = add_ev
+
+# Lemma: 3. Patch requires live
+assert always forall s:status. accepts(s, patch_ev) -> s = live
+
+# Lemma: 4. Overwrite requires live
+assert always forall s:status. accepts(s, overwrite_ev) -> s = live
+
+# Lemma: 5. At most one add - once added, add is never accepted again
+assert always (added -> !accepts(status, add_ev))
+proof {
+    invariant added <-> status != absent
+}
+
+# ==============================================================================
+# TERMS
+# ==============================================================================
+# [^accepts]: Guard predicate, accepts : status × event_kind → bool
