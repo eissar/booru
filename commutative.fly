@@ -1,0 +1,20 @@
+# Note: patch_state is a direct product of commutative property monoids (tuples of monoids are monoids by convention).
+
+sort patch_state
+
+# [^neutral property]
+immutable zero: patch_state
+immutable rfold(patch_state, patch_state): patch_state
+
+assume always forall x:patch_state. rfold(zero, x) = x & rfold(x, zero) = x
+assume always forall x:patch_state, y:patch_state, z:patch_state. rfold(rfold(x, y), z) = rfold(x, rfold(y, z))
+assume always forall x:patch_state, y:patch_state. rfold(x, y) = rfold(y, x)
+
+# Lemma: 1. Left commutativity - Reduction order does not matter
+assert always forall x:patch_state, y:patch_state, z:patch_state.
+    rfold(x, rfold(y, z)) = rfold(y, rfold(x, z))
+
+# ==============================================================================
+# TERMS
+# ==============================================================================
+# [^neutral property]: Two-sided identity element (e)
