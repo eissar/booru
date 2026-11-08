@@ -2,29 +2,44 @@
 
 sort value
 sort overwrite
+sort property
 
 # [^present]
-immutable present(overwrite): bool
-immutable val(overwrite): value
+immutable present(overwrite, property): bool
+immutable val(overwrite, property): value
 
 # [^next]
-def next(v: value, o: overwrite) -> value {
-    if present(o) then val(o) else v
+def next(v: value, o: overwrite, p: property) -> value {
+    if present(o, p) then val(o, p) else v
 }
 
-# Lemma: 1. Absent keeps - an absent field does not erase
-assert always forall v:value, o:overwrite. !present(o) -> next(v, o) = v
+# Lemma: 1. Absent keeps - an absent property does not erase
+assert always forall v:value, o:overwrite, p:property. !present(o, p) -> next(v, o, p) = v
 
 # Lemma: 2. Present replaces - the prior value is discarded
-assert always forall v:value, w:value, o:overwrite. present(o) -> next(v, o) = next(w, o)
+assert always forall v:value, w:value, o:overwrite, p:property. present(o, p) -> next(v, o, p) = next(w, o, p)
 
 # Since L1, L2 -> the last present overwrite wins
 
 # Lemma: 3. Idempotent - a repeated overwrite changes nothing
-assert always forall v:value, w:value, o:overwrite. w = next(v, o) -> next(w, o) = w
+assert always forall v:value, w:value, o:overwrite, p:property. w = next(v, o, p) -> next(w, o, p) = w
+
+# Lemma: 4. Disjoint commute - overwrites not both present on a property may be applied in either order
+assert always forall v:value, w1:value, w2:value, o1:overwrite, o2:overwrite, p:property.
+    !(present(o1, p) & present(o2, p)) &
+    w1 = next(v, o1, p) & w2 = next(v, o2, p) ->
+    next(w1, o2, p) = next(w2, o1, p)
+
+# Lemma: 5. Shared property is ordered - both present with differing values, order changes the result
+assert always forall v:value, w1:value, w2:value, o1:overwrite, o2:overwrite, p:property.
+    present(o1, p) & present(o2, p) & val(o1, p) != val(o2, p) &
+    w1 = next(v, o1, p) & w2 = next(v, o2, p) ->
+    next(w1, o2, p) != next(w2, o1, p)
+
+# Since L4, L5 -> replay must preserve log order only among overwrites sharing a property
 
 # ==============================================================================
 # TERMS
 # ==============================================================================
-# [^present]: Field presence, present : overwrite → bool
-# [^next]: Transition function, next : value × overwrite → value
+# [^present]: Property presence, present : overwrite × property → bool
+# [^next]: Transition function, next : value × overwrite × property → value
