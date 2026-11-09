@@ -62,7 +62,12 @@ full_then_incremental_replay_persists_progress :: proc(t: ^testing.T) {
 incremental_application_and_cursor_roll_back_together :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
-	s: library.State
+	root, err := os.make_directory_temp("", "booru-incremental-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	s := library.State {
+		library_path = root,
+	}
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
 	log := elog.EventLog {

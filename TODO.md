@@ -9,9 +9,7 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Classify startup store errors and rebuild only when restartable. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
 - [ ] Enforce the assumption that older event shards are fully applied: either deduplicate, clean, and compress historical shards so they are immutable (locked by convention), or check their persisted offsets against actual file lengths.
 
-- [ ] Test: every permutation of a small valid tag history yields the same final membership.
-- [ ] Test: independently reduced partitions merge to the same result as sequential replay.
-- [ ] Test: `name` XOR deltas (growth, shrink, clear, multibyte, shuffled order) reduce to the final name.
+- [ ] Test: `name` finalization (growth, shrink, clear, multibyte) trims NUL padding to the final name; order independence is covered by `steps_test.odin`.
 - [ ] Test: comment patches at distinct anchors commute and reduce to the final text.
 - [ ] Test: overwrite applies in log order across shards; the last assignment per LWW field wins.
 - [ ] Test: `slop_pijul` round trip for empty comments, repeated lines, whitespace, line endings, multibyte UTF-8.

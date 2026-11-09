@@ -133,7 +133,9 @@ metadata_edits_write_membership_deltas :: proc(t: ^testing.T) {
 			}
 		}
 		// Rebuild from the complete log after every request, including rejected/no-op requests.
-		rebuilt := library.State{}
+		rebuilt := library.State {
+			library_path = root,
+		}
 		if !testing.expect(t, store.Init(&rebuilt, ":memory:") == sqlite.OK) {return}
 		if !testing.expect(t, sqlite.run(rebuilt.data_store, "BEGIN")) {return}
 		result := replay.replay(&rebuilt, {string(data)}, alloc)

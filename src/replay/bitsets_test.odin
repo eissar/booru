@@ -4,6 +4,7 @@ import "../library"
 import "../store"
 import "../vendor/sqlite"
 import "core:fmt"
+import "core:os"
 import "core:slice"
 import "core:strings"
 import "core:testing"
@@ -12,6 +13,9 @@ import "core:testing"
 membership_grows_across_tags_and_shards_deterministically :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-bitsets-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
 	first, last: strings.Builder
 	strings.builder_init(&first, alloc)
 	strings.builder_init(&last, alloc)
@@ -49,7 +53,9 @@ membership_grows_across_tags_and_shards_deterministically :: proc(t: ^testing.T)
 	input := strings.concatenate({a, b}, alloc)
 	// Same ordered stream, single-element or multi-shard slice: identical tag identity.
 	for run in 0 ..< 4 {
-		s: library.State
+		s := library.State {
+			library_path = root,
+		}
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 		streams := []string{input} if run % 2 == 0 else []string{a, b}
 		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}

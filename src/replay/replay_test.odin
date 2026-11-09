@@ -127,7 +127,9 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 		)
 	}
 	// Existing public entry point remains a complete single-input replay.
-	single: library.State
+	single := library.State {
+		library_path = root,
+	}
 	if !testing.expect(t, store.Init(&single, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&single)
 	text := strings.concatenate({first, middle, last}, alloc)
@@ -148,6 +150,9 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
 	bad := []string {
 		`{"op":"patch","id":2,"tags":["cat"]}
 {"op":"add","id":2}`,
@@ -166,7 +171,9 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 {"op":"add","id":1}`,
 	}
 	for event in bad {
-		s: library.State
+		s := library.State {
+			library_path = root,
+		}
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 		text := strings.concatenate(
 			{"{\"op\":\"add\",\"id\":1,\"tags\":[\"cat\"]}\n", event, "\n"},
@@ -187,6 +194,9 @@ creation_reuse_and_invalid_lifecycle_roll_back :: proc(t: ^testing.T) {
 validate_event_versions :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
 	cases := []struct {
 		text:     string,
 		expected: Error,
@@ -200,7 +210,9 @@ validate_event_versions :: proc(t: ^testing.T) {
 		{`{"op":"add","id":1,"unknown":0}`, .BadEvent},
 	}
 	for test in cases {
-		s: library.State
+		s := library.State {
+			library_path = root,
+		}
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
 		result := replay(&s, {test.text}, context.allocator)
@@ -218,9 +230,14 @@ validate_event_versions :: proc(t: ^testing.T) {
 explicit_empty_scalars_are_not_implemented :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
 	cleared := []string{`{"op":"patch","id":1,"comment":""}`}
 	for event in cleared {
-		s: library.State
+		s := library.State {
+			library_path = root,
+		}
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 		text := strings.concatenate({"{\"op\":\"add\",\"id\":1}\n", event, "\n"}, alloc)
 		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
@@ -238,7 +255,12 @@ cross_shard_reuse_rolls_back :: proc(t: ^testing.T) {
 {"op":"delete","id":7}
 `
 	last := `{"op":"add","id":7,"tags":["dog"]}`
-	s: library.State
+	root, err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	s := library.State {
+		library_path = root,
+	}
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
 	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
@@ -252,7 +274,12 @@ cross_shard_reuse_rolls_back :: proc(t: ^testing.T) {
 identical_tags_on_distinct_items_are_independent :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
-	s: library.State
+	root, err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	s := library.State {
+		library_path = root,
+	}
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
 	text := `{"op":"add","id":1,"tags":["cat"]}
@@ -284,7 +311,12 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 	testing.expect(t, item.id == 1 && op == "patch")
 	testing.expect_value(t, len(item.tags), 0)
 	testing.expect(t, slice.equal(tags, []string{"cat", "dog"}))
-	s: library.State
+	root, temp_err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, temp_err == nil) {return}
+	defer os.remove_all(root)
+	s := library.State {
+		library_path = root,
+	}
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
 	text := `{"op":"add","id":1,"tags":["cat"]}

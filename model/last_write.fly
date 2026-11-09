@@ -8,10 +8,17 @@ sort property
 immutable present(overwrite, property): bool
 immutable val(overwrite, property): value
 
+# [^overwrite_step]
+immutable overwrite_step(overwrite, overwrite): overwrite
+
 # [^next]
 def next(v: value, o: overwrite, p: property) -> value {
     if present(o, p) then val(o, p) else v
 }
+
+assume always forall a:overwrite, b:overwrite, p:property. present(overwrite_step(a, b), p) <-> (present(a, p) | present(b, p))
+assume always forall a:overwrite, b:overwrite, p:property. present(b, p) -> val(overwrite_step(a, b), p) = val(b, p)
+assume always forall a:overwrite, b:overwrite, p:property. !present(b, p) -> val(overwrite_step(a, b), p) = val(a, p)
 
 # Lemma: 1. Absent keeps - an absent property does not erase
 assert always forall v:value, o:overwrite, p:property. !present(o, p) -> next(v, o, p) = v
@@ -38,8 +45,17 @@ assert always forall v:value, w1:value, w2:value, o1:overwrite, o2:overwrite, p:
 
 # Since L4, L5 -> replay must preserve log order only among overwrites sharing a property
 
+# Lemma: 6. Associative sequencing - either grouping of three overwrites, applied once, equals the log
+assert always forall v:value, w1:value, w2:value, a:overwrite, b:overwrite, c:overwrite, p:property.
+    w1 = next(v, a, p) & w2 = next(w1, b, p) ->
+    next(w2, c, p) = next(v, overwrite_step(overwrite_step(a, b), c), p) &
+    next(w2, c, p) = next(v, overwrite_step(a, overwrite_step(b, c)), p)
+
+# Since L6 -> any grouping of consecutive overwrites replays to the same value as the log
+
 # ==============================================================================
 # TERMS
 # ==============================================================================
 # [^present]: Property presence, present : overwrite × property → bool
 # [^next]: Transition function, next : value × overwrite × property → value
+# [^overwrite_step]: Right-biased merge, overwrite_step : overwrite × overwrite → overwrite; the later present value wins

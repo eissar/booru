@@ -4,17 +4,23 @@ import "../library"
 import "../store"
 import "../vendor/sqlite"
 import "core:fmt"
+import "core:os"
 import "core:testing"
 
 @(test)
 timestamp_advances_commute_and_merge :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-timestamps-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
 	// Equal, backward and absent inputs must not erase creation seeds.
 	values := [?][2]i64{{120, 190}, {90, 250}, {120, 250}, {0, 0}, {-1, -2}}
 	orders := [?][5]int{{0, 1, 2, 3, 4}, {4, 3, 2, 1, 0}, {2, 4, 0, 3, 1}}
 	for order in orders {
-		s: library.State
+		s := library.State {
+			library_path = root,
+		}
 		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 		defer store.Close(&s)
 		testing.expect(t, sqlite.run(s.data_store, "BEGIN"))

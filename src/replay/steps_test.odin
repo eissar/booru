@@ -5,7 +5,9 @@ import "core:fmt"
 import "core:slice"
 import "core:testing"
 
-// Every 3-event sequence is exhaustive: reduction.fly cuts off at 3 events.
+// Replay order: patch properties are commutative, overwrite properties are associative,
+// and associativity is a 3-element law. Assuming the lifting theorem, every 3-event
+// sequence checked against the oracle covers logs of any length.
 
 // lifecycle.fly: from Absent, every 3-op sequence; accepted steps follow accepts/next.
 @(test)
@@ -33,7 +35,7 @@ lifecycle_step_all_triples :: proc(t: ^testing.T) {
 }
 
 // commutative.fly + property-op.fly: the zero delta is neutral and every triple folds to the
-// same raw state in all 6 orders. Values and finalization are not modeled.
+// oracle's raw state in all 6 orders. Finalization is not modeled.
 @(test)
 patch_fold_all_triples :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
@@ -69,7 +71,24 @@ patch_fold_all_triples :: proc(t: ^testing.T) {
 						slice.equal(zeroed.name[:], state.name[:]) &&
 						slice.equal(zeroed.tags[:], state.tags[:])
 					if !ok {testing.fail_now(t, fmt.tprint("zero delta changes fold:", triple))}
-					if n == 0 {want = state; continue}
+					if n == 0 {
+						// property-op.fly values: tmax, mem(txor), set(nxor).
+						ok =
+							state.mtime == max(a.mtime, b.mtime, c.mtime) &&
+							state.added_at == max(a.added_at, b.added_at, c.added_at)
+						for tag in 0 ..< 4 {
+							mem := tag < len(state.tags) && state.tags[tag] != 0
+							ok &&= mem == ((a.tag == tag) != (b.tag == tag) != (c.tag == tag))
+						}
+						for i in 0 ..< 4 {
+							x: u8
+							for d in triple {if i < len(d.name) {x ~= d.name[i]}}
+							ok &&= (i < len(state.name) ? state.name[i] : 0) == x
+						}
+						if !ok {testing.fail_now(t, fmt.tprint("fold value differs from spec:", triple))}
+						want = state
+						continue
+					}
 					ok =
 						state.mtime == want.mtime &&
 						state.added_at == want.added_at &&
@@ -81,8 +100,28 @@ patch_fold_all_triples :: proc(t: ^testing.T) {
 	free_all(alloc)
 }
 
+// Field-presence shapes for each log position, built once at startup: [position][mask].
+overwrite_shapes: [3][64]library.Image
+
+@(init)
+init_overwrite_shapes :: proc "contextless" () {
+	vals := [?]string{"", "x", "y", "z"}
+	for &row, i in overwrite_shapes {
+		v := i + 1
+		for &o, mask in row {
+			if mask & 1 != 0 {o.oid = vals[v]}
+			if mask & 2 != 0 {o.path = vals[v]}
+			if mask & 4 != 0 {o.ext = vals[v]}
+			if mask & 8 != 0 {o.content_type = vals[v]}
+			if mask & 16 != 0 {o.width = 10 + v}
+			if mask & 32 != 0 {o.height = 10 + v}
+		}
+	}
+}
+
 // last_write.fly: over every triple of field-presence shapes, each field ends as the
-// last present value (L1, L2), a repeat changes nothing (L3), and disjoint shapes commute (L4).
+// last present value (L1, L2) under either grouping (L6), a repeat changes nothing (L3),
+// and disjoint shapes commute (L4).
 @(test)
 overwrite_step_all_triples :: proc(t: ^testing.T) {
 	base := library.Image {
@@ -93,21 +132,16 @@ overwrite_step_all_triples :: proc(t: ^testing.T) {
 		width        = 1,
 		height       = 1,
 	}
-	shape :: proc(mask: int, v: int) -> library.Image {
-		vals := [?]string{"", "x", "y", "z"}
-		o: library.Image
-		if mask & 1 != 0 {o.oid = vals[v]}
-		if mask & 2 != 0 {o.path = vals[v]}
-		if mask & 4 != 0 {o.ext = vals[v]}
-		if mask & 8 != 0 {o.content_type = vals[v]}
-		if mask & 16 != 0 {o.width = 10 + v}
-		if mask & 32 != 0 {o.height = 10 + v}
-		return o
-	}
 	for a in 0 ..< 64 {for b in 0 ..< 64 {for c in 0 ..< 64 {
-				seq := [3]library.Image{shape(a, 1), shape(b, 2), shape(c, 3)}
+				seq := [3]^library.Image {
+					&overwrite_shapes[0][a],
+					&overwrite_shapes[1][b],
+					&overwrite_shapes[2][c],
+				}
 				got := base
-				for o in seq {got = overwrite_step(got, o)}
+				for o in seq {got = overwrite_step(got, o^)}
+				left := overwrite_step(overwrite_step(seq[0]^, seq[1]^), seq[2]^)
+				right := overwrite_step(seq[0]^, overwrite_step(seq[1]^, seq[2]^))
 				want := base
 				for o, i in seq {
 					m := [3]int{a, b, c}[i]
@@ -118,17 +152,20 @@ overwrite_step_all_triples :: proc(t: ^testing.T) {
 					if m & 16 != 0 {want.width = o.width}
 					if m & 32 != 0 {want.height = o.height}
 				}
-				ok :=
-					got.oid == want.oid &&
-					got.path == want.path &&
-					got.ext == want.ext &&
-					got.content_type == want.content_type &&
-					got.width == want.width &&
-					got.height == want.height
-				if !ok {testing.fail_now(t, fmt.tprint("last write differs:", a, b, c))}
+				// Base values differ from every shape value, so applying to base keeps presence visible.
+				for grouped in ([3]library.Image{got, overwrite_step(base, left), overwrite_step(base, right)}) {
+					ok :=
+						grouped.oid == want.oid &&
+						grouped.path == want.path &&
+						grouped.ext == want.ext &&
+						grouped.content_type == want.content_type &&
+						grouped.width == want.width &&
+						grouped.height == want.height
+					if !ok {testing.fail_now(t, fmt.tprint("last write differs:", a, b, c))}
+				}
 				// L3: repeating the last overwrite changes nothing.
-				again := overwrite_step(got, seq[2])
-				ok =
+				again := overwrite_step(got, seq[2]^)
+				ok :=
 					again.oid == got.oid &&
 					again.path == got.path &&
 					again.ext == got.ext &&
@@ -138,8 +175,8 @@ overwrite_step_all_triples :: proc(t: ^testing.T) {
 				if !ok {testing.fail_now(t, fmt.tprint("repeated overwrite changes state:", c))}
 				// L4: disjoint shapes commute.
 				if a & b == 0 {
-					swapped := overwrite_step(overwrite_step(base, seq[1]), seq[0])
-					first := overwrite_step(overwrite_step(base, seq[0]), seq[1])
+					swapped := overwrite_step(overwrite_step(base, seq[1]^), seq[0]^)
+					first := overwrite_step(overwrite_step(base, seq[0]^), seq[1]^)
 					ok =
 						swapped.oid == first.oid &&
 						swapped.path == first.path &&
