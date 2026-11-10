@@ -18,6 +18,7 @@ import "server"
 import "store"
 import "thumbnail"
 import "util"
+import "vendor/sqlite"
 
 DATA_DIR: string
 
@@ -118,6 +119,42 @@ main :: proc() {
 		fmt.panicf("stat store: %v", stat_err)
 	}
 	fresh_store := stat_err == .Not_Exist
+	if fresh_store {
+		db, open_rc := sqlite.open(db_c_str)
+		if open_rc != sqlite.OK {
+			log.fatal("datastore type=sqlite open rebuild: failed w/ error code:", open_rc)
+			os.exit(1)
+		}
+		rc := sqlite.exec(
+			db,
+			`
+			PRAGMA page_size = 65536;
+			PRAGMA foreign_keys = OFF;
+			PRAGMA journal_mode = OFF;
+			PRAGMA synchronous = OFF;
+			PRAGMA temp_store = MEMORY;
+			PRAGMA locking_mode = EXCLUSIVE;
+			PRAGMA cache_size = -200000;
+			`,
+			nil,
+			nil,
+			nil,
+		)
+		if rc != sqlite.OK {
+			log.fatal("datastore type=sqlite configure rebuild: failed w/ error code:", rc)
+			os.exit(1)
+		}
+		if rc = store.create_tables(db); rc != sqlite.OK {
+			log.fatal("datastore type=sqlite create tables: failed w/ error code:", rc)
+			os.exit(1)
+		}
+		state.data_store = db
+		if state.event_log != nil {state.event_log.db = db}
+
+		replay.initiate_replay(&state, full_replay = true)
+		store.Close(&state)
+	}
+
 	rc := store.Init(&state, db_c_str)
 	if rc != 0 {
 		log.fatal("datastore type=sqlite open: failed w/ error code:", rc)
@@ -137,8 +174,8 @@ main :: proc() {
 			fmt.panicf("stat event shard: %v", err)
 		}
 		if err == nil {cursor.offset = info.size}
+		replay.initiate_replay(&state, full_replay = false)
 	}
-	replay.initiate_replay(&state, full_replay = fresh_store)
 
 	log.infof(
 		"Library initialized in %.2f ms: %s",
