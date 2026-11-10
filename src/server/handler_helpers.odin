@@ -53,8 +53,8 @@ parse_int_param :: proc(value: string) -> (out: int, ok: bool) {
 }
 
 // parse_gallery_query parses limit/offset/sort/tags/q from a raw query string.
-// Semantics follow ../lfs-booru/server.ts: invalid or small limit clamps to
-// MIN_LIMIT; unknown sort falls back to idDesc; an invalid or negative offset
+// Semantics follow ../lfs-booru/server.ts: missing, invalid or small limit
+// defaults to 100; unknown sort falls back to idDesc; an invalid or negative offset
 // marks the query invalid (caller returns 400).
 parse_gallery_query :: proc(
 	query: string,
@@ -64,7 +64,7 @@ parse_gallery_query :: proc(
 	ok: bool,
 ) {
 	q = Gallery_Query {
-		limit = MIN_LIMIT,
+		limit = 100,
 		sort  = "idDesc",
 	}
 	params := make(map[string]string, alloc)

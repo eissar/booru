@@ -87,6 +87,9 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 # Gallery Pagination TODO
 
+- Infinite scroll: the load-more button fires on `intersect once root:.main-content` (click remains as fallback), with `hx-sync="#photo-grid:drop"`; default page size is 100.
+- [ ] Verify infinite scroll in a browser: sentinel position after masonry packing, no duplicate pages on fast scroll, and a short first page that doesn't fill the viewport still chains loads.
+
 - Open question: choose a reasonable default for fresh loads after loading more. Load-more URLs currently omit offset; should refresh start with one page, restore the displayed count, or restore a position? Decide the URL semantics and default before implementing accumulated-offset restoration.
 
 # Gallery Masonry TODO
