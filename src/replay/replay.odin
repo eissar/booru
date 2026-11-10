@@ -97,7 +97,14 @@ replay :: proc(
 		text := stream
 		data := &text
 		for line in strings.split_lines_iterator(data) {
-			if strings.trim_space(line) == "" {continue}
+			is_blank := true
+			for b in transmute([]u8)line {
+				if b != ' ' && b != '\t' && b != '\r' && b != '\n' {
+					is_blank = false
+					break
+				}
+			}
+			if is_blank {continue}
 			parsed_patch_name: [dynamic]u8
 			parsed_patch_comment: string
 			item, op, tags, err := parse_item(

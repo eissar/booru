@@ -291,7 +291,7 @@ parse_flat :: proc(line: string, r: ^Record) {
 		if key[0] < 'a' || key[0] > 'z' {
 			panic("Cannot parse event: key must start with a lowercase ASCII letter")
 		}
-		for b in key {
+		for b in transmute([]u8)key {
 			if (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '_' {continue}
 			panic(
 				"Cannot parse event: key must contain only lowercase ASCII letters, digits, and underscores",

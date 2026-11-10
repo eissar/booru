@@ -139,9 +139,9 @@ get_current_event_shard :: proc(allocator := context.allocator) -> string {
 validate_tags :: proc(tags: []string) -> string {
 	for tag, i in tags {
 		if len(tag) == 0 {return "event tag must not be empty"}
-		for c in tag {
+		for b in transmute([]u8)tag {
 			if !is_allowed_tag_char(
-				c,
+				rune(b),
 			) {return "event tags must contain only lowercase ASCII letters and hyphens"}
 		}
 		for previous in tags[:i] {
