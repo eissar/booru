@@ -72,7 +72,24 @@ destroy_swap :: proc(s: ^Swap_Store) {
 swap_write :: proc(s: ^Swap_Store, id: int, state: ^Patch_State) {
 	if id < 0 ||
 	   id > s.max_id {fmt.panicf("swap: id %d exceeds preallocated max %d", id, s.max_id)}
-	rec_size := 8 + 8 + 2 + len(state.name) + 2 + len(state.comment) + 2 + len(state.tags)
+	word_count := 0
+	words_ptr: [^]u64
+	if state.tags.allocator.procedure == nil {
+		tags_inline := cast(^[2]u64)&state.tags
+		words_ptr = ([^]u64)(tags_inline)
+		if tags_inline[1] != 0 {
+			word_count = 2
+		} else if tags_inline[0] != 0 {
+			word_count = 1
+		}
+	} else {
+		words_ptr = raw_data(state.tags)
+		word_count = len(state.tags)
+		for word_count > 0 && words_ptr[word_count - 1] == 0 {
+			word_count -= 1
+		}
+	}
+	rec_size := 8 + 8 + 2 + len(state.name) + 2 + len(state.comment) + 2 + word_count * 8
 	if s.tail + rec_size > s.size {
 		fmt.panicf("swap: out of preallocated swap space (%d + %d > %d)", s.tail, rec_size, s.size)
 	}
@@ -99,11 +116,11 @@ swap_write :: proc(s: ^Swap_Store, id: int, state: ^Patch_State) {
 		pos += len(state.comment)
 	}
 
-	(^u16)(&dst[pos])^ = u16(len(state.tags))
+	(^u16)(&dst[pos])^ = u16(word_count)
 	pos += 2
-	if len(state.tags) > 0 {
-		mem.copy(&dst[pos], raw_data(state.tags), len(state.tags))
-		pos += len(state.tags)
+	if word_count > 0 {
+		mem.copy(&dst[pos], words_ptr, word_count * 8)
+		pos += word_count * 8
 	}
 
 	s.tail += pos
@@ -137,12 +154,18 @@ swap_read :: proc(s: ^Swap_Store, id: int, alloc: mem.Allocator) -> (state: Patc
 		pos += c_len
 	}
 
-	t_len := int((^u16)(&src[pos])^)
+	w_len := int((^u16)(&src[pos])^)
 	pos += 2
-	if t_len > 0 {
-		state.tags = make([dynamic]u8, t_len, alloc)
-		mem.copy(raw_data(state.tags), &src[pos], t_len)
-		pos += t_len
+	if w_len == 1 {
+		(^u64)(&state.tags)^ = (^u64)(&src[pos])^
+		pos += 8
+	} else if w_len == 2 {
+		(cast(^[2]u64)&state.tags)^ = (cast(^[2]u64)&src[pos])^
+		pos += 16
+	} else if w_len > 2 {
+		state.tags = make([dynamic]u64, w_len, alloc)
+		mem.copy(raw_data(state.tags), &src[pos], w_len * 8)
+		pos += w_len * 8
 	}
 	return
 }

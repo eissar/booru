@@ -1,5 +1,6 @@
 package replay
 
+import "base:intrinsics"
 import "core:container/lru"
 import "core:encoding/hex"
 import "core:encoding/json"
@@ -32,7 +33,7 @@ Patch_State :: struct {
 	added_at: i64,
 	name:     [dynamic]u8,
 	comment:  string,
-	tags:     [dynamic]u8,
+	tags:     [dynamic]u64,
 }
 
 Item_Status :: enum u8 {
@@ -239,39 +240,25 @@ replay :: proc(
 		swap_write(&swap, id, &node.value)
 	}
 
-	tag_stmt: ^sqlite.Stmt
-	defer {if tag_stmt != nil {sqlite.finalize(tag_stmt)}}
-	rc := sqlite.prepare_v2(
-		db,
-		"INSERT INTO item_tags (item_id, tag) VALUES (?1, ?2)",
-		-1,
-		&tag_stmt,
-		nil,
-	)
-	if rc != sqlite.OK {return .DATABASE_ERR}
-
 	// Finalization: insert complete item rows in ascending ID order
 	if full_replay {
 		if vtab_insert_items(db, &swap, &lww_items, &seen_ids) != sqlite.OK {
 			return .DATABASE_ERR
 		}
-		for id := 1; id <= swap.max_id; id += 1 {
-			if swap.index[id] == 0 {continue}
-			status := seen_ids[id]
-			if status == .Absent || status == .Deleted {continue}
-			state := swap_read(&swap, id, context.temp_allocator)
-			for present, index in state.tags {
-				if present == 0 {continue}
-				rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
-				if rc != sqlite.OK {return .DATABASE_ERR}
-				if !sqlite.bind_string(tag_stmt, 2, dictionary[index]) {return .DATABASE_ERR}
-				rc = sqlite.step(tag_stmt)
-				if rc != sqlite.DONE {return .DATABASE_ERR}
-				rc = sqlite.reset(tag_stmt)
-				if rc != sqlite.OK {return .DATABASE_ERR}
-			}
+		if vtab_insert_item_tags(db, &swap, &seen_ids, &dictionary) != sqlite.OK {
+			return .DATABASE_ERR
 		}
 	} else {
+		tag_stmt: ^sqlite.Stmt
+		defer {if tag_stmt != nil {sqlite.finalize(tag_stmt)}}
+		rc := sqlite.prepare_v2(
+			db,
+			"INSERT INTO item_tags (item_id, tag) VALUES (?1, ?2)",
+			-1,
+			&tag_stmt,
+			nil,
+		)
+		if rc != sqlite.OK {return .DATABASE_ERR}
 		force_write, force_write_rc := store.prepare_item_force_write(db)
 		if force_write_rc != sqlite.OK {return .DATABASE_ERR}
 		defer sqlite.finalize(force_write)
@@ -293,9 +280,14 @@ replay :: proc(
 				prepared = force_write,
 			)
 			if err != .None && err != .NotFound {return .DATABASE_ERR}
-			if len(state.tags) != 0 {
-				for present, index in state.tags {
-					if present == 0 {continue}
+			words :=
+				state.tags.allocator.procedure == nil ? ([^]u64)(&state.tags)[:2] : state.tags[:]
+			for word, w_idx in words {
+				w := word
+				for w != 0 {
+					bit := int(intrinsics.count_trailing_zeros(w))
+					w &= w - 1
+					index := w_idx * 64 + bit
 					rc = sqlite.bind_int64(tag_stmt, 1, i64(id))
 					if rc != sqlite.OK {return .DATABASE_ERR}
 					if !sqlite.bind_string(tag_stmt, 2, dictionary[index]) {return .DATABASE_ERR}
@@ -667,9 +659,27 @@ patch_fold :: proc(state: Patch_State, p: Patch_Delta, alloc: mem.Allocator) -> 
 	if len(state.name) < len(p.name) {resize(&state.name, len(p.name))}
 	for b, idx in p.name {state.name[idx] ~= b}
 	if p.tag >= 0 {
-		if state.tags.allocator.procedure == nil {state.tags = make([dynamic]u8, alloc)}
-		if len(state.tags) <= p.tag {resize(&state.tags, p.tag + 1)}
-		state.tags[p.tag] ~= 1
+		word_idx := p.tag >> 6
+		bit_mask := u64(1) << u64(p.tag & 63)
+		if state.tags.allocator.procedure == nil {
+			if word_idx == 0 {
+				(^u64)(&state.tags)^ ~= bit_mask
+				return state
+			}
+			if word_idx == 1 {
+				(cast(^[2]u64)&state.tags)[1] ~= bit_mask
+				return state
+			}
+			w0 := (^u64)(&state.tags)^
+			w1 := (cast(^[2]u64)&state.tags)[1]
+			state.tags = make([dynamic]u64, word_idx + 1, alloc)
+			state.tags[0] = w0
+			state.tags[1] = w1
+			state.tags[word_idx] = bit_mask
+			return state
+		}
+		if len(state.tags) <= word_idx {resize(&state.tags, word_idx + 1)}
+		state.tags[word_idx] ~= bit_mask
 	}
 	return state
 }

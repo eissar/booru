@@ -69,7 +69,7 @@ patch_fold_all_triples :: proc(t: ^testing.T) {
 						zeroed.mtime == state.mtime &&
 						zeroed.added_at == state.added_at &&
 						slice.equal(zeroed.name[:], state.name[:]) &&
-						slice.equal(zeroed.tags[:], state.tags[:])
+						(state.tags.allocator.procedure == nil ? (cast(^[2]u64)&zeroed.tags)^ == (cast(^[2]u64)&state.tags)^ : slice.equal(zeroed.tags[:], state.tags[:]))
 					if !ok {testing.fail_now(t, fmt.tprint("zero delta changes fold:", triple))}
 					if n == 0 {
 						// property-op.fly values: tmax, mem(txor), set(nxor).
@@ -93,7 +93,7 @@ patch_fold_all_triples :: proc(t: ^testing.T) {
 						state.mtime == want.mtime &&
 						state.added_at == want.added_at &&
 						slice.equal(state.name[:], want.name[:]) &&
-						slice.equal(state.tags[:], want.tags[:])
+						(state.tags.allocator.procedure == nil ? (cast(^[2]u64)&state.tags)^ == (cast(^[2]u64)&want.tags)^ : slice.equal(state.tags[:], want.tags[:]))
 					if !ok {testing.fail_now(t, fmt.tprint("order changes fold:", triple, order))}
 				}
 			}}}
