@@ -642,13 +642,8 @@ html[data-theme='dark'] input::placeholder {
     background-color: var(--bg-surface);
 }
 
-/* After a ~2s dwell the top edge rises over the image; the slot never reflows. */
-.gallery-card:hover .gallery-card-meta {
-    z-index: 10;
-    max-height: 16rem;
-    transition: max-height 0s 2s;
-}
-
+/* On hover the top edge rises over the image; the slot never reflows. */
+.gallery-card:hover .gallery-card-meta,
 .gallery-card:focus-within .gallery-card-meta {
     z-index: 10;
     max-height: 16rem;
