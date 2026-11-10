@@ -125,12 +125,14 @@ replay :: proc(
 				if !ok {return .BadEvent}
 				seen_ids[item.id] = next_status
 			}
+			state: Patch_State
+			state_dirty: bool
 			switch op {
 			case "add":
 				if full_replay {
 					// seed
 					lww_items[item.id] = item
-					state := Patch_State {
+					state = Patch_State {
 						mtime    = item.mtime,
 						added_at = item.added_at,
 					}
@@ -141,7 +143,7 @@ replay :: proc(
 					if len(item.comment) != 0 {
 						state.comment = strings.clone(item.comment, alloc)
 					}
-					lru.set(&patch_states, item.id, state)
+					state_dirty = true
 				} else {
 					store_err = store.insert_item(&tx, item)
 				}
@@ -149,7 +151,8 @@ replay :: proc(
 				if !full_replay && (item.mtime != 0 || item.added_at != 0) {
 					store_err = store.patch_item(&tx, item, item_patch)
 				} else if full_replay {
-					state, ok := lru.get(&patch_states, item.id)
+					ok: bool
+					state, ok = lru.get(&patch_states, item.id)
 					if !ok &&
 					   seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
 					state = patch_fold(
@@ -157,7 +160,7 @@ replay :: proc(
 						{mtime = item.mtime, added_at = item.added_at, tag = -1},
 						alloc,
 					)
-					lru.set(&patch_states, item.id, state)
+					state_dirty = true
 				}
 			case "overwrite":
 				if full_replay {
@@ -181,9 +184,12 @@ replay :: proc(
 			case:
 				return .DATABASE_ERR
 			}
-			if len(parsed_patch_name) != 0 {
-				state, ok := lru.get(&patch_states, item.id)
+			if !full_replay && (len(parsed_patch_name) != 0 || len(parsed_patch_comment) != 0) {
+				ok: bool
+				state, ok = lru.get(&patch_states, item.id)
 				if !ok && seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
+			}
+			if len(parsed_patch_name) != 0 {
 				if !full_replay && state.name == nil {
 					// In incremental replay without the add event, read the current name as seed.
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
@@ -192,20 +198,19 @@ replay :: proc(
 					copy(state.name[:], transmute([]u8)curr.name)
 				}
 				state = patch_fold(state, {name = parsed_patch_name[:], tag = -1}, alloc)
-				lru.set(&patch_states, item.id, state)
+				state_dirty = true
 			}
 			if len(parsed_patch_comment) != 0 {
-				state, ok := lru.get(&patch_states, item.id)
-				if !ok && seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
 				if !full_replay && len(state.comment) == 0 {
 					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
 					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
 					state.comment = curr.comment
 				}
 				state.comment = pijul.apply_patch(state.comment, parsed_patch_comment, alloc)
-				lru.set(&patch_states, item.id, state)
+				state_dirty = true
 			}
 			if !full_replay {
+				if state_dirty {lru.set(&patch_states, item.id, state)}
 				if len(tags) != 0 {
 					if store.toggle_tags(&tx, item.id, tags) != sqlite.OK {
 						return .DATABASE_ERR
@@ -225,11 +230,9 @@ replay :: proc(
 					tag_indexes[owned_tag] = index
 					append(&dictionary, owned_tag)
 				}
-				state, ok := lru.get(&patch_states, item.id)
-				if !ok && seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
 				state = patch_fold(state, {tag = index}, alloc)
-				lru.set(&patch_states, item.id, state)
 			}
+			if state_dirty {lru.set(&patch_states, item.id, state)}
 			finished += 1
 			if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
 		}
