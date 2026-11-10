@@ -658,8 +658,24 @@ html[data-theme='dark'] input::placeholder {
     padding-right: 5rem;
 }
 
-.gallery-card-meta:hover > .truncate::after {
-    content: ' →';
+/* On hover an arrow overlays the title's rightmost visible character, just inside the
+   space reserved for the card actions; the title text itself never reflows. Hidden over
+   tags and actions, which handle their own clicks instead of opening the inspector. */
+.gallery-card-meta > .truncate {
+    position: relative;
+}
+
+.gallery-card-meta:hover:not(:has(.image-card-tags:hover, .card-actions:hover)) > .truncate::after {
+    content: '→';
+    position: absolute;
+    top: 0.625rem;
+    right: 5rem;
+    box-sizing: border-box;
+    width: 1ch;
+    height: 1.25rem;
+    line-height: 1.25rem;
+    text-align: center;
+    background-color: var(--bg-surface);
 }
 
 .gallery-card-meta > .flex {
