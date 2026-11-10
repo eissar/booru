@@ -57,4 +57,26 @@ search_images_filters_sorts_and_pages :: proc(t: ^testing.T) {
 		testing.expect(t, !has_more)
 		testing.expect_value(t, page[0].id, 1)
 	}
+
+	// Test until_id ceiling constraint
+	max_id, max_rc := read_max_item_id(state.data_store)
+	testing.expect_value(t, max_rc, sqlite.OK)
+	testing.expect_value(t, max_id, 6)
+
+	// Ceiling at 4 excludes items 5 and 6
+	page_until, _, rc_until := search_images(
+		state.data_store,
+		"alpha",
+		tags,
+		"addedAtDesc",
+		0,
+		10,
+		alloc,
+		until_id = 4,
+	)
+	if testing.expect(t, rc_until == sqlite.OK) {
+		testing.expect_value(t, len(page_until), 2)
+		testing.expect_value(t, page_until[0].id, 2)
+		testing.expect_value(t, page_until[1].id, 1)
+	}
 }

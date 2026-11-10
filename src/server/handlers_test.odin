@@ -237,3 +237,108 @@ mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 		"duplicate ID emits its thumbnail frame twice",
 	)
 }
+
+@(test)
+gallery_until_id_snapshot_isolation :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer {
+		err := free_all(context.temp_allocator)
+		assert(err == nil)
+	}
+
+	state := library.State{}
+	if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&state)
+
+	// Insert initial items (id 1, 2)
+	initial_items := [2]library.Image {
+		{id = 1, oid = "o1", name = "item 1", added_at = 100},
+		{id = 2, oid = "o2", name = "item 2", added_at = 200},
+	}
+	for item in initial_items {
+		if !testing.expect(
+			t,
+			sqlite.with_transaction(
+				state.data_store,
+				item,
+				proc(tx: ^sqlite.Tx, it: library.Image) -> c.int {
+					return c.int(store.insert_item(tx, it))
+				},
+			) ==
+			sqlite.OK,
+		) {return}
+	}
+
+	// 1. Initial visit to /gallery (until_id absent)
+	res1 := http.Response {
+		headers = make(map[string]string),
+	}
+	defer delete(res1.headers)
+	handle_gallery(state, &res1, {{path = "/gallery", query = "limit=10"}, alloc, time.Time{}})
+	testing.expect_value(t, res1.status, http.STATUS.OK)
+	html1 := string(res1.body)
+	// Server determines max item ID = 2 and reflects it as until_id in markup
+	testing.expect(
+		t,
+		strings.contains(html1, `<input type="hidden" name="until_id" value="2"/>`),
+		"initial page contains until_id ceiling 2",
+	)
+
+	// Now insert a new item with id > until_id (id = 3)
+	item3 := library.Image {
+		id       = 3,
+		oid      = "o3",
+		name     = "item 3",
+		added_at = 300,
+	}
+	if !testing.expect(
+		t,
+		sqlite.with_transaction(
+			state.data_store,
+			item3,
+			proc(tx: ^sqlite.Tx, it: library.Image) -> c.int {
+				return c.int(store.insert_item(tx, it))
+			},
+		) ==
+		sqlite.OK,
+	) {return}
+
+	// 2. Paginated request or fragment request retaining until_id=2
+	res2 := http.Response {
+		headers = make(map[string]string),
+	}
+	defer delete(res2.headers)
+	handle_fragment_items(
+		state,
+		&res2,
+		{{path = "/fragment/items", query = "limit=10&offset=0&until_id=2"}, alloc, time.Time{}},
+	)
+	testing.expect_value(t, res2.status, http.STATUS.OK)
+	html2 := string(res2.body)
+	testing.expect(t, strings.contains(html2, `data-image-id="1"`), "contains item 1")
+	testing.expect(t, strings.contains(html2, `data-image-id="2"`), "contains item 2")
+	testing.expect(t, !strings.contains(html2, `data-image-id="3"`), "excludes new item 3")
+	testing.expect(
+		t,
+		strings.contains(res2.headers["Hx-Push-Url"], "until_id=2"),
+		"Hx-Push-Url retains until_id=2",
+	)
+
+	// 3. Request without until_id now sees max_id = 3
+	res3 := http.Response {
+		headers = make(map[string]string),
+	}
+	defer delete(res3.headers)
+	handle_fragment_items(
+		state,
+		&res3,
+		{{path = "/fragment/items", query = "limit=10&offset=0"}, alloc, time.Time{}},
+	)
+	testing.expect_value(t, res3.status, http.STATUS.OK)
+	html3 := string(res3.body)
+	testing.expect(
+		t,
+		strings.contains(html3, `data-image-id="3"`),
+		"unconstrained query includes item 3",
+	)
+}

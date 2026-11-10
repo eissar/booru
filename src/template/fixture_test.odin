@@ -122,6 +122,7 @@ fixture_gallery_filter :: proc() -> Gallery_Filter {
 	}
 	return {
 		limit = 2,
+		until_id = 42,
 		sort = "addedAtAsc",
 		offset = 2,
 		gallery_url = "/gallery?limit=2&offset=0",

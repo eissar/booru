@@ -37,11 +37,12 @@ parse_regen_thumbnail_query :: proc(
 }
 
 Gallery_Query :: struct {
-	limit:  int,
-	offset: int,
-	sort:   string,
-	tags:   []string,
-	search: string,
+	limit:    int,
+	until_id: int,
+	offset:   int,
+	sort:     string,
+	tags:     []string,
+	search:   string,
 }
 
 parse_int_param :: proc(value: string) -> (out: int, ok: bool) {
@@ -75,6 +76,11 @@ parse_gallery_query :: proc(
 	if value, ok_param := params["limit"]; ok_param {
 		if n, parse_ok := parse_int_param(value); parse_ok && n >= MIN_LIMIT {
 			q.limit = n
+		}
+	}
+	if value, ok_param := params["until_id"]; ok_param {
+		if n, parse_ok := parse_int_param(value); parse_ok && n >= 0 {
+			q.until_id = n
 		}
 	}
 	if value, ok_param := params["offset"]; ok_param {
@@ -171,6 +177,10 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 		q.sort,
 		tags_query,
 	)
+	if q.until_id > 0 {
+		gallery_url = fmt.tprintf("%s&until_id=%d", gallery_url, q.until_id)
+		fragment_url = fmt.tprintf("%s&until_id=%d", fragment_url, q.until_id)
+	}
 	return
 }
 

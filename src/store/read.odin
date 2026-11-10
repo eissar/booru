@@ -36,6 +36,29 @@ read_images :: proc(db: ^sqlite.DB, alloc: mem.Allocator) -> (images: []library.
 	)
 }
 
+read_max_item_id :: proc(db: ^sqlite.DB) -> (max_id: int, rc: c.int) {
+	stmt: ^sqlite.Stmt
+	rc = sqlite.prepare_v2(
+		db,
+		`SELECT coalesce(MAX(id), 0) FROM items WHERE deleted = 0`,
+		-1,
+		&stmt,
+		nil,
+	)
+	defer {
+		if stmt != nil {sqlite.finalize(stmt)}
+	}
+	if rc != sqlite.OK {return 0, rc}
+	step_rc := sqlite.step(stmt)
+	if step_rc == sqlite.ROW {
+		return int(sqlite.column_int64(stmt, 0)), sqlite.OK
+	}
+	if step_rc == sqlite.DONE {
+		return 0, sqlite.OK
+	}
+	return 0, step_rc
+}
+
 // Search is a literal substring match over names and tags.
 // Case folding follows SQLite lower(): ASCII only.
 search_images :: proc(
@@ -46,6 +69,7 @@ search_images :: proc(
 	offset: int,
 	limit: int,
 	alloc: mem.Allocator,
+	until_id: int = 0,
 ) -> (
 	page: []library.Image,
 	has_more: bool,
@@ -73,6 +97,7 @@ search_images :: proc(
 			) AS tags
 		FROM items AS i
 		WHERE i.deleted = 0
+		  AND (?6 <= 0 OR i.id <= ?6)
 		  AND (instr(lower(i.name), lower(?1)) > 0
 		   OR EXISTS (
 				SELECT 1
@@ -106,6 +131,8 @@ search_images :: proc(
 	rc = sqlite.bind_int64(stmt, 4, i64(offset))
 	if rc != sqlite.OK {return nil, false, rc}
 	if !sqlite.bind_string(stmt, 5, sort) {return nil, false, 1}
+	rc = sqlite.bind_int64(stmt, 6, i64(until_id))
+	if rc != sqlite.OK {return nil, false, rc}
 
 	out := make([dynamic]library.Image, alloc)
 	for {

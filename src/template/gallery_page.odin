@@ -7,6 +7,7 @@ import "core:strings"
 // Filter state for the gallery content region.
 Gallery_Filter :: struct {
 	limit:              int,
+	until_id:           int,
 	sort:               string, // sort parameter name, e.g. "addedAtAsc"
 	tags:               []string,
 	offset:             int,
@@ -41,6 +42,13 @@ render_filter_bar :: proc(f: Gallery_Filter) -> string {
 	)
 	attr(&b, "value", limit)
 	wr(&b, "/>")
+	if f.until_id > 0 {
+		until_buf: [20]u8
+		until_str := fmt.bprintf(until_buf[:], "%d", f.until_id)
+		wr(&b, "<input type=\"hidden\" name=\"until_id\"")
+		attr(&b, "value", until_str)
+		wr(&b, "/>")
+	}
 	if f.sort != "" {
 		label_buf: [512]u8
 		label: string
@@ -210,7 +218,7 @@ write_toolbar :: proc(b: ^strings.Builder, f: Gallery_Filter) {
 	wr(b, "</div></details></div>")
 	wr(
 		b,
-		"<details class=\"toolbar-search\"><summary class=\"toolbar-icon-button mobile-search-toggle p-2 rounded cursor-pointer list-none hover-surface focus-ring\"><img src=\"/static/icons/magnifying-glass.svg\" class=\"h-5 w-5\" style=\"filter: var(--icon-filter);\" alt=\"\"/><span class=\"sr-only\">Search gallery</span></summary><form id=\"search-form\" method=\"get\" action=\"/gallery\" hx-get=\"/fragment/gallery-content\" hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\" class=\"flex items-center h-10 gap-4 w-full max-w-xs flex-shrink-0\"><input id=\"search-input\" type=\"search\" autofocus name=\"q\" placeholder=\"Search...\" class=\"block w-full h-full border border-transparent rounded px-4 input-field\" required/><button type=\"submit\" class=\"search-submit hover-surface focus-ring\" aria-label=\"Search\" tabindex=\"-1\"><img src=\"/static/icons/magnifying-glass.svg\" class=\"h-5 w-5\" style=\"filter: var(--icon-filter);\" alt=\"\"/></button></form></details></div></div></header>",
+		"<details class=\"toolbar-search\"><summary class=\"toolbar-icon-button mobile-search-toggle p-2 rounded cursor-pointer list-none hover-surface focus-ring\"><img src=\"/static/icons/magnifying-glass.svg\" class=\"h-5 w-5\" style=\"filter: var(--icon-filter);\" alt=\"\"/><span class=\"sr-only\">Search gallery</span></summary><form id=\"search-form\" method=\"get\" action=\"/gallery\" hx-get=\"/fragment/gallery-content\" hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\" hx-include=\"#filter-bar\" class=\"flex items-center h-10 gap-4 w-full max-w-xs flex-shrink-0\"><input id=\"search-input\" type=\"search\" autofocus name=\"q\" placeholder=\"Search...\" class=\"block w-full h-full border border-transparent rounded px-4 input-field\" required/><button type=\"submit\" class=\"search-submit hover-surface focus-ring\" aria-label=\"Search\" tabindex=\"-1\"><img src=\"/static/icons/magnifying-glass.svg\" class=\"h-5 w-5\" style=\"filter: var(--icon-filter);\" alt=\"\"/></button></form></details></div></div></header>",
 	)
 }
 

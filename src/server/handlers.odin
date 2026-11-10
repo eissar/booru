@@ -39,6 +39,15 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		http.res_error("", res, .BadRequest); return
 	}
 
+	if q.until_id <= 0 {
+		max_id, max_rc := store.read_max_item_id(s.data_store)
+		if max_rc != sqlite.OK {
+			http.res_error("", res, .InternalServerError)
+			return
+		}
+		q.until_id = max_id
+	}
+
 	page, has_more, rc := store.search_images(
 		s.data_store,
 		q.search,
@@ -47,6 +56,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		q.offset,
 		q.limit,
 		req.alloc,
+		q.until_id,
 	)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
@@ -56,6 +66,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 	gallery_url, fragment_url := filter_urls(q)
 	filter := template.Gallery_Filter {
 		limit              = q.limit,
+		until_id           = q.until_id,
 		sort               = q.sort,
 		tags               = q.tags,
 		offset             = q.offset + len(page),
@@ -77,6 +88,15 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		return
 	}
 
+	if q.until_id <= 0 {
+		max_id, max_rc := store.read_max_item_id(s.data_store)
+		if max_rc != sqlite.OK {
+			http.res_error("", res, .InternalServerError)
+			return
+		}
+		q.until_id = max_id
+	}
+
 	page, has_more, rc := store.search_images(
 		s.data_store,
 		q.search,
@@ -85,6 +105,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		q.offset,
 		q.limit,
 		req.alloc,
+		q.until_id,
 	)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
@@ -94,6 +115,7 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 	gallery_url, fragment_url := filter_urls(q)
 	filter := template.Gallery_Filter {
 		limit        = q.limit,
+		until_id     = q.until_id,
 		sort         = q.sort,
 		tags         = q.tags,
 		offset       = q.offset + len(page),
@@ -115,6 +137,15 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 		return
 	}
 
+	if q.until_id <= 0 {
+		max_id, max_rc := store.read_max_item_id(s.data_store)
+		if max_rc != sqlite.OK {
+			http.res_error("", res, .InternalServerError)
+			return
+		}
+		q.until_id = max_id
+	}
+
 	page, has_more, rc := store.search_images(
 		s.data_store,
 		q.search,
@@ -123,6 +154,7 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 		q.offset,
 		q.limit,
 		req.alloc,
+		q.until_id,
 	)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
