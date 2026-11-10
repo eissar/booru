@@ -1,0 +1,8 @@
+{
+  "productName": "booru",
+  "version": "0.0.0",
+  "identifier": "dev.eissar.booru.spike",
+  "build": { "frontendDist": "./dist" },
+  "app": { "windows": [], "security": { "csp": null } },
+  "bundle": { "active": false }
+}

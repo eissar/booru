@@ -1,0 +1,18 @@
+[package]
+name = "booru-tauri-spike"
+version = "0.0.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = "2"
+
+[dependencies]
+tauri = "2"
+
+# Size-focused release profile.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
