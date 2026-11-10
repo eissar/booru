@@ -26,6 +26,8 @@ Error :: enum {
 	// Writers omit empty strings; explicit string clears are not implemented yet.
 	NotImplemented,
 	DATABASE_ERR,
+	// The on-disk store predates the current schema; discard it and rebuild.
+	SCHEMA_MISMATCH,
 }
 
 Patch_State :: struct {
@@ -85,6 +87,16 @@ replay :: proc(
 	if !full_replay {
 		patch_rc: i32
 		item_patch, patch_rc = store.prepare_item_patch(db)
+		if patch_rc == sqlite.ERROR &&
+		   !(store.verify_table_columns(db, "items", store.TABLE_ITEMS_COLUMNS) &&
+				   store.verify_table_columns(db, "item_tags", store.TABLE_ITEM_TAGS_COLUMNS) &&
+				   store.verify_table_columns(
+					   db,
+					   "replay_cursors",
+					   store.TABLE_REPLAY_CURSORS_COLUMNS,
+				   )) {
+			return .SCHEMA_MISMATCH
+		}
 		if patch_rc != sqlite.OK {return .DATABASE_ERR}
 	}
 	defer {if item_patch != nil {sqlite.finalize(item_patch)}}
@@ -518,7 +530,7 @@ initiate_replay :: proc(
 	s: ^library.State,
 	prog_callback: progress.Callback = nil,
 	full_replay := true,
-) {
+) -> Error {
 	upper: elog.Cursor
 	if !full_replay {
 		upper = s.event_log.cursor^ // capture by value
@@ -591,6 +603,7 @@ initiate_replay :: proc(
 		db = db,
 	}
 	if err := replay(s, streams, alloc, prog_callback, full_replay); err != nil {
+		if err == .SCHEMA_MISMATCH {return err}
 		fmt.panicf("replay: %v", err)
 	}
 	for path, i in paths {
@@ -629,6 +642,7 @@ initiate_replay :: proc(
 			s.event_log.cursor.offset = i64(len(streams[len(streams) - 1]))
 		}
 	}
+	return nil
 }
 
 // lifecycle_step is accepts/next from lifecycle.fly. It sees only the owning item's

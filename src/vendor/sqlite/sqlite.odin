@@ -59,6 +59,7 @@ VTab_Cursor :: struct {
 
 // Result codes (subset).
 OK :: 0
+ERROR :: 1
 ROW :: 100
 DONE :: 101
 MISUSE :: 21

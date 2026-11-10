@@ -22,6 +22,9 @@ import "vendor/sqlite"
 
 DATA_DIR: string
 
+// Set once when an outdated store is discarded; a second mismatch is fatal.
+STORE_DISCARDED_FOR_SCHEMA: bool
+
 fmt_timestamp :: proc(elapsed: time.Duration) -> string {
 	if elapsed < time.Second {
 		return fmt.tprintf("%.2f ms", time.duration_milliseconds(elapsed))
@@ -114,68 +117,83 @@ main :: proc() {
 	)
 	db_c_str := strings.clone_to_cstring(db_c, context.temp_allocator)
 
-	_, stat_err := os.stat(db_c, context.temp_allocator)
-	if stat_err != nil && stat_err != .Not_Exist {
-		fmt.panicf("stat store: %v", stat_err)
-	}
-	fresh_store := stat_err == .Not_Exist
-	if fresh_store {
-		db, open_rc := sqlite.open(db_c_str)
-		if open_rc != sqlite.OK {
-			log.fatal("datastore type=sqlite open rebuild: failed w/ error code:", open_rc)
-			os.exit(1)
+	for {
+		_, stat_err := os.stat(db_c, context.temp_allocator)
+		if stat_err != nil && stat_err != .Not_Exist {
+			fmt.panicf("stat store: %v", stat_err)
 		}
-		rc := sqlite.exec(
-			db,
-			`
-			PRAGMA page_size = 65536;
-			PRAGMA foreign_keys = OFF;
-			PRAGMA journal_mode = OFF;
-			PRAGMA synchronous = OFF;
-			PRAGMA temp_store = MEMORY;
-			PRAGMA locking_mode = EXCLUSIVE;
-			PRAGMA cache_size = -200000;
-			`,
-			nil,
-			nil,
-			nil,
-		)
-		if rc != sqlite.OK {
-			log.fatal("datastore type=sqlite configure rebuild: failed w/ error code:", rc)
-			os.exit(1)
-		}
-		if rc = store.create_tables(db); rc != sqlite.OK {
-			log.fatal("datastore type=sqlite create tables: failed w/ error code:", rc)
-			os.exit(1)
-		}
-		state.data_store = db
-		if state.event_log != nil {state.event_log.db = db}
+		fresh_store := stat_err == .Not_Exist
+		if fresh_store {
+			db, open_rc := sqlite.open(db_c_str)
+			if open_rc != sqlite.OK {
+				log.fatal("datastore type=sqlite open rebuild: failed w/ error code:", open_rc)
+				os.exit(1)
+			}
+			rc := sqlite.exec(
+				db,
+				`
+				PRAGMA page_size = 65536;
+				PRAGMA foreign_keys = OFF;
+				PRAGMA journal_mode = OFF;
+				PRAGMA synchronous = OFF;
+				PRAGMA temp_store = MEMORY;
+				PRAGMA locking_mode = EXCLUSIVE;
+				PRAGMA cache_size = -200000;
+				`,
+				nil,
+				nil,
+				nil,
+			)
+			if rc != sqlite.OK {
+				log.fatal("datastore type=sqlite configure rebuild: failed w/ error code:", rc)
+				os.exit(1)
+			}
+			if rc = store.create_tables(db); rc != sqlite.OK {
+				log.fatal("datastore type=sqlite create tables: failed w/ error code:", rc)
+				os.exit(1)
+			}
+			state.data_store = db
+			if state.event_log != nil {state.event_log.db = db}
 
-		replay.initiate_replay(&state, full_replay = true)
-		store.Close(&state)
-	}
+			replay.initiate_replay(&state, full_replay = true)
+			store.Close(&state)
+		}
 
-	rc := store.Init(&state, db_c_str)
-	if rc != 0 {
-		log.fatal("datastore type=sqlite open: failed w/ error code:", rc)
-		os.exit(1)
+		rc := store.Init(&state, db_c_str)
+		if rc != 0 {
+			log.fatal("datastore type=sqlite open: failed w/ error code:", rc)
+			os.exit(1)
+		}
+		// Existing stores assume older shards are fully applied. The append boundary
+		// is the calendar-current shard's end, not SQLite's applied cursor (nor the
+		// latest historical shard, which may belong to a previous month).
+		if !fresh_store {
+			shard := elog.get_current_event_shard(context.temp_allocator)
+			copy(cursor.shard[:], shard)
+			path := fmt.tprintf("%s/events/%s", cfg.library, shard)
+			info, err := os.stat(path, context.temp_allocator)
+			if err != nil && err != .Not_Exist {
+				fmt.panicf("stat event shard: %v", err)
+			}
+			if err == nil {cursor.offset = info.size}
+			if replay.initiate_replay(&state, full_replay = false) == .SCHEMA_MISMATCH {
+				if STORE_DISCARDED_FOR_SCHEMA {
+					log.fatal("datastore type=sqlite: schema mismatch persists after rebuild")
+					os.exit(1)
+				}
+				STORE_DISCARDED_FOR_SCHEMA = true
+				log.warn("datastore type=sqlite: schema mismatch; discarding store and rebuilding")
+				store.Close(&state)
+				if err := os.remove(db_c); err != nil {
+					log.fatal("datastore type=sqlite: discard outdated store:", err)
+					os.exit(1)
+				}
+				continue
+			}
+		}
+		break
 	}
 	defer store.Close(&state)
-
-	// Existing stores assume older shards are fully applied. The append boundary
-	// is the calendar-current shard's end, not SQLite's applied cursor (nor the
-	// latest historical shard, which may belong to a previous month).
-	if !fresh_store {
-		shard := elog.get_current_event_shard(context.temp_allocator)
-		copy(cursor.shard[:], shard)
-		path := fmt.tprintf("%s/events/%s", cfg.library, shard)
-		info, err := os.stat(path, context.temp_allocator)
-		if err != nil && err != .Not_Exist {
-			fmt.panicf("stat event shard: %v", err)
-		}
-		if err == nil {cursor.offset = info.size}
-		replay.initiate_replay(&state, full_replay = false)
-	}
 
 	log.infof(
 		"Library initialized in %.2f ms: %s",
