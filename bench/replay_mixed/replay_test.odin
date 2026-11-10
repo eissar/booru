@@ -48,11 +48,14 @@ test_replay_mixed :: proc(t: ^testing.T) {
 	}
 	slice.sort(durations[1:])
 	median_ns := durations[1 + (len(durations) - 1) / 2]
+	median_s := median_ns / 1e9
+	mib_per_s := (f64(len(data)) / (1024 * 1024)) / median_s
 	fmt.printf(
-		"replay mixed: %d events, median %.3f ms, %.0f ns/event, %.0f events/s (5 runs; DB setup excluded; item count checked)\n",
+		"replay mixed: %d events, median %.3f ms, %.0f ns/event, %.0f events/s, %.2f MiB/s (5 runs; DB setup excluded; item count checked)\n",
 		count,
 		median_ns / 1e6,
 		median_ns / f64(count),
-		f64(count) / (median_ns / 1e9),
+		f64(count) / median_s,
+		mib_per_s,
 	)
 }
