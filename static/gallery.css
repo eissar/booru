@@ -659,11 +659,12 @@ html[data-theme='dark'] input::placeholder {
 }
 
 /* A ribbon on the card's right edge marks where a click opens the inspector: shown while
-   the pointer is over the metadata, but not over tags or actions, which handle their own
-   clicks. It floats over the image, so nothing reflows. */
+   the pointer rests over the metadata, but not over the tags row or the actions, which
+   keep their clicks to themselves. It floats over the image, so nothing reflows, and
+   appears after a short delay so sweeping across the card doesn't flash it. */
 .gallery-card::after {
     content: 'open inspector';
-    display: none;
+    visibility: hidden;
     position: absolute;
     top: 0.5rem;
     right: 0;
@@ -676,8 +677,9 @@ html[data-theme='dark'] input::placeholder {
     pointer-events: none;
 }
 
-.gallery-card:has(.gallery-card-meta:hover):not(:has(.image-card-tags:hover, .card-actions:hover))::after {
-    display: block;
+.gallery-card:has(.gallery-card-meta:hover):not(:has(.gallery-card-meta > .flex:hover, .card-actions:hover))::after {
+    visibility: visible;
+    transition: visibility 0s 0.12s;
 }
 
 .gallery-card-meta > .flex {

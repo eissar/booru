@@ -125,7 +125,10 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	escape_text(&b, image.name)
 	wr(&b, "</span><div")
 	attrf(&b, "id", "card-tags-list-%d", image.id)
-	wr(&b, " class=\"flex flex-wrap gap-2 text-xs mt-2\">")
+	wr(
+		&b,
+		" class=\"flex flex-wrap gap-2 text-xs mt-2\" data-hx-on-click=\"event.stopPropagation()\">",
+	)
 	write_tag_badges(&b, image.tags, "image-card-tags")
 	wr(&b, "</div>")
 	render_card_actions(&b, image)
