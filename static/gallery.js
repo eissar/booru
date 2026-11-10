@@ -129,8 +129,11 @@
 
   // One current mipmap batch. No image-ID cache or cross-batch reuse.
   let canvas, gl, program, uniforms, batch;
-  //HACK: this is temporary before we decide on gpu caching strategy
   const thumbnailsByURL = new Map();
+  const PAGE_LAYERS = 64;
+  const MAX_PAGES = 8;
+  const ringPages = [];
+  let ringCursor = 0;
   let pending = false,
     batchQueued = false,
     animateUntil = 0;
@@ -153,7 +156,7 @@
       backing: canvas ? [canvas.width, canvas.height] : null,
       dpr: devicePixelRatio || 1,
       images: batch?.images.length || 0,
-      textures: batch?.textures.length || 0,
+      textures: ringPages.filter(Boolean).length,
       ...details,
     };
     console.info("[booru-webgl] " + JSON.stringify(record));
@@ -473,7 +476,9 @@
     previewLog("batch-release");
     batch.abort.abort();
     batch.decoder?.close();
-    for (const texture of batch.textures) gl.deleteTexture(texture);
+    for (const url of batch.requestedUrls) {
+      if (!thumbnailsByURL.get(url)) thumbnailsByURL.delete(url);
+    }
     batch = null;
   }
 
@@ -483,13 +488,13 @@
     requestAnimationFrame(() => {
       batchQueued = false;
       if (rendererState === "failed") return;
+      releaseBatch();
       imageSizes.disconnect();
       const grid = getGrid();
       const cards = grid ? collectCards(grid) : [];
       const current = (batch = {
         images: cards.map((card) => card.querySelector(".gallery-card-image")),
-        thumbnails: [],
-        textures: [],
+        requestedUrls: [],
         abort: new AbortController(),
         decoder: null,
       });
@@ -505,6 +510,7 @@
         ids.push(card.dataset.imageId);
         urls.push(url);
       }
+      current.requestedUrls = urls;
       if (!ids.length) return;
       loadBatch(current, ids, urls)
         .catch((error) => {
@@ -539,11 +545,6 @@
     await decoder.tracks.ready;
     if (current.abort.signal.aborted) return;
     if (!decoder.tracks.selectedTrack) throw Error("No image track");
-    const batchSize = Math.min(
-      ids.length,
-      64,
-      gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS),
-    );
     let count = 0,
       width,
       height;
@@ -575,14 +576,22 @@
         }
         if (image.displayWidth !== width || image.displayHeight !== height)
           throw Error("Unequal frame sizes");
-        if (i % batchSize === 0) {
+        const slot = ringCursor++ % (MAX_PAGES * PAGE_LAYERS);
+        const pageIdx = Math.floor(slot / PAGE_LAYERS);
+        const layer = slot % PAGE_LAYERS;
+        let page = ringPages[pageIdx];
+        if (page && (page.width !== width || page.height !== height)) {
+          for (const oldUrl of page.urls) if (oldUrl) thumbnailsByURL.delete(oldUrl);
+          gl.deleteTexture(page.texture);
+          page = ringPages[pageIdx] = null;
+        }
+        if (!page) {
           const texture = gl.createTexture();
           if (!texture) throw Error("Texture allocation failed");
           previewLog("texture-allocate", {
-            index: current.textures.length, width, height, layers: batchSize,
-            rgbaMiB: +(width * height * batchSize * 4 / 1048576).toFixed(2),
+            index: pageIdx, width, height, layers: PAGE_LAYERS,
+            rgbaMiB: +(width * height * PAGE_LAYERS * 4 / 1048576).toFixed(2),
           });
-          current.textures.push(texture);
           gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
           // LINEAR uses only level zero; generating unused mip levels adds no value here.
           gl.texStorage3D(
@@ -591,7 +600,7 @@
             gl.RGBA8,
             width,
             height,
-            batchSize,
+            PAGE_LAYERS,
           );
           const allocationError = gl.getError();
           if (allocationError !== gl.NO_ERROR) {
@@ -618,9 +627,17 @@
             gl.TEXTURE_WRAP_T,
             gl.CLAMP_TO_EDGE,
           );
+          page = ringPages[pageIdx] = {
+            texture,
+            width,
+            height,
+            urls: new Array(PAGE_LAYERS).fill(null),
+          };
+        } else if (page.urls[layer]) {
+          thumbnailsByURL.delete(page.urls[layer]);
         }
-        const texture = current.textures[Math.floor(i / batchSize)],
-          layer = i % batchSize;
+        const texture = page.texture;
+        page.urls[layer] = urls[i];
         gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
         gl.texSubImage3D(
           gl.TEXTURE_2D_ARRAY,
