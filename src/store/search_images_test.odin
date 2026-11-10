@@ -48,8 +48,8 @@ search_images_filters_sorts_and_pages :: proc(t: ^testing.T) {
 	)
 	if testing.expect(t, rc == sqlite.OK && len(page) == 2) {
 		testing.expect(t, has_more)
-		testing.expect_value(t, page[0].id, 2)
-		testing.expect_value(t, page[1].id, 5)
+		testing.expect_value(t, page[0].id, 5)
+		testing.expect_value(t, page[1].id, 2)
 	}
 
 	page, has_more, rc = search_images(state.data_store, "alpha", tags, "addedAtDesc", 2, 2, alloc)

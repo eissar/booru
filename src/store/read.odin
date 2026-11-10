@@ -80,10 +80,20 @@ search_images :: proc(
 		quoted[i] = fmt.tprintf("\"%s\"", tag)
 	}
 	tags_json := fmt.tprintf("[%s]", strings.join(quoted, ",", alloc))
+	order := "i.id ASC"
+	switch sort {
+	case "addedAtAsc":
+		order = "i.added_at ASC, i.id ASC"
+	case "addedAtDesc":
+		order = "i.added_at DESC, i.id DESC"
+	case "idDesc":
+		order = "i.id DESC"
+	}
 	stmt: ^sqlite.Stmt
 	rc = sqlite.prepare_v2(
 		db,
-		`SELECT
+		fmt.caprintf(
+			`SELECT
 			i.id, i.oid, i.path, i.ext, i.width, i.height,
 			i.name, i.mtime, i.added_at, i.content_type, i.comment,
 			(
@@ -109,13 +119,11 @@ search_images :: proc(
 		       WHERE EXISTS (
 				SELECT 1 FROM item_tags AS t WHERE t.item_id = i.id AND t.tag = w.value
 		       )) = (SELECT COUNT(*) FROM json_each(?2))
-		ORDER BY
-			CASE ?5 WHEN 'addedAtAsc'  THEN i.added_at END ASC,
-			CASE ?5 WHEN 'addedAtDesc' THEN i.added_at END DESC,
-			CASE ?5 WHEN 'idAsc'       THEN i.id      END ASC,
-			CASE ?5 WHEN 'idDesc'      THEN i.id      END DESC,
-			i.id ASC
+		ORDER BY %s
 		LIMIT ?3 OFFSET ?4`,
+			order,
+			allocator = alloc,
+		),
 		-1,
 		&stmt,
 		nil,
@@ -130,7 +138,6 @@ search_images :: proc(
 	if rc != sqlite.OK {return nil, false, rc}
 	rc = sqlite.bind_int64(stmt, 4, i64(offset))
 	if rc != sqlite.OK {return nil, false, rc}
-	if !sqlite.bind_string(stmt, 5, sort) {return nil, false, 1}
 	rc = sqlite.bind_int64(stmt, 6, i64(until_id))
 	if rc != sqlite.OK {return nil, false, rc}
 

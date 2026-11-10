@@ -52,6 +52,8 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 # Performance Audit TODO
 
+- [ ] Verify `search_images` query plans use index order for all four sorts (unfiltered and tag-filtered) and benchmark them.
+
 - [ ] Compare item and tag snapshots across the pre- and post-prepared-insert replay revisions using the same 100,000-event fixture; the benchmark currently checks repeatability within each run, not equality between revisions.
 - [ ] Avoid redundant serialization: `SQLite (row → JSON) → Odin (JSON → Odin → JSON) → client`. Keep data typed until final serialization, or pass SQLite-produced JSON through without decoding and re-encoding when no transformation is needed.
 - oha + valgrind/callgrind/memcheck
