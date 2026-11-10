@@ -626,8 +626,25 @@ html[data-theme='dark'] input::placeholder {
 
 .gallery-card-meta {
     position: relative;
+    box-sizing: border-box;
+    height: 4.25rem;
+    max-height: 4.25rem;
     padding: 0 0.625rem;
     font-size: 0.875rem;
+    overflow: hidden;
+    background-color: var(--bg-surface);
+}
+
+.gallery-card:hover .gallery-card-meta,
+.gallery-card:focus-within .gallery-card-meta {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: auto;
+    max-height: 100%;
+    z-index: 10;
+    transition: max-height 0s 2s;
 }
 
 .gallery-card-meta > .truncate {
@@ -793,6 +810,16 @@ body:has(#gallery-view-list:checked) .gallery-card-image {
 body:has(#gallery-view-list:checked) .gallery-card-meta {
     order: 2;
     min-width: 0;
+    height: auto;
+    max-height: none;
+    position: relative;
+}
+
+body:has(#gallery-view-list:checked) .gallery-card:hover .gallery-card-meta,
+body:has(#gallery-view-list:checked) .gallery-card:focus-within .gallery-card-meta {
+    position: relative;
+    max-height: none;
+    transition: none;
 }
 
 @media (width < 640px) {
