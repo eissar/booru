@@ -41,7 +41,6 @@ tasks:
     desc: Generate the committed Tailwind stylesheet
     deps: [assets:install]
     sources:
-      - assets/tailwind.css
       - tailwind.config.js
       - package.json
       - package-lock.json
