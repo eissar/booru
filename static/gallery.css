@@ -658,24 +658,26 @@ html[data-theme='dark'] input::placeholder {
     padding-right: 5rem;
 }
 
-/* On hover an arrow overlays the title's rightmost visible character, just inside the
-   space reserved for the card actions; the title text itself never reflows. Hidden over
-   tags and actions, which handle their own clicks instead of opening the inspector. */
-.gallery-card-meta > .truncate {
-    position: relative;
+/* A ribbon on the card's right edge marks where a click opens the inspector: shown while
+   the pointer is over the metadata, but not over tags or actions, which handle their own
+   clicks. It floats over the image, so nothing reflows. */
+.gallery-card::after {
+    content: 'open inspector';
+    display: none;
+    position: absolute;
+    top: 0.5rem;
+    right: 0;
+    z-index: 1;
+    padding: 0 0.25rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    color: var(--text-primary);
+    background-color: var(--bg-surface);
+    pointer-events: none;
 }
 
-.gallery-card-meta:hover:not(:has(.image-card-tags:hover, .card-actions:hover)) > .truncate::after {
-    content: '→';
-    position: absolute;
-    top: 0.625rem;
-    right: 5rem;
-    box-sizing: border-box;
-    width: 1ch;
-    height: 1.25rem;
-    line-height: 1.25rem;
-    text-align: center;
-    background-color: var(--bg-surface);
+.gallery-card:has(.gallery-card-meta:hover):not(:has(.image-card-tags:hover, .card-actions:hover))::after {
+    display: block;
 }
 
 .gallery-card-meta > .flex {
