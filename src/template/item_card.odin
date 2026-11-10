@@ -114,7 +114,7 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	}
 	wr(
 		&b,
-		"><div class=\"gallery-card relative overflow-hidden flex flex-col rounded-lg hover-card\"><div class=\"gallery-card-meta block p-4 w-full peer order-2\"",
+		"><div class=\"gallery-card relative overflow-hidden flex flex-col rounded-lg hover-card\"><div class=\"gallery-card-slot order-2\"><div class=\"gallery-card-meta block p-4 w-full peer\"",
 	)
 	attrf(&b, "hx-get", "/fragment/inspect/%d", image.id)
 	attrf(&b, "hx-vals", "%s\"order\":%d%s", "{", render_order, "}")
@@ -129,7 +129,7 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	write_tag_badges(&b, image.tags, "image-card-tags")
 	wr(&b, "</div>")
 	render_card_actions(&b, image)
-	wr(&b, "</div><img")
+	wr(&b, "</div></div><img")
 	attrf(&b, "src", "/image/%s", thumb_src)
 	wr(&b, " loading=\"lazy\"")
 	wr(
