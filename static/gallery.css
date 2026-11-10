@@ -995,6 +995,7 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
    The background colour shows through while the browser fetches the image. */
 .gallery-card-image {
     background-color: var(--bg-surface-hover);
+    object-fit: cover;
 }
 
 #photo-grid {

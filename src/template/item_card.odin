@@ -100,8 +100,8 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	aspect_ratio := fmt.bprintf(
 		aspect_ratio_buf[:],
 		"aspect-ratio: %d/%d",
-		image.width,
-		image.height,
+		min(image.width, 2 * image.height),
+		min(image.height, 2 * image.width),
 	)
 
 

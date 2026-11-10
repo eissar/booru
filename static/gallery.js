@@ -31,7 +31,8 @@
     if (!img) return 1;
     var w = Number(img.getAttribute("width"));
     var h = Number(img.getAttribute("height"));
-    return w > 0 && h > 0 ? h / w : 1;
+    if (w <= 0 || h <= 0) return 1;
+    return Math.min(Math.max(h / w, 0.5), 2.0);
   }
 
   function cardOrder(card) {
