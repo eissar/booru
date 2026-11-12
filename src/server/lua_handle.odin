@@ -1,6 +1,6 @@
 package server
 
-import "core:log"
+import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:time"
@@ -25,7 +25,7 @@ lua_handle :: proc(res: ^http.Response, req: http.Req, body: []u8) -> bool {
 	lua.L_openlibs(L)
 
 	if lua.L_dofile(L, LUA_HANDLER_PATH) != 0 {
-		log.errorf("lua: load %s: %s", LUA_HANDLER_PATH, lua.tostring(L, -1))
+		fmt.eprintfln("lua: load %s: %s", LUA_HANDLER_PATH, lua.tostring(L, -1))
 		return false
 	}
 	lua.getglobal(L, "handle")
@@ -38,7 +38,7 @@ lua_handle :: proc(res: ^http.Response, req: http.Req, body: []u8) -> bool {
 	push_field(L, "body", string(body))
 
 	if lua.pcall(L, 1, 2, 0) != 0 {
-		log.errorf("lua: handle %s: %s", req.header.path, lua.tostring(L, -1))
+		fmt.eprintfln("lua: handle %s: %s", req.header.path, lua.tostring(L, -1))
 		return false
 	}
 	if lua.isnil(L, -2) {return false}

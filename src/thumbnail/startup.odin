@@ -1,7 +1,6 @@
 package thumbnail
 
 import "core:fmt"
-import "core:log"
 import "core:strings"
 import "core:time"
 
@@ -22,7 +21,7 @@ startup_threaded_generate_missing_thumbnails :: proc(data: struct {
 	db, rc := sqlite.open(path)
 	if rc != sqlite.OK {
 		if db != nil {sqlite.close(db)}
-		log.errorf("thumbnail scan: open store failed: rc=%d", rc)
+		fmt.eprintfln("thumbnail scan: open store failed: rc=%d", rc)
 		return
 	}
 	defer sqlite.close(db)
@@ -33,7 +32,7 @@ startup_threaded_generate_missing_thumbnails :: proc(data: struct {
 	}
 	start := time.now()
 	generated, failed := generate_missing_thumbnails(state, data.prog_callback)
-	log.infof(
+	fmt.eprintfln(
 		"thumbnails: generated=%d, failed=%d in %.2f ms",
 		generated,
 		failed,

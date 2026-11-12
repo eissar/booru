@@ -1,6 +1,6 @@
 package server
 
-import "core:log"
+import "core:fmt"
 import "core:mem"
 import "core:net"
 import "core:strings"
@@ -36,7 +36,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 	alloc := mem.arena_allocator(&arena)
 	if accept == accept_tcp {
 		if ep, endpoint_err := net.bound_endpoint(sock); endpoint_err == nil {
-			log.infof("server listening on http://%v", net.endpoint_to_string(ep))
+			fmt.eprintfln("server listening on http://%v", net.endpoint_to_string(ep))
 		}
 	}
 
@@ -56,7 +56,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		// is ugly
 		bytes_read, err := net.recv_tcp(conn, raw[:])
 		if err != nil {
-			log.error("recv error:", err)
+			fmt.eprintln("recv error:", err)
 			net.close(conn)
 			continue
 		}
@@ -86,11 +86,11 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 
 		length := req_header.known_headers.content_length
 		if length < 0 || length > http.MAX_BODY_SIZE {
-			log.error("read body:", "invalid content-length from req of:", length)
+			fmt.eprintln("read body:", "invalid content-length from req of:", length)
 
 			http.res_error("Bad Request", &res, status = .BadRequest)
 			if err := http.marshal_and_send(conn, res, alloc); err != nil {
-				log.error("send response:", err)
+				fmt.eprintln("send response:", err)
 			}
 			net.close(conn)
 			continue
@@ -107,7 +107,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			// bad request
 			http.res_error("Bad Request", &res, status = .BadRequest)
 			if err := http.marshal_and_send(conn, res, alloc); err != nil {
-				log.error("send response:", err)
+				fmt.eprintln("send response:", err)
 			}
 			net.close(conn)
 			continue
@@ -116,19 +116,19 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		n := copy(body, request_bytes[off + 4:])
 		received := http.read_body_sync(conn, body[n:])
 		if received < 0 {
-			log.error("read body:", "failed to receive request body")
+			fmt.eprintln("read body:", "failed to receive request body")
 			http.res_error("Bad Request", &res, status = .BadRequest)
 			if err := http.marshal_and_send(conn, res, alloc); err != nil {
-				log.error("send response:", err)
+				fmt.eprintln("send response:", err)
 			}
 			net.close(conn)
 			continue
 		}
 		if received != length - n {
-			log.error("read body:", "connection closed before request body was complete")
+			fmt.eprintln("read body:", "connection closed before request body was complete")
 			http.res_error("Bad Request", &res, status = .BadRequest)
 			if err := http.marshal_and_send(conn, res, alloc); err != nil {
-				log.error("send response:", err)
+				fmt.eprintln("send response:", err)
 			}
 			net.close(conn)
 			continue
@@ -139,7 +139,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		when true {
 			if lua_handle(&res, req, body) {
 				if err := http.marshal_and_send(conn, res, alloc); err != nil {
-					log.error("send response:", err)
+					fmt.eprintln("send response:", err)
 				}
 				net.close(conn)
 				continue
@@ -190,7 +190,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 
 
 		if err := http.marshal_and_send(conn, res, alloc); err != nil {
-			log.error("send response:", err)
+			fmt.eprintln("send response:", err)
 		}
 
 		net.close(conn)

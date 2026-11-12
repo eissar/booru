@@ -1,7 +1,6 @@
 package thumbnail
 
 import "core:fmt"
-import "core:log"
 import "core:os"
 import "core:strings"
 import "core:sys/linux"
@@ -32,7 +31,7 @@ generate_missing_thumbnails :: proc(
 	missing := make(map[string]bit_set[LOD_RESOLUTION])
 	defer delete(missing)
 	find_missing_thumbnails(s, images, &missing)
-	log.info("thumbnails: generate missing start")
+	fmt.eprintln("thumbnails: generate missing start")
 
 	finished, total: u64
 	if prog_callback != nil {

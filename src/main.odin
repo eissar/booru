@@ -1,7 +1,6 @@
 package main
 
 import "core:fmt"
-import "core:log"
 import "core:net"
 import "core:os"
 import "core:strings"
@@ -35,15 +34,6 @@ fmt_timestamp :: proc(elapsed: time.Duration) -> string {
 
 main :: proc() {
 	load_start := time.now()
-
-	// consider: `when ODIN_DEBUG { log.debug("debugging") }` on hot paths
-	lvl := log.Level.Debug when ODIN_DEBUG else log.Level.Info
-	context.logger = log.create_console_logger(
-		lowest = lvl,
-		opt = log.Options{.Level, .Short_File_Path, .Procedure, .Line},
-	)
-	defer log.destroy_console_logger(context.logger)
-
 
 	cfg := cli.getFlags()
 	home := os.get_env("HOME", context.temp_allocator)
@@ -89,13 +79,13 @@ main :: proc() {
 	ready_fd := daemonize() if cfg.daemon else {}
 
 	if err := library.init_new_library(cfg.library); err != nil {
-		log.fatal("library: initialize directory structure:", err)
+		fmt.eprintln("library: initialize directory structure:", err)
 		os.exit(1)
 	}
 
 	// Fail before replay rather than sharing the library with a live server.
 	if cfg.socket != "" && server.unix_socket_in_use(cfg.socket) {
-		log.fatalf("listen on unix socket %s: already in use by a running server", cfg.socket)
+		fmt.eprintfln("listen on unix socket %s: already in use by a running server", cfg.socket)
 		os.exit(1)
 	}
 
@@ -126,7 +116,7 @@ main :: proc() {
 		if fresh_store {
 			db, open_rc := sqlite.open(db_c_str)
 			if open_rc != sqlite.OK {
-				log.fatal("datastore type=sqlite open rebuild: failed w/ error code:", open_rc)
+				fmt.eprintln("datastore type=sqlite open rebuild: failed w/ error code:", open_rc)
 				os.exit(1)
 			}
 			rc := sqlite.exec(
@@ -145,11 +135,11 @@ main :: proc() {
 				nil,
 			)
 			if rc != sqlite.OK {
-				log.fatal("datastore type=sqlite configure rebuild: failed w/ error code:", rc)
+				fmt.eprintln("datastore type=sqlite configure rebuild: failed w/ error code:", rc)
 				os.exit(1)
 			}
 			if rc = store.create_tables(db); rc != sqlite.OK {
-				log.fatal("datastore type=sqlite create tables: failed w/ error code:", rc)
+				fmt.eprintln("datastore type=sqlite create tables: failed w/ error code:", rc)
 				os.exit(1)
 			}
 			state.data_store = db
@@ -161,7 +151,7 @@ main :: proc() {
 
 		rc := store.Init(&state, db_c_str)
 		if rc != 0 {
-			log.fatal("datastore type=sqlite open: failed w/ error code:", rc)
+			fmt.eprintln("datastore type=sqlite open: failed w/ error code:", rc)
 			os.exit(1)
 		}
 		// Existing stores assume older shards are fully applied. The append boundary
@@ -178,14 +168,16 @@ main :: proc() {
 			if err == nil {cursor.offset = info.size}
 			if replay.initiate_replay(&state, full_replay = false) == .SCHEMA_MISMATCH {
 				if STORE_DISCARDED_FOR_SCHEMA {
-					log.fatal("datastore type=sqlite: schema mismatch persists after rebuild")
+					fmt.eprintln("datastore type=sqlite: schema mismatch persists after rebuild")
 					os.exit(1)
 				}
 				STORE_DISCARDED_FOR_SCHEMA = true
-				log.warn("datastore type=sqlite: schema mismatch; discarding store and rebuilding")
+				fmt.eprintln(
+					"datastore type=sqlite: schema mismatch; discarding store and rebuilding",
+				)
 				store.Close(&state)
 				if err := os.remove(db_c); err != nil {
-					log.fatal("datastore type=sqlite: discard outdated store:", err)
+					fmt.eprintln("datastore type=sqlite: discard outdated store:", err)
 					os.exit(1)
 				}
 				continue
@@ -195,7 +187,7 @@ main :: proc() {
 	}
 	defer store.Close(&state)
 
-	log.infof(
+	fmt.eprintfln(
 		"Library initialized in %.2f ms: %s",
 		time.duration_milliseconds(time.since(load_start)),
 		cfg.library,
@@ -207,13 +199,13 @@ main :: proc() {
 
 		fd, open_err := os.open(source, {.Read}, os.Permissions_Default)
 		if open_err != nil {
-			log.fatalf("open Eagle images directory %s: %v", source, open_err)
+			fmt.eprintfln("open Eagle images directory %s: %v", source, open_err)
 			os.exit(1)
 		}
 
 		result := importers.eagle_import(source, &state, fd)
 		os.close(fd)
-		log.infof(
+		fmt.eprintfln(
 			"Eagle import: %d imported, %d missing metadata, %d read errors",
 			result.success,
 			result.missing,
@@ -239,14 +231,14 @@ main :: proc() {
 				prog_callback = cb,
 			}, thumbnail.startup_threaded_generate_missing_thumbnails)
 		if scan_thread == nil {
-			log.error("thumbnails: could not create scan thread")
+			fmt.eprintln("thumbnails: could not create scan thread")
 		}
 	}
 	defer {
 		if scan_thread != nil {thread.destroy(scan_thread)}
 	}
 
-	log.infof("total startup time=%v", fmt_timestamp(time.since(load_start)))
+	fmt.eprintfln("total startup time=%v", fmt_timestamp(time.since(load_start)))
 
 	// Bind last: the socket existing means the server is ready.
 	sock: net.TCP_Socket
@@ -254,7 +246,7 @@ main :: proc() {
 	if cfg.socket != "" {
 		err: string
 		if sock, err = server.listen_unix(cfg.socket); err != "" {
-			log.fatalf("listen on unix socket %s: %s", cfg.socket, err)
+			fmt.eprintfln("listen on unix socket %s: %s", cfg.socket, err)
 			os.exit(1)
 		}
 		accept = server.accept_unix
@@ -262,7 +254,7 @@ main :: proc() {
 		ep := net.Endpoint({net.IP4_Address{0, 0, 0, 0}, cfg.port})
 		err: net.Network_Error
 		if sock, err = net.listen_tcp(ep); err != nil {
-			log.fatal(err)
+			fmt.eprintln(err)
 			os.exit(1)
 		}
 	}

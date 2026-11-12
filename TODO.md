@@ -6,7 +6,7 @@ Harden flat parser: validation, boundaries, tests/fuzzing.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
 
 - [ ] Review existing replay panic/error states and thoroughly evaluate when a failed incremental replay (`full_replay = false`) can safely fall back to full replay.
-- [ ] Classify startup store errors and rebuild only when restartable. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
+- [ ] Classify startup store errors and rebuild only when restartable. Already done: a stale schema (missing columns, detected as `SCHEMA_MISMATCH` from `prepare_item_patch`) discards `store.sqlite` and rebuilds once per startup (`src/main.odin`). Remaining: `PRAGMA user_version` check, `SQLITE_CORRUPT`, and refusing non-restartable errors. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
 - [ ] Enforce the assumption that older event shards are fully applied: either deduplicate, clean, and compress historical shards so they are immutable (locked by convention), or check their persisted offsets against actual file lengths.
 
 - [ ] Test: `name` finalization (growth, shrink, clear, multibyte) trims NUL padding to the final name; order independence is covered by `steps_test.odin`.
@@ -30,8 +30,7 @@ Writes are log-first: handlers and Eagle import append events, then run incremen
 - [ ] Optional: CI/pre-commit check that nothing outside `replay` calls the store write procs or writes to the DB directly.
 - [ ] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
-- [ ] Remove `core:log` (still used in `src/main.odin` and `src/server/server.odin`); use `fmt.eprint*` instead.
-- [ ] Add a `handle_mipmap` case to `bench/handlers` to measure lookup and streaming throughput.
+- [x] Remove `core:log`; use `fmt.eprint*` instead.
 
 
 
