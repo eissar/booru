@@ -123,23 +123,21 @@
       geometry = measureMasonry(grid);
     }
 
-    // Flatten: unload packed columns back into the grid, then re-append the
-    // cards in canonical order.
     packedColumns = [];
     var packed = Array.from(grid.querySelectorAll(":scope > .masonry-column"));
-    for (var i = 0; i < packed.length; i++) {
-      var col = packed[i];
-      while (col.firstChild) insertBeforePagination(grid, col.firstChild);
-      col.remove();
-    }
-    for (var i = 0; i < cards.length; i++) {
-      cards[i].style.display = "";
-      insertBeforePagination(grid, cards[i]);
+
+    // Grid/list views render flat cards in canonical order.
+    if (columns === 0) {
+      for (var i = 0; i < cards.length; i++) {
+        cards[i].style.display = "";
+        insertBeforePagination(grid, cards[i]);
+      }
+      for (var i = 0; i < packed.length; i++) packed[i].remove();
+      return;
     }
 
-    // Grid/list views render flat cards; only masonry packs.
-    if (columns === 0) return;
-
+    // Masonry moves each card straight from wherever it is (an old column or
+    // the grid) into its new column; showNearbyCards then sets its display.
     var heights = [];
     for (var i = 0; i < columns; i++) {
       var col = document.createElement("div");
@@ -158,7 +156,9 @@
       packedColumns[shortest].cards.push(cards[i]);
       packedColumns[shortest].ratios.push(ratio);
       heights[shortest] += ratio;
+      if (!geometry) cards[i].style.display = "";
     }
+    for (var i = 0; i < packed.length; i++) packed[i].remove();
     if (geometry) showAroundAnchor(geometry);
   }
 
