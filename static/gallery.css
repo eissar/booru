@@ -853,6 +853,7 @@ html[data-theme='dark'] input::placeholder {
 .gallery-main {
     --inspector-width: min(24rem, 42vw);
 
+    position: relative;
     display: flex;
     width: 100vw;
     max-width: none;
@@ -917,24 +918,31 @@ html[data-theme='dark'] input::placeholder {
     scrollbar-gutter: stable;
 }
 
+/* Commit the final content width at once, then slide the inspector over the
+   freed space with a compositor-only transform. */
+.gallery-main.inspector-open .gallery-content {
+    margin-right: var(--inspector-width);
+}
+
 /* Inspector panel */
 .inspector {
     font-size: 0.875rem;
     line-height: 1.25rem;
-    flex: 0 0 auto;
-    width: 0;
-    min-width: 0;
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: var(--inspector-width);
     height: 100%;
     background-color: var(--bg-surface);
-    border-left: 0 solid var(--border-color-light);
+    border-left: 1px solid var(--border-color-light);
     overflow-x: hidden;
     overflow-y: auto;
-    transition: width 150ms ease-in-out, border-left-width 150ms ease-in-out;
+    transform: translateX(100%);
+    transition: transform 150ms ease-in-out;
 }
 
 .gallery-main.inspector-open .inspector {
-    width: var(--inspector-width);
-    border-left-width: 1px;
+    transform: none;
 }
 
 .inspector-inner {
@@ -1000,11 +1008,16 @@ html[data-theme='dark'] input::placeholder {
 }
 
 @media (width < 768px) {
+    .gallery-main.inspector-open .gallery-content {
+        margin-right: 0;
+    }
+
     .gallery-main .inspector {
         transition: none;
     }
 
     .inspector {
+        transform: none;
         display: none;
         position: fixed;
         inset: auto 0 0;
