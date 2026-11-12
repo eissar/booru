@@ -103,7 +103,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 - [ ] Replace JS default theme detection (`static/gallery.js`, `window.matchMedia("(prefers-color-scheme: dark)")`) and the `html:not([data-theme]) { visibility: hidden; }` render-blocking hack (`static/gallery.css`) with CSS `color-scheme: light dark` and `light-dark()` (or `@media (prefers-color-scheme: dark)`), keeping JS only for explicit `localStorage` user overrides.
 - [ ] Replace the Inspector tag-edit input toggle (`src/template/inspector.odin`, `data-hx-on-click` toggling `.hidden` and calling `.focus()`) with a native `popover` and `autofocus` on the `<input>`.
-- [ ] Replace the custom drag-and-drop upload handlers (`src/template/gallery_page.odin`, `data-hx-on-dragover`/`dragleave`/`drop` on `#upload-form`) by letting `<input type="file">` act as the native drop target.
+- [x] Replace the custom drag-and-drop upload handlers (`src/template/gallery_page.odin`, `data-hx-on-dragover`/`dragleave`/`drop` on `#upload-form`) by letting `<input type="file">` act as the native drop target.
 - [ ] Replace JS Inspector open/close class toggling (`src/template/gallery_page.odin`, `data-hx-on::after-swap` / `booruToggleInspector`) with CSS `:has()` + `:empty` (e.g. `#gallery-main:has(#inspector-content:not(:empty))`) or `popover` (keeping JS only if `localStorage` persistence across reloads is still desired).
 - [ ] Remove dead `body.light-mode` and `body.dark-mode` CSS rules and duplicate variable blocks in `static/gallery.css` (lines 48, 67, 86–120, 336–341, 364–418); theming uses `html[data-theme='light'|'dark']`.
 - [ ] Consolidate the three separate `DOMContentLoaded` listeners in `static/gallery.js`.

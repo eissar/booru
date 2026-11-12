@@ -980,3 +980,23 @@ document.addEventListener("click", function (event) {
     }
   });
 });
+
+(function () {
+  var dragTimer;
+  window.addEventListener("dragover", function (event) {
+    if (!event.dataTransfer || !event.dataTransfer.types.length) return;
+    event.preventDefault();
+    document.documentElement.classList.add("is-dragging");
+    var uploadDetails = document.getElementById("upload-button")?.closest("details");
+    if (uploadDetails) uploadDetails.open = true;
+    clearTimeout(dragTimer);
+    dragTimer = setTimeout(function () {
+      document.documentElement.classList.remove("is-dragging");
+    }, 150);
+  });
+  window.addEventListener("drop", function (event) {
+    event.preventDefault();
+    clearTimeout(dragTimer);
+    document.documentElement.classList.remove("is-dragging");
+  });
+})();
