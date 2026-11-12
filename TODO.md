@@ -30,7 +30,7 @@ Writes are log-first: handlers and Eagle import append events, then run incremen
 // Rebuild path defers indexes and runs with foreign_keys = OFF because we trust event log writes.
 // Consider running `PRAGMA foreign_key_check` after bulk insert if we ever stop trusting the event log.
 - [ ] Optional: CI/pre-commit check that nothing outside `replay` calls the store write procs or writes to the DB directly.
-- [x] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
+- [x] Normalize tags in the web handlers. Eagle import lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_update_metadata` (`src/server/handlers.odin`) normalizes with `lowercase_and_dash_whitespace` and rejects anything else outside `is_allowed_tag_char`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
 - [x] Remove `core:log`; use `fmt.eprint*` instead.
 

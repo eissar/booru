@@ -77,7 +77,9 @@ patch_fold_all_triples :: proc(t: ^testing.T) {
 							state.mtime == max(a.mtime, b.mtime, c.mtime) &&
 							state.added_at == max(a.added_at, b.added_at, c.added_at)
 						for tag in 0 ..< 4 {
-							mem := tag < len(state.tags) && state.tags[tag] != 0
+							word :=
+								state.tags.allocator.procedure == nil ? (^u64)(&state.tags)^ : (len(state.tags) > 0 ? state.tags[0] : 0)
+							mem := (word & (u64(1) << u64(tag))) != 0
 							ok &&= mem == ((a.tag == tag) != (b.tag == tag) != (c.tag == tag))
 						}
 						for i in 0 ..< 4 {
