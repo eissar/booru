@@ -6,10 +6,17 @@
 // the current view mode, and --masonry-columns. No state is carried between
 // runs, so the same cards always pack the same way no matter which events
 // led here (load more, delete, resize), or in what order they fired.
+//
+// Packed columns then render only the cards near the viewport: the rest stay
+// in place with display: none, and column padding stands in for their height.
 
 (function () {
   var syncQueued = false;
   var lastSyncKey = null;
+  // The current masonry columns as packed by syncMasonry: { el, cards, ratios }.
+  var packedColumns = [];
+  var cardSlotHeight = 0;
+  var nearbyQueued = false;
 
   function getGrid() {
     return document.getElementById("photo-grid");
@@ -60,12 +67,13 @@
   }
 
   // The sync key is the canonical spec of the layout: view, column count,
-  // and each card's (order, image id) in canonical sequence. It is stable
+  // and each card's (order, image id, ratio) in canonical sequence. It is stable
   // across pack/unpack, so repeated triggers after a no-op settle skip.
   function buildSyncKey(view, columns, cards) {
     var parts = [];
     for (var i = 0; i < cards.length; i++) {
-      parts.push(cardOrder(cards[i]) + ":" + cards[i].getAttribute("data-image-id"));
+      parts.push(cardOrder(cards[i]) + ":" + cards[i].getAttribute("data-image-id") +
+        ":" + cardRatio(cards[i]));
     }
     return view + "|" + columns + "|" + parts.join(",");
   }
@@ -85,35 +93,89 @@
     if (key === lastSyncKey && packedColumnsMatch(grid, columns)) return;
     lastSyncKey = key;
 
+    // Measure before any DOM writes. Every card shares the same-height
+    // metadata slot below its image, so any rendered card gives its height.
+    var geometry = null;
+    for (var i = 0; columns > 0 && !geometry && i < cards.length; i++) {
+      if (cards[i].style.display === "none") continue;
+      var rect = cards[i].getBoundingClientRect();
+      if (!rect.height) continue;
+      cardSlotHeight = rect.height - rect.width * cardRatio(cards[i]);
+      geometry = measureMasonry(grid);
+    }
+
     // Flatten: unload packed columns back into the grid, then re-append the
     // cards in canonical order.
+    packedColumns = [];
     var packed = Array.from(grid.querySelectorAll(":scope > .masonry-column"));
     for (var i = 0; i < packed.length; i++) {
       var col = packed[i];
       while (col.firstChild) insertBeforePagination(grid, col.firstChild);
       col.remove();
     }
-    for (var i = 0; i < cards.length; i++) insertBeforePagination(grid, cards[i]);
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].style.display = "";
+      insertBeforePagination(grid, cards[i]);
+    }
 
     // Grid/list views render flat cards; only masonry packs.
     if (columns === 0) return;
 
-    var cols = [];
+    var heights = [];
     for (var i = 0; i < columns; i++) {
       var col = document.createElement("div");
       col.className = "masonry-column";
       insertBeforePagination(grid, col);
-      cols.push(col);
+      packedColumns.push({ el: col, cards: [], ratios: [] });
+      heights.push(0);
     }
-    var heights = [];
-    for (var i = 0; i < columns; i++) heights.push(0);
     for (var i = 0; i < cards.length; i++) {
       var shortest = 0;
       for (var j = 1; j < columns; j++) {
         if (heights[j] < heights[shortest]) shortest = j;
       }
-      cols[shortest].appendChild(cards[i]);
-      heights[shortest] += cardRatio(cards[i]);
+      var ratio = cardRatio(cards[i]);
+      packedColumns[shortest].el.appendChild(cards[i]);
+      packedColumns[shortest].cards.push(cards[i]);
+      packedColumns[shortest].ratios.push(ratio);
+      heights[shortest] += ratio;
+    }
+    if (geometry) showNearbyCards(geometry);
+  }
+
+  // Reads what showNearbyCards needs. Callers measure before writing to the
+  // DOM, so the browser never lays out collapsed columns and clamps scrollTop.
+  function measureMasonry(grid) {
+    var port = grid.closest(".main-content");
+    if (!port) return null;
+    var style = getComputedStyle(grid);
+    var top = port.getBoundingClientRect().top + port.clientTop -
+      grid.getBoundingClientRect().top;
+    return {
+      top: top - port.clientHeight,
+      bottom: top + 2 * port.clientHeight,
+      width: parseFloat(style.gridTemplateColumns),
+      gap: parseFloat(style.rowGap),
+    };
+  }
+
+  // Renders the cards within one viewport of the visible area. A card's height
+  // is its image (column width × ratio) plus the metadata slot.
+  function showNearbyCards(geometry) {
+    for (var c = 0; c < packedColumns.length; c++) {
+      var col = packedColumns[c], y = 0, start = -1, end = 0;
+      for (var i = 0; i < col.cards.length; i++) {
+        var h = geometry.width * col.ratios[i] + cardSlotHeight;
+        var near = y < geometry.bottom && y + h > geometry.top;
+        if (near && start < 0) start = y;
+        if (near) end = y + h;
+        var display = near ? "" : "none";
+        if (col.cards[i].style.display !== display) col.cards[i].style.display = display;
+        y += h + geometry.gap;
+      }
+      var height = Math.max(0, y - geometry.gap);
+      col.el.style.paddingTop = (start < 0 ? height : start) + "px";
+      col.el.style.paddingBottom = (start < 0 ? 0 : height - end) + "px";
     }
   }
 
@@ -747,6 +809,19 @@
 
   // Triggers. Each one is dumb: it only requests a sync.
   document.addEventListener("htmx:afterSettle", scheduleMasonrySync);
+
+  // Scrolling only changes which packed cards are near the viewport.
+  document.addEventListener("scroll", function (event) {
+    var grid = getGrid();
+    if (nearbyQueued || !packedColumns.length || !grid ||
+        event.target !== grid.closest(".main-content")) return;
+    nearbyQueued = true;
+    requestAnimationFrame(function () {
+      nearbyQueued = false;
+      var geometry = getGrid() && measureMasonry(getGrid());
+      if (geometry) showNearbyCards(geometry);
+    });
+  }, true);
 
   ["(min-width: 768px)", "(min-width: 1024px)", "(min-width: 1280px)"].forEach(
     function (query) {

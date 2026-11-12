@@ -2,8 +2,8 @@
 // Run: node test/tools/gallery-virtual.mjs (CHROME_BIN overrides chromium).
 //
 // The real gallery runs in an iframe; resizing the iframe drives breakpoints. A sweep scrolls
-// the whole gallery and checks, from what is mounted at each step:
-// - only a bounded subset of cards is in the DOM, and it covers the viewport
+// the whole gallery and checks, from what is rendered at each step:
+// - only a bounded subset of cards is rendered, and it covers the viewport
 // - cards never move while scrolling
 // - every card shows up, in the column the masonry rule picks, directly below
 //   the previous card in that column
@@ -37,7 +37,8 @@ const frame = () => new Promise((r) => f.contentWindow.requestAnimationFrame(() 
 const doc = () => f.contentDocument;
 const port = () => doc().querySelector('.main-content');
 const grid = () => doc().getElementById('photo-grid');
-const mounted = () => [...grid().querySelectorAll('.masonry-item')];
+const cards = () => grid().querySelectorAll('.masonry-item');
+const rendered = () => [...cards()].filter((el) => el.getClientRects().length);
 const card0 = () => grid().querySelector('[data-image-id="0"]');
 const fire = (type, detail) => doc().dispatchEvent(new CustomEvent(type, {bubbles: true, detail}));
 async function load(width = 1280, h = 900) {
@@ -54,7 +55,7 @@ function viewport() {
 }
 function boxes() {
  const g = grid().getBoundingClientRect(), out = new Map();
- for (const el of mounted()) {
+ for (const el of rendered()) {
   const r = el.getBoundingClientRect();
   if (r.height) out.set(Number(el.dataset.imageId), [r.left - g.left, r.top - g.top, r.height]);
  }
@@ -62,7 +63,7 @@ function boxes() {
 }
 function assertCovered(layout, label) {
  const [lo, hi] = viewport(), here = boxes();
- for (const [id, [, top, h]] of layout) if (top < hi && top + h > lo) assert(here.has(id), label + ': visible card ' + id + ' not mounted');
+ for (const [id, [, top, h]] of layout) if (top < hi && top + h > lo) assert(here.has(id), label + ': visible card ' + id + ' not rendered');
 }
 
 async function sweep(ids, label) {
@@ -71,7 +72,7 @@ async function sweep(ids, label) {
   port().scrollTop = y;
   await frame();
   const here = boxes();
-  assert(mounted().length < ids.length, label + ': ' + mounted().length + ' of ' + ids.length + ' cards in the DOM');
+  assert(rendered().length < ids.length, label + ': ' + rendered().length + ' of ' + ids.length + ' cards rendered');
   for (const [id, box] of here) {
    const seen = layout.get(id);
    assert(!seen || seen.every((v, k) => Math.abs(v - box[k]) < 0.5), label + ': card ' + id + ' moved while scrolling');
@@ -82,7 +83,7 @@ async function sweep(ids, label) {
  }
  assert(layout.size === ids.length, label + ': saw ' + layout.size + ' of ' + ids.length + ' cards');
  for (const [[lo, hi], here] of steps)
-  for (const [id, [, top, h]] of layout) if (top < hi && top + h > lo) assert(here.has(id), label + ': visible card ' + id + ' not mounted');
+  for (const [id, [, top, h]] of layout) if (top < hi && top + h > lo) assert(here.has(id), label + ': visible card ' + id + ' not rendered');
 
  const columns = Number(getComputedStyle(grid()).getPropertyValue('--masonry-columns'));
  const gap = parseFloat(getComputedStyle(grid()).columnGap);
@@ -112,11 +113,11 @@ const ids = (n) => Array.from({length: n}, (_, i) => i);
 
 const sections = [
  ['scroll at 5 columns', async () => { await load(); await sweep(ids(N), '1280'); }],
- ['far cards unmount and remount as the same node', async () => {
+ ['far cards stop rendering and come back as the same node', async () => {
   await load();
   const node = card0();
   port().scrollTop = port().scrollHeight; await frame();
-  assert(!node.isConnected, 'card 0 still mounted at the end');
+  assert(!node.getClientRects().length, 'card 0 still rendered at the end');
   port().scrollTop = 0; await frame();
   assert(card0() === node, 'card 0 came back as a different node');
  }],
@@ -136,17 +137,17 @@ const sections = [
   doc().getElementById('inspector').classList.add('open'); await frame();
   await sweep(ids(N), 'inspector open');
  }],
- ['taller viewport mounts newly visible cards without scrolling', async () => {
+ ['taller viewport renders newly visible cards without scrolling', async () => {
   await load(1280, 600);
   const layout = await sweep(ids(N), '600 tall');
   port().scrollTop = port().scrollHeight / 2; await frame();
   await resize(1280, 1400);
   assertCovered(layout, '600->1400 tall');
  }],
- ['grid view mounts every card; masonry returns', async () => {
+ ['grid view renders every card; masonry returns', async () => {
   await load();
   doc().getElementById('gallery-view-grid').click(); await frame();
-  assert(mounted().length === N, 'grid view: ' + mounted().length + ' of ' + N);
+  assert(rendered().length === N, 'grid view: ' + rendered().length + ' of ' + N + ' rendered');
   doc().getElementById('gallery-view-masonry').click(); await frame();
   await sweep(ids(N), 'back to masonry');
  }],
@@ -155,7 +156,7 @@ const sections = [
   port().scrollTop = port().scrollHeight / 2; await frame();
   const before = port().scrollTop;
   fire('htmx:beforeRequest');
-  assert(mounted().length === N, 'during request: ' + mounted().length + ' of ' + N);
+  assert(cards().length === N, 'during request: ' + cards().length + ' of ' + N + ' in the DOM');
   fire('htmx:afterRequest', {successful: true}); fire('htmx:beforeSwap');
   doc().getElementById('pagination-controls').insertAdjacentHTML('beforebegin', card(N));
   fire('htmx:afterSettle'); await frame();
