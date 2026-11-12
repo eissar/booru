@@ -1,11 +1,11 @@
-package gallery_zoom_bench
+package breakpoint_reflow_bench
 
 // Masonry column-count transitions on a large gallery, driven over CDP in
 // headless Chromium (SwiftShader). The page is template.render_gallery_page
 // with CARDS synthetic images; /static/* is served from ./static, everything
 // else (/image, /mipmap) is 404, so no thumbnails or image decode are measured.
 // Run from the repo root; needs chromium and libcurl:
-//   odin test bench/gallery_zoom -define:CARDS=400 -define:RUNS=5
+//   odin test bench/breakpoint_reflow -define:CARDS=400 -define:RUNS=5
 //
 // Start: 1400x900 CSS px, 5 columns. zoom-in: 1120x720 @ dsf 1.25 (125% zoom of
 // a 1400 device-px window), 4 columns. zoom-out: back, 5 columns.
@@ -162,7 +162,7 @@ transition :: proc(to: Metrics, want: int) -> [len(FIELDS)]f64 {
 }
 
 @(test)
-bench_gallery_zoom :: proc(t: ^testing.T) {
+bench_breakpoint_reflow :: proc(t: ^testing.T) {
 	images := make([]library.Image, CARDS)
 	defer delete(images)
 	for &image, i in images {
@@ -317,7 +317,7 @@ bench_gallery_zoom :: proc(t: ^testing.T) {
 	idle()
 
 	fmt.printf(
-		"bench=gallery-zoom cards=%d runs=%d browser=%q\n",
+		"bench=breakpoint-reflow cards=%d runs=%d browser=%q\n",
 		CARDS,
 		RUNS,
 		version["Browser"].(json.String),
@@ -336,7 +336,7 @@ bench_gallery_zoom :: proc(t: ^testing.T) {
 		for run in 0 ..< RUNS {rates[run] = CARDS / results[i][0][run] * 1000}
 		slice.sort(rates[:])
 		fmt.printf(
-			"bench=gallery-zoom case=%q cards_per_sec=%.0f best_cards_per_sec=%.0f worst_cards_per_sec=%.0f",
+			"bench=breakpoint-reflow case=%q cards_per_sec=%.0f best_cards_per_sec=%.0f worst_cards_per_sec=%.0f",
 			name,
 			rates[RUNS / 2],
 			rates[RUNS - 1],
