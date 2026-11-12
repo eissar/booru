@@ -24,6 +24,7 @@ Fullbox_Version :: enum u8 {
 }
 
 // Box size includes the header. Unlike RIFF, boxes have no even-byte padding.
+@(private = "file")
 parse_avif_box_header :: proc(data: []u8) -> (cc: AVIF_Box_Type, size, header_sz: int, ok: bool) {
 	if len(data) < 8 {return}
 	fourcc := [4]u8{data[4], data[5], data[6], data[7]}
@@ -59,11 +60,13 @@ parse_avif_box_header :: proc(data: []u8) -> (cc: AVIF_Box_Type, size, header_sz
 	return cc, int(box_size), header_sz, true
 }
 
+@(private = "file")
 AVIF_Box_Iterator :: struct {
 	data:   []u8,
 	offset: int,
 }
 
+@(private = "file")
 next_box :: proc(iter: ^AVIF_Box_Iterator) -> (kind: AVIF_Box_Type, payload: []u8, ok: bool) {
 	if iter.offset == len(iter.data) {return .EOF, nil, true}
 	cc, size, header := parse_avif_box_header(iter.data[iter.offset:]) or_return
@@ -77,7 +80,7 @@ next_box :: proc(iter: ^AVIF_Box_Iterator) -> (kind: AVIF_Box_Type, payload: []u
 // Returns the primary item's file-relative byte range. Assumes a directly
 // coded AV1 image; accepts one file-relative extent with no external reference.
 // The decoder returns .Unsupported for non-8-bit/I420 images.
-decode :: proc(data: []u8) -> (offset, length, alpha_offset, alpha_length: int, ok: bool) {
+avif_decode :: proc(data: []u8) -> (offset, length, alpha_offset, alpha_length: int, ok: bool) {
 	pitm, iloc: []u8
 	alpha_property_index: int
 	alpha_id: u32
