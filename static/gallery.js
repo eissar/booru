@@ -16,7 +16,19 @@
   // The current masonry columns as packed by syncMasonry: { el, cards, ratios }.
   var packedColumns = [];
   var cardSlotHeight = 0;
+  var anchorCard = null, anchorOffset = 0;
   var nearbyQueued = false;
+  // Window and inspector resizes both reflow the scrollport. That cannot change
+  // the cards, only their geometry: repack for a new column count, otherwise
+  // relayout in place.
+  var portSize = new ResizeObserver(function () {
+    var grid = getGrid();
+    if (!grid || !packedColumns.length) return;
+    if (columnCount(grid) !== packedColumns.length) return scheduleMasonrySync();
+    var geometry = measureMasonry(grid);
+    if (geometry) showAroundAnchor(geometry);
+  });
+  var observedPort = null;
 
   function getGrid() {
     return document.getElementById("photo-grid");
@@ -93,6 +105,13 @@
     if (key === lastSyncKey && packedColumnsMatch(grid, columns)) return;
     lastSyncKey = key;
 
+    var port = grid.closest(".main-content");
+    if (port !== observedPort) {
+      portSize.disconnect();
+      if (port) portSize.observe(port);
+      observedPort = port;
+    }
+
     // Measure before any DOM writes. Every card shares the same-height
     // metadata slot below its image, so any rendered card gives its height.
     var geometry = null;
@@ -140,7 +159,29 @@
       packedColumns[shortest].ratios.push(ratio);
       heights[shortest] += ratio;
     }
-    if (geometry) showNearbyCards(geometry);
+    if (geometry) showAroundAnchor(geometry);
+  }
+
+  // Renders around the anchor's predicted top, then scrolls it back to its
+  // offset. The anchor comes from the last showNearbyCards: by now a resize
+  // has already laid out stale columns. Assign scrollTop outright, since
+  // browser scroll anchoring may have adjusted it too.
+  function showAroundAnchor(geometry) {
+    var visibleTop = geometry.visibleTop, anchored = false;
+    for (var c = 0; anchorCard && c < packedColumns.length; c++) {
+      var col = packedColumns[c], index = col.cards.indexOf(anchorCard);
+      if (index < 0) continue;
+      var y = 0;
+      for (var i = 0; i < index; i++) {
+        y += geometry.width * col.ratios[i] + cardSlotHeight + geometry.gap;
+      }
+      geometry.visibleTop = y - anchorOffset;
+      anchored = true;
+    }
+    showNearbyCards(geometry);
+    if (anchored) {
+      geometry.port.scrollTop = geometry.scrollTop + geometry.visibleTop - visibleTop;
+    }
   }
 
   // Reads what showNearbyCards needs. Callers measure before writing to the
@@ -149,28 +190,38 @@
     var port = grid.closest(".main-content");
     if (!port) return null;
     var style = getComputedStyle(grid);
-    var top = port.getBoundingClientRect().top + port.clientTop -
-      grid.getBoundingClientRect().top;
     return {
-      top: top - port.clientHeight,
-      bottom: top + 2 * port.clientHeight,
+      port: port,
+      scrollTop: port.scrollTop,
+      visibleTop: port.getBoundingClientRect().top + port.clientTop -
+        grid.getBoundingClientRect().top,
+      height: port.clientHeight,
       width: parseFloat(style.gridTemplateColumns),
       gap: parseFloat(style.rowGap),
     };
   }
 
   // Renders the cards within one viewport of the visible area. A card's height
-  // is its image (column width × ratio) plus the metadata slot.
+  // is its image (column width × ratio) plus the metadata slot. Also records
+  // the anchor: the highest card whose top is in the viewport.
   function showNearbyCards(geometry) {
+    anchorCard = null;
     for (var c = 0; c < packedColumns.length; c++) {
       var col = packedColumns[c], y = 0, start = -1, end = 0;
       for (var i = 0; i < col.cards.length; i++) {
         var h = geometry.width * col.ratios[i] + cardSlotHeight;
-        var near = y < geometry.bottom && y + h > geometry.top;
+        var near = y < geometry.visibleTop + 2 * geometry.height &&
+          y + h > geometry.visibleTop - geometry.height;
         if (near && start < 0) start = y;
         if (near) end = y + h;
         var display = near ? "" : "none";
         if (col.cards[i].style.display !== display) col.cards[i].style.display = display;
+        var offset = y - geometry.visibleTop;
+        if (offset >= 0 && offset < geometry.height &&
+            (!anchorCard || offset < anchorOffset)) {
+          anchorCard = col.cards[i];
+          anchorOffset = offset;
+        }
         y += h + geometry.gap;
       }
       var height = Math.max(0, y - geometry.gap);
