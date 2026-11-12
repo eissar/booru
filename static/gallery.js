@@ -944,13 +944,6 @@
 })();
 
 (function () {
-  globalThis.booruToggleInspector = function (forceOpen) {
-    var main = document.getElementById("gallery-main");
-    if (!main) return;
-    var state = main.classList.toggle("inspector-open", forceOpen);
-    localStorage.setItem("inspector-open", String(state));
-  };
-
   // booruShowLocalToast appends a client-side toast to #toasts-log, cloned
   // from #toast-template. level is a booru-toast-[level] modifier
   // ("success", "error"); omit it for the default style.

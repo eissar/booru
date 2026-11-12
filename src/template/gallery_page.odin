@@ -140,10 +140,7 @@ render_gallery_page :: proc(
 	)
 	wr(&b, " class=\"antialiased\" hx-ext=\"response-targets\">")
 	write_toolbar(&b, filter)
-	wr(
-		&b,
-		"<main id=\"gallery-main\" class=\"gallery-main main-scroll\"><script>try{if(localStorage.getItem('inspector-open')==='true')document.getElementById('gallery-main')?.classList.add('inspector-open')}catch(_){}</script>",
-	)
+	wr(&b, "<main id=\"gallery-main\" class=\"gallery-main main-scroll\">")
 	wr(&b, render_gallery_content(filter, images, has_more))
 	write_inspector_shell(&b)
 	wr(
@@ -246,6 +243,6 @@ write_select :: proc(b: ^strings.Builder, id, name: string, options: []Select_Op
 write_inspector_shell :: proc(b: ^strings.Builder) {
 	wr(
 		b,
-		"<aside id=\"inspector\" class=\"inspector shrink-0\"><div class=\"inspector-inner flex h-full flex-col\"><header class=\"inspector-header shrink-0\"><div class=\"min-w-0\"><h2 class=\"truncate font-semibold\">Inspector</h2><p class=\"text-muted\">Image details</p></div><div class=\"ml-auto flex items-center gap-1\"><button type=\"button\" class=\"rounded p-1 hover-surface\" data-hx-on-click=\"booruToggleInspector(false)\"><img src=\"/static/icons/x-mark.svg\" class=\"h-4 w-4\" style=\"filter: var(--icon-filter);\" alt=\"Close\"/></button></div></header><div id=\"inspector-content\" class=\"inspector-body min-h-0 flex-1 overflow-y-auto\" data-hx-on::after-swap=\"document.getElementById('gallery-main')?.classList.add('inspector-open')\"></div></div></aside>",
+		"<aside id=\"inspector\" class=\"inspector shrink-0\"><div class=\"inspector-inner flex h-full flex-col\"><header class=\"inspector-header shrink-0\"><div class=\"min-w-0\"><h2 class=\"truncate font-semibold\">Inspector</h2><p class=\"text-muted\">Image details</p></div><div class=\"ml-auto flex items-center gap-1\"><button type=\"button\" class=\"rounded p-1 hover-surface\" data-hx-on-click=\"document.getElementById('inspector-content').innerHTML=''\"><img src=\"/static/icons/x-mark.svg\" class=\"h-4 w-4\" style=\"filter: var(--icon-filter);\" alt=\"Close\"/></button></div></header><div id=\"inspector-content\" class=\"inspector-body min-h-0 flex-1 overflow-y-auto\"></div></div></aside>",
 	)
 }

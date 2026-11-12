@@ -837,7 +837,7 @@ html[data-theme='dark'] input::placeholder {
 
 /* Commit the final content width at once, then slide the inspector over the
    freed space with a compositor-only transform. */
-.gallery-main.inspector-open .gallery-content {
+.gallery-main:has(#inspector-content:not(:empty)) .gallery-content {
     margin-right: var(--inspector-width);
 }
 
@@ -858,7 +858,7 @@ html[data-theme='dark'] input::placeholder {
     transition: transform 150ms ease-in-out;
 }
 
-.gallery-main.inspector-open .inspector {
+.gallery-main:has(#inspector-content:not(:empty)) .inspector {
     transform: none;
 }
 
@@ -925,7 +925,7 @@ html[data-theme='dark'] input::placeholder {
 }
 
 @media (width < 768px) {
-    .gallery-main.inspector-open .gallery-content {
+    .gallery-main:has(#inspector-content:not(:empty)) .gallery-content {
         margin-right: 0;
     }
 
@@ -944,7 +944,7 @@ html[data-theme='dark'] input::placeholder {
         overflow: hidden;
     }
 
-    .gallery-main.inspector-open .inspector {
+    .gallery-main:has(#inspector-content:not(:empty)) .inspector {
         display: block;
         width: 100%;
         border-left-width: 0;
