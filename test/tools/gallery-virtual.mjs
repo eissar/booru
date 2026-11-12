@@ -86,7 +86,9 @@ async function sweep(ids, label) {
   for (const [id, [, top, h]] of layout) if (top < hi && top + h > lo) assert(here.has(id), label + ': visible card ' + id + ' not rendered');
 
  const columns = Number(getComputedStyle(grid()).getPropertyValue('--masonry-columns'));
- const gap = parseFloat(getComputedStyle(grid()).columnGap);
+ const gap = parseFloat(getComputedStyle(grid()).rowGap);
+ const width = parseFloat(getComputedStyle(grid()).gridTemplateColumns);
+ const slot = rendered()[0].querySelector('.gallery-card-slot').getBoundingClientRect().height;
  const lefts = [...new Set([...layout.values()].map((b) => Math.round(b[0])))].sort((a, b) => a - b);
  assert(lefts.length === columns, label + ': ' + lefts.length + ' column positions for ' + columns + ' columns');
  const weight = Array(columns).fill(0), bottom = Array(columns).fill(-gap);
@@ -96,7 +98,7 @@ async function sweep(ids, label) {
   const [left, top, h] = layout.get(id);
   assert(Math.round(left) === lefts[s], label + ': card ' + id + ' not in column ' + s);
   assert(Math.abs(top - bottom[s] - gap) < 1, label + ': card ' + id + ' at ' + top + ', expected ' + (bottom[s] + gap));
-  weight[s] += height(id) / 600;
+  weight[s] += width * (height(id) / 600) + slot + gap;
   bottom[s] = top + h;
  }
  const end = grid().getBoundingClientRect().height, tallest = Math.max(...bottom);
@@ -131,6 +133,23 @@ const sections = [
    assert(now && Math.abs(now[1] - viewport()[0] - offset) < 1, 'card ' + id + ' moved from ' + offset + ' after resize to ' + width);
   }
   await sweep(ids(N), '1280->1100->1200');
+ }],
+ ['same-column-count width resize repacks', async () => {
+  await load(1024);
+  const before = await sweep(ids(N), '1024');
+  await resize(1279);
+  const after = await sweep(ids(N), '1279');
+  const beforeLefts = [...new Set([...before.values()].map((b) => Math.round(b[0])))].sort((a, b) => a - b);
+  const afterLefts = [...new Set([...after.values()].map((b) => Math.round(b[0])))].sort((a, b) => a - b);
+  assert(beforeLefts.length === afterLefts.length, 'column count changed');
+  assert([...before].some(([id, box]) => beforeLefts.indexOf(Math.round(box[0])) !==
+   afterLefts.indexOf(Math.round(after.get(id)[0]))), 'no card changed columns');
+ }],
+ ['deletion repacks in canonical order', async () => {
+  await load();
+  grid().querySelector('[data-image-id="3"]').remove();
+  fire('htmx:afterSettle'); await frame();
+  await sweep(ids(N).filter((id) => id !== 3), 'after deletion');
  }],
  ['container narrows without a window resize', async () => {
   await load();
