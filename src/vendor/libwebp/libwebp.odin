@@ -86,6 +86,7 @@ WebPMemoryWriter :: struct {
 
 foreign webp {
 	WebPEncodeRGB :: proc(rgb: ^u8, width, height, stride: c.int, quality: c.float, output: ^^u8) -> c.size_t ---
+	WebPGetInfo :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int) -> c.int ---
 	WebPDecodeYUV :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int, u, v: ^^u8, stride, uv_stride: ^c.int) -> ^u8 ---
 	WebPDecodeRGBA :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int) -> [^]u8 ---
 	WebPFree :: proc(p: rawptr) ---

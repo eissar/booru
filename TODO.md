@@ -30,7 +30,7 @@ Writes are log-first: handlers and Eagle import append events, then run incremen
 // Rebuild path defers indexes and runs with foreign_keys = OFF because we trust event log writes.
 // Consider running `PRAGMA foreign_key_check` after bulk insert if we ever stop trusting the event log.
 - [ ] Optional: CI/pre-commit check that nothing outside `replay` calls the store write procs or writes to the DB directly.
-- [ ] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
+- [x] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
 - [x] Remove `core:log`; use `fmt.eprint*` instead.
 
@@ -68,7 +68,8 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 # Media Decode TODO
 
-- [ ] Check dimensions before decoding and skip oversized thumbnail inputs with a documented pixel-count limit and clear log.
+- [x] Check dimensions before decoding and skip oversized thumbnail inputs with a documented pixel-count limit and clear log (`8192 * 8192` in `src/media/decode.odin`, `src/thumbnail/generate.odin`).
+- [ ] Non-bounded thumbnail generation unimplemented (images over `8192 * 8192` pixels are skipped).
 
 
 # Thumbnail Preview TODO
@@ -101,8 +102,8 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 # Frontend / Native Browser TODO
 
-- [ ] Replace JS default theme detection (`static/gallery.js`, `window.matchMedia("(prefers-color-scheme: dark)")`) and the `html:not([data-theme]) { visibility: hidden; }` render-blocking hack (`static/gallery.css`) with CSS `color-scheme: light dark` and `light-dark()` (or `@media (prefers-color-scheme: dark)`), keeping JS only for explicit `localStorage` user overrides.
-- [ ] Replace the Inspector tag-edit input toggle (`src/template/inspector.odin`, `data-hx-on-click` toggling `.hidden` and calling `.focus()`) with a native `popover` and `autofocus` on the `<input>`.
+- [-] Replace JS default theme detection (`static/gallery.js`, `window.matchMedia("(prefers-color-scheme: dark)")`) and the `html:not([data-theme]) { visibility: hidden; }` render-blocking hack (`static/gallery.css`) with CSS `color-scheme: light dark` and `light-dark()` (or `@media (prefers-color-scheme: dark)`), keeping JS only for explicit `localStorage` user overrides. (Current impl has better browser support.)
+- [x] Replace the Inspector tag-edit input toggle (`src/template/inspector.odin`, `data-hx-on-click` toggling `.hidden` and calling `.focus()`) with a native `popover` and `autofocus` on the `<input>`.
 - [x] Replace the custom drag-and-drop upload handlers (`src/template/gallery_page.odin`, `data-hx-on-dragover`/`dragleave`/`drop` on `#upload-form`) by letting `<input type="file">` act as the native drop target.
 - [x] Replace JS Inspector open/close class toggling (`src/template/gallery_page.odin`, `data-hx-on::after-swap` / `booruToggleInspector`) with CSS `:has()` + `:empty` (e.g. `#gallery-main:has(#inspector-content:not(:empty))`) or `popover` (keeping JS only if `localStorage` persistence across reloads is still desired).
 - [ ] Consider retaining inspector in DOM.

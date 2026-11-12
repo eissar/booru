@@ -26,10 +26,14 @@ Decoded_Dav1d_YUV :: struct {
 	picture:       dav1d.Dav1dPicture,
 }
 
+// 8K^2 pixel limit (~256 MiB RGBA) for thumbnail source decoding.
+MAX_THUMBNAIL_SOURCE_PIXELS :: 8192 * 8192
+
 Decode_Error :: enum {
 	None,
 	Failed,
 	Unsupported,
+	Too_Large,
 }
 
 // Takes extracted AV1 bytes, not an AVIF container. Accepts 8-bit I420 or I400.
@@ -47,7 +51,7 @@ decode_yuv_dav1d :: proc(
 
 	settings: dav1d.Dav1dSettings
 	dav1d.dav1d_default_settings(&settings)
-	// TODO: Set a thumbnail source pixel-count limit via settings.frame_size_limit.
+	settings.frame_size_limit = MAX_THUMBNAIL_SOURCE_PIXELS
 
 	decoder: ^dav1d.Dav1dContext
 	if dav1d.dav1d_open(&decoder, &settings) < 0 {return {}, .Failed}
@@ -102,9 +106,20 @@ decode_rgba :: proc(data: []u8) -> (img: Decoded_ARGB, err: Decode_Error) {
 	p, n, w, h := raw_data(data), len(data), &img.width, &img.height
 	#partial switch format {
 	case .WebP:
+		if libwebp.WebPGetInfo(p, c.size_t(n), w, h) == 0 {return {}, .Failed}
+		if img.width <= 0 || img.height <= 0 {return {}, .Failed}
+		if i64(img.width) * i64(img.height) > MAX_THUMBNAIL_SOURCE_PIXELS {
+			return img, .Too_Large
+		}
 		img.free_pixels = libwebp.WebPFree
 		img.pixels = libwebp.WebPDecodeRGBA(p, c.size_t(n), w, h)
 	case .PNG, .JPEG, .GIF:
+		comp: c.int
+		if stbi.info_from_memory(p, c.int(n), w, h, &comp) == 0 {return {}, .Failed}
+		if img.width <= 0 || img.height <= 0 {return {}, .Failed}
+		if i64(img.width) * i64(img.height) > MAX_THUMBNAIL_SOURCE_PIXELS {
+			return img, .Too_Large
+		}
 		img.free_pixels = stbi.image_free
 		img.pixels = stbi.load_from_memory(p, c.int(n), w, h, nil, 4)
 	case:

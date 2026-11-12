@@ -209,9 +209,20 @@ generate_image_thumbnails :: proc(
 			alpha_picture = &alpha
 		}
 	case .PNG, .JPEG, .GIF, .WebP:
-		decoded, _ = media.decode_rgba(data)
+		decode_err: media.Decode_Error
+		decoded, decode_err = media.decode_rgba(data)
+		if decode_err == .Too_Large {
+			fmt.eprintfln(
+				"thumbnail: skipping oversized image %s (%dx%d, limit %d pixels; non bounded thumbnail generation unimplemented)",
+				oid,
+				decoded.width,
+				decoded.height,
+				media.MAX_THUMBNAIL_SOURCE_PIXELS,
+			)
+			return 0, card(sizes)
+		}
 		if decoded.pixels == nil {
-			fmt.eprintfln("thumbnail: cannot decode %s", oid)
+			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
 		}
 	case:
@@ -324,9 +335,20 @@ force_generate_image_thumbnails :: proc(
 			alpha_picture = &alpha
 		}
 	case .PNG, .JPEG, .GIF, .WebP:
-		decoded, _ = media.decode_rgba(data)
+		decode_err: media.Decode_Error
+		decoded, decode_err = media.decode_rgba(data)
+		if decode_err == .Too_Large {
+			fmt.eprintfln(
+				"thumbnail: skipping oversized image %s (%dx%d, limit %d pixels; non bounded thumbnail generation unimplemented)",
+				oid,
+				decoded.width,
+				decoded.height,
+				media.MAX_THUMBNAIL_SOURCE_PIXELS,
+			)
+			return 0, card(sizes)
+		}
 		if decoded.pixels == nil {
-			fmt.eprintfln("thumbnail: cannot decode %s", oid)
+			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
 		}
 	case:
