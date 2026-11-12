@@ -30,6 +30,8 @@
     if (columnCount(grid) !== packedColumns.length) return scheduleMasonrySync();
     var geometry = measureMasonry(grid);
     if (geometry) showAroundAnchor(geometry);
+    // Observers run after layout and before paint: draw now, not next frame.
+    draw();
   });
   var observedPort = null;
 
@@ -273,7 +275,7 @@
     batchQueued = false,
     animateUntil = 0;
   const endpoint = "/mipmap/64";
-  const imageSizes = new ResizeObserver(schedule);
+  const imageSizes = new ResizeObserver(() => draw());
   let previewSurface, stripTop = null, stripHeight = 0;
   let diagnosticsEnabled = false;
   const paintedPreviews = new Map();
