@@ -38,7 +38,6 @@ validate_event_tags :: proc(t: ^testing.T) {
 		{"Upper"},
 		{"two words"},
 		{"under_score"},
-		{"a1"},
 		{"é"},
 	}
 	for tags in invalid {
@@ -59,7 +58,10 @@ validate_event_tags :: proc(t: ^testing.T) {
 		ascii: strings.Builder
 		strings.builder_init(&ascii)
 		defer strings.builder_destroy(&ascii)
-		testing.expect(t, encode_event(Event{tags = {"lower-case", "other", "-"}}, &ascii) == "")
+		testing.expect(
+			t,
+			encode_event(Event{tags = {"lower-case", "other", "-", "a1", "09"}}, &ascii) == "",
+		)
 	}
 	{
 		ascii: strings.Builder

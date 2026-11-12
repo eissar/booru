@@ -142,7 +142,7 @@ validate_tags :: proc(tags: []string) -> string {
 		for b in transmute([]u8)tag {
 			if !is_allowed_tag_char(
 				rune(b),
-			) {return "event tags must contain only lowercase ASCII letters and hyphens"}
+			) {return "event tags must contain only lowercase ASCII letters, digits, and hyphens"}
 		}
 		for previous in tags[:i] {
 			if previous == tag {return "event tags must be unique"}
@@ -237,5 +237,5 @@ EventRemediation :: struct {
 }
 
 is_allowed_tag_char :: proc(c: rune) -> bool {
-	return ('a' <= c && c <= 'z') || c == '-'
+	return ('a' <= c && c <= 'z') || ('0' <= c && c <= '9') || c == '-'
 }
