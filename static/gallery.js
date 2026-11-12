@@ -851,7 +851,41 @@
     document.addEventListener(event, transitionDraw);
   }
 
-  document.addEventListener("DOMContentLoaded", async () => {
+  document.addEventListener("DOMContentLoaded", async function () {
+    var requestedView = new URLSearchParams(window.location.search).get("view");
+    if (
+      requestedView === "masonry" ||
+      requestedView === "grid" ||
+      requestedView === "list"
+    ) {
+      var selected = document.getElementById("gallery-view-" + requestedView);
+      if (selected instanceof HTMLInputElement) selected.checked = true;
+    }
+
+    var viewInputs = document.querySelectorAll('input[name="gallery-view"]');
+    for (var i = 0; i < viewInputs.length; i++) {
+      viewInputs[i].addEventListener("change", function (event) {
+        var input = event.target;
+        if (!(input instanceof HTMLInputElement) || !input.checked) return;
+        var nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set("view", input.value);
+        window.history.replaceState(null, "", nextUrl);
+        scheduleMasonrySync();
+      });
+    }
+
+    scheduleMasonrySync();
+
+    var toggle = document.getElementById("dark-mode-toggle");
+    if (toggle) {
+      toggle.addEventListener("click", function () {
+        var currentTheme = document.documentElement.getAttribute("data-theme");
+        var newTheme = currentTheme === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", newTheme);
+        localStorage.setItem("theme", newTheme);
+      });
+    }
+
     canvas = document.getElementById("thumbnail-background");
     try {
       if (!canvas) throw Error("Missing #thumbnail-background canvas");
@@ -896,32 +930,6 @@
       if (geometry) showNearbyCards(geometry);
     });
   }, true);
-
-  document.addEventListener("DOMContentLoaded", function () {
-    var requestedView = new URLSearchParams(window.location.search).get("view");
-    if (
-      requestedView === "masonry" ||
-      requestedView === "grid" ||
-      requestedView === "list"
-    ) {
-      var selected = document.getElementById("gallery-view-" + requestedView);
-      if (selected instanceof HTMLInputElement) selected.checked = true;
-    }
-
-    var viewInputs = document.querySelectorAll('input[name="gallery-view"]');
-    for (var i = 0; i < viewInputs.length; i++) {
-      viewInputs[i].addEventListener("change", function (event) {
-        var input = event.target;
-        if (!(input instanceof HTMLInputElement) || !input.checked) return;
-        var nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set("view", input.value);
-        window.history.replaceState(null, "", nextUrl);
-        scheduleMasonrySync();
-      });
-    }
-
-    scheduleMasonrySync();
-  });
 })();
 
 (function () {
@@ -933,17 +941,6 @@
     "data-theme",
     isDarkMode ? "dark" : "light",
   );
-  document.addEventListener("DOMContentLoaded", function () {
-    var toggle = document.getElementById("dark-mode-toggle");
-    if (toggle) {
-      toggle.addEventListener("click", function () {
-        var currentTheme = document.documentElement.getAttribute("data-theme");
-        var newTheme = currentTheme === "dark" ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", newTheme);
-        localStorage.setItem("theme", newTheme);
-      });
-    }
-  });
 })();
 
 (function () {

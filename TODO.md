@@ -106,7 +106,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 - [x] Replace the custom drag-and-drop upload handlers (`src/template/gallery_page.odin`, `data-hx-on-dragover`/`dragleave`/`drop` on `#upload-form`) by letting `<input type="file">` act as the native drop target.
 - [ ] Replace JS Inspector open/close class toggling (`src/template/gallery_page.odin`, `data-hx-on::after-swap` / `booruToggleInspector`) with CSS `:has()` + `:empty` (e.g. `#gallery-main:has(#inspector-content:not(:empty))`) or `popover` (keeping JS only if `localStorage` persistence across reloads is still desired).
 - [x] Remove dead `body.light-mode` and `body.dark-mode` CSS rules and duplicate variable blocks in `static/gallery.css` (lines 48, 67, 86–120, 336–341, 364–418); theming uses `html[data-theme='light'|'dark']`.
-- [ ] Consolidate the three separate `DOMContentLoaded` listeners in `static/gallery.js`.
+- [x] Consolidate the three separate `DOMContentLoaded` listeners in `static/gallery.js`.
 
 # Web Lint TODO
 
