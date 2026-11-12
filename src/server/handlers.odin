@@ -589,7 +589,10 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	ev.name = strings.clone(leaf, req.alloc)
 	ev.ext = media.extension(format)
 	ev.content_type = media.mime(format)
-	// TODO: Read the media dimensions; width and height should not remain zero.
+	if w, h, ok := media.probe_dimensions(data, format); ok {
+		ev.width = int(w)
+		ev.height = int(h)
+	}
 
 	ev.added_at = time.to_unix_nanoseconds(time.now()) / 1_000_000
 

@@ -2,6 +2,7 @@ package media
 import dav1d "../vendor/dav1d"
 import libwebp "../vendor/libwebp"
 import "core:c"
+import "core:fmt"
 import stbi "vendor:stb/image"
 
 // dav1d reports "try again" as -EAGAIN (DAV1D_ERR(EAGAIN)). EAGAIN is 11 on
@@ -100,30 +101,53 @@ decode_yuv_dav1d :: proc(
 }
 
 
+// probe_dimensions reads image dimensions from headers without decoding pixels.
+// Returns ok = false for unsupported/video formats or malformed headers.
+probe_dimensions :: proc(data: []u8, format: Format) -> (width, height: c.int, ok: bool) {
+	if len(data) == 0 || len(data) > int(max(c.int)) {return 0, 0, false}
+	p, n := raw_data(data), len(data)
+	#partial switch format {
+	case .WebP:
+		if libwebp.WebPGetInfo(p, c.size_t(n), &width, &height) == 0 {return 0, 0, false}
+	case .PNG, .JPEG, .GIF:
+		comp: c.int
+		if stbi.info_from_memory(p, c.int(n), &width, &height, &comp) == 0 {return 0, 0, false}
+	case .AVIF:
+		offset, length, _, _, avif_ok := avif_decode(data)
+		if !avif_ok {return 0, 0, false}
+		yuv, err := decode_yuv_dav1d(data[offset:offset + length])
+		if err != .None {return 0, 0, false}
+		defer free_decoded_dav1d(&yuv)
+		width, height = yuv.width, yuv.height
+	case:
+		fmt.eprintfln("media: probe_dimensions called on unsupported format: %v", format)
+		return 0, 0, false
+	}
+	if width <= 0 || height <= 0 {return 0, 0, false}
+	return width, height, true
+}
+
 decode_rgba :: proc(data: []u8) -> (img: Decoded_ARGB, err: Decode_Error) {
 	if len(data) == 0 || len(data) > int(max(c.int)) {return {}, .Failed}
 	format := detect_format(data)
-	p, n, w, h := raw_data(data), len(data), &img.width, &img.height
+	if format != .WebP && format != .PNG && format != .JPEG && format != .GIF {
+		return {}, .Unsupported
+	}
+	w, h, ok := probe_dimensions(data, format)
+	if !ok {return {}, .Failed}
+	img.width, img.height = w, h
+	if i64(w) * i64(h) > MAX_THUMBNAIL_SOURCE_PIXELS {
+		return img, .Too_Large
+	}
+
+	p, n := raw_data(data), len(data)
 	#partial switch format {
 	case .WebP:
-		if libwebp.WebPGetInfo(p, c.size_t(n), w, h) == 0 {return {}, .Failed}
-		if img.width <= 0 || img.height <= 0 {return {}, .Failed}
-		if i64(img.width) * i64(img.height) > MAX_THUMBNAIL_SOURCE_PIXELS {
-			return img, .Too_Large
-		}
 		img.free_pixels = libwebp.WebPFree
-		img.pixels = libwebp.WebPDecodeRGBA(p, c.size_t(n), w, h)
+		img.pixels = libwebp.WebPDecodeRGBA(p, c.size_t(n), &img.width, &img.height)
 	case .PNG, .JPEG, .GIF:
-		comp: c.int
-		if stbi.info_from_memory(p, c.int(n), w, h, &comp) == 0 {return {}, .Failed}
-		if img.width <= 0 || img.height <= 0 {return {}, .Failed}
-		if i64(img.width) * i64(img.height) > MAX_THUMBNAIL_SOURCE_PIXELS {
-			return img, .Too_Large
-		}
 		img.free_pixels = stbi.image_free
-		img.pixels = stbi.load_from_memory(p, c.int(n), w, h, nil, 4)
-	case:
-		return {}, .Unsupported
+		img.pixels = stbi.load_from_memory(p, c.int(n), &img.width, &img.height, nil, 4)
 	}
 	if img.pixels == nil {return {}, .Failed}
 	return img, .None
