@@ -29,22 +29,5 @@ Tailwind 3.4.17 is a pinned build-only dependency. Run `task assets:css` to inst
 
 ## prior work
 
-TagStudio is a project to learn from.
-but tags=relationships
-is an incredibly difficult problem,
-and their application doesn't work performantly on libraries at
-scale. The main guy (according to him) had very little programming
-experience (ORM footgun). so the project's success
-and continuous maintenance is an impressive feat.
-
-we will circumvent database migrations and query complexity explosion.
-event replay builds the database. simple flat tags and incremental indexes constrain query complexity
-
-
-attempt python with an ORM really held them back.
-
-dynamic ontologies probably require some kind of
-specific domain understanding to
-
-
-
+Pond https://github.com/raphaelsalaja/pond
+TagStudio https://github.com/tagstudiodev/tagstudio
