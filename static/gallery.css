@@ -44,8 +44,7 @@ html[data-theme='light'] {
 }
 
 /* Theme variables based on data attribute */
-html[data-theme='light'] body,
-body.light-mode {
+html[data-theme='light'] body {
     --bg-primary: #f0f2f5;
     --bg-surface: #fff;
     --bg-surface-hover: #f8fafc;
@@ -63,45 +62,7 @@ body.light-mode {
     ) contrast(95%);
 }
 
-html[data-theme='dark'] body,
-body.dark-mode {
-    --bg-primary: #0f172a;
-    --bg-surface: #1e293b;
-    --bg-surface-hover: #334155;
-    --bg-overlay: rgb(0 0 0 / 40%);
-    --bg-input: #334155;
-    --bg-input-focus: #475569;
-    --text-primary: #f1f5f9;
-    --text-secondary: #cbd5e1;
-    --text-muted: #94a3b8;
-    --border-color: #475569;
-    --border-color-light: #334155;
-    --accent-indigo: #818cf8;
-    --icon-filter: brightness(0) saturate(100%) invert(64%) sepia(11%) saturate(1015%) hue-rotate(174deg) brightness(
-        95%
-    ) contrast(87%);
-}
-
-/* Light Mode Variables */
-body.light-mode {
-    --bg-primary: #f0f2f5;
-    --bg-surface: #fff;
-    --bg-surface-hover: #f8fafc;
-    --bg-overlay: rgb(0 0 0 / 60%);
-    --bg-input: #f8fafc;
-    --bg-input-focus: #fff;
-    --text-primary: #111827;
-    --text-secondary: #374151;
-    --text-muted: #6b7280;
-    --border-color: #cbd5e1;
-    --border-color-light: #e2e8f0;
-    --icon-filter: brightness(0) saturate(100%) invert(20%) sepia(15%) saturate(1200%) hue-rotate(174deg) brightness(
-        90%
-    ) contrast(95%);
-}
-
-/* Dark Mode Variables */
-body.dark-mode {
+html[data-theme='dark'] body {
     --bg-primary: #0f172a;
     --bg-surface: #1e293b;
     --bg-surface-hover: #334155;
@@ -332,13 +293,11 @@ summary::-webkit-details-marker {
     background-color: #22c55e;
 }
 
-html[data-theme='dark'] #toasts-log .booru-toast-error::before,
-body.dark-mode #toasts-log .booru-toast-error::before {
+html[data-theme='dark'] #toasts-log .booru-toast-error::before {
     background-color: #f87171;
 }
 
-html[data-theme='dark'] #toasts-log .booru-toast-success::before,
-body.dark-mode #toasts-log .booru-toast-success::before {
+html[data-theme='dark'] #toasts-log .booru-toast-success::before {
     background-color: #4ade80;
 }
 
@@ -360,15 +319,6 @@ body.dark-mode #toasts-log .booru-toast-success::before {
     color: var(--text-primary);
 }
 
-/* Light mode specific improvements */
-body.light-mode .font-medium {
-    font-weight: 500;
-}
-
-body.light-mode .font-semibold {
-    font-weight: 600;
-}
-
 .input-focus-underline {
     background-color: transparent;
     border: 0;
@@ -383,39 +333,6 @@ body.light-mode .font-semibold {
 
 .input-focus-underline:focus {
     box-shadow: 0 2px 0 0 var(--accent-indigo);
-}
-
-/* Improve input field visibility */
-body.light-mode input[type='search'] {
-    border: 1px solid var(--border-color) !important;
-}
-
-body.light-mode input[type='search']:focus {
-    border-color: #6366f1 !important;
-    box-shadow: 0 0 0 3px rgb(99 102 241 / 10%) !important;
-}
-
-/* Better select styling */
-body.light-mode select {
-    border: 1px solid var(--border-color) !important;
-}
-
-/* Improve card borders */
-body.light-mode .masonry-item > div {
-    border: 1px solid var(--border-color-light);
-}
-
-/* Light mode placeholder improvements */
-body.light-mode input::placeholder {
-    color: var(--text-muted);
-    opacity: 0.8;
-}
-
-/* Dark mode specific styles */
-/* Improve form element appearance in dark mode */
-body.dark-mode select option {
-    background-color: var(--bg-surface);
-    color: var(--text-primary);
 }
 
 html[data-theme='light'] .moon-icon {
