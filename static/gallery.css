@@ -767,30 +767,30 @@ html[data-theme='dark'] input::placeholder {
     padding: 0.5rem 1rem;
 }
 
-body:has(#gallery-view-grid:checked) #photo-grid,
-body:has(#gallery-view-list:checked) #photo-grid {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid,
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid {
     grid-auto-rows: auto;
 }
 
-body:has(#gallery-view-grid:checked) #photo-grid {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
     gap: 0.75rem;
 }
 
-body:has(#gallery-view-list:checked) #photo-grid {
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid {
     display: flex;
     flex-direction: column;
     gap: 1rem;
     align-items: stretch;
 }
 
-body:has(#gallery-view-list:checked) .masonry-column {
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .masonry-column {
     width: 100%;
 }
 
-body:has(#gallery-view-grid:checked) .masonry-item,
-body:has(#gallery-view-list:checked) .masonry-item {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .masonry-item,
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .masonry-item {
     display: block;
     width: 100%;
     margin-bottom: 0;
@@ -798,45 +798,45 @@ body:has(#gallery-view-list:checked) .masonry-item {
     align-self: auto;
 }
 
-body:has(#gallery-view-grid:checked) #pagination-controls,
-body:has(#gallery-view-grid:checked) .gallery-status {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid #pagination-controls,
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-status {
     grid-column: 1 / -1;
 }
 
-body:has(#gallery-view-grid:checked) .gallery-card {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card {
     height: 100%;
 }
 
-body:has(#gallery-view-grid:checked) .gallery-card-image {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-image {
     width: 100%;
     height: clamp(8rem, 16vw, 12rem);
     object-fit: cover;
 }
 
-body:has(#gallery-view-grid:checked) .gallery-card-meta .tag-badge {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-meta .tag-badge {
     display: none;
 }
 
-body:has(#gallery-view-list:checked) .gallery-card {
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card {
     flex-direction: row;
     min-height: 8rem;
 }
 
-body:has(#gallery-view-list:checked) .gallery-card-image {
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-image {
     flex: 0 0 12rem;
     width: 12rem;
     height: 8rem;
     object-fit: cover;
 }
 
-body:has(#gallery-view-grid:checked) .gallery-card-slot,
-body:has(#gallery-view-list:checked) .gallery-card-slot {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-slot,
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-slot {
     height: auto;
     min-width: 0;
 }
 
-body:has(#gallery-view-grid:checked) .gallery-card-meta,
-body:has(#gallery-view-list:checked) .gallery-card-meta {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-meta,
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-meta {
     position: relative;
     min-height: 0;
     max-height: none;
@@ -844,7 +844,7 @@ body:has(#gallery-view-list:checked) .gallery-card-meta {
 }
 
 @media (width < 640px) {
-    body:has(#gallery-view-list:checked) .gallery-card-image {
+    #filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-image {
         flex-basis: 7rem;
         width: 7rem;
     }
