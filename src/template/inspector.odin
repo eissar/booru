@@ -85,6 +85,12 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 		"<form hx-post=\"/update-metadata\" hx-target=\"#inspector-content\" hx-swap=\"innerHTML\"",
 	)
 	attrf(&b, "hx-indicator", "#inspector-name-save-%s", id)
+	attrf(
+		&b,
+		"data-hx-on:htmx:after-request",
+		"if(event.detail.successful)document.getElementById('image-tags-popover-%s')?.hidePopover()",
+		id,
+	)
 	wr(
 		&b,
 		"><ul class=\"inspector-fields\"><li class=\"flex flex-col gap-1\"><span class=\"relative self-start inline-block font-medium\">Name</span><div class=\"flex items-center gap-2\"><input type=\"hidden\" name=\"id\"",
@@ -111,32 +117,30 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 		"<li class=\"flex flex-col gap-2\"><span class=\"font-medium shrink-0 flex items-center gap-1\">Tags<button",
 	)
 	attrf(&b, "id", "tag-edit-btn-%s", id)
+	wr(&b, " type=\"button\" class=\"rounded p-0.5 hover-surface\"")
+	attrf(&b, "popovertarget", "image-tags-popover-%s", id)
+	attrf(&b, "style", "anchor-name: --inspector-tags-%s;", id)
 	wr(
 		&b,
-		" type=\"button\" class=\"rounded p-0.5 hover-surface\" data-hx-on-click=\"\n                                    const i = document.getElementById('image-tags-",
-	)
-	escape_attr(&b, id)
-	wr(
-		&b,
-		"');\n                                    i.classList.toggle('hidden');\n                                    if (!i.classList.contains('hidden')) i.focus();\n                                \">",
-	)
-	wr(
-		&b,
-		"<img src=\"/static/icons/pencil.svg\" class=\"h-3 w-3\" style=\"filter: var(--icon-filter);\" alt=\"Edit tags\"/></button></span><div class=\"flex flex-wrap gap-2\">",
+		"><img src=\"/static/icons/pencil.svg\" class=\"h-3 w-3\" style=\"filter: var(--icon-filter);\" alt=\"Edit tags\"/></button></span><div class=\"flex flex-wrap gap-2\">",
 	)
 	if len(image.tags) == 0 {
 		wr(&b, "<span class=\"text-muted\">No tags</span>")
 	} else {
 		write_tag_badges(&b, image.tags, "")
 	}
-	wr(&b, "</div><input")
+	wr(&b, "</div><div")
+	attrf(&b, "id", "image-tags-popover-%s", id)
+	wr(&b, " class=\"card-action-popover\" popover")
+	attrf(&b, "style", "position-anchor: --inspector-tags-%s;", id)
+	wr(&b, "><input")
 	attrf(&b, "id", "image-tags-%s", id)
+	wr(&b, " class=\"card-action-popover-input\" type=\"text\" name=\"tags\"")
+	attr(&b, "value", strings.join(image.tags, ", "))
 	wr(
 		&b,
-		" class=\"hidden flex-1 min-w-0 input-focus-underline text-muted\" type=\"text\" name=\"tags\"",
+		" placeholder=\"tag1, tag2...\" autocomplete=\"off\" spellcheck=\"false\" autofocus/><div class=\"card-action-popover-row\"><button type=\"submit\" class=\"card-action-popover-save\">Save</button></div></div></li>",
 	)
-	attr(&b, "value", strings.join(image.tags, ", "))
-	wr(&b, " autocomplete=\"off\" spellcheck=\"false\"/></li>")
 
 	// comment row shares the metadata form's save button.
 	wr(&b, "<li class=\"flex flex-col gap-1\"><label")
