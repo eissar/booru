@@ -5,6 +5,7 @@ high level tasks
 Harden flat parser: validation, boundaries, tests/fuzzing.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
 
+- [ ] [v1] Make events CloudEvent compatible.
 - [ ] Review existing replay panic/error states and thoroughly evaluate when a failed incremental replay (`full_replay = false`) can safely fall back to full replay.
 - [ ] Classify startup store errors and rebuild only when restartable. Already done: a stale schema (missing columns, detected as `SCHEMA_MISMATCH` from `prepare_item_patch`) discards `store.sqlite` and rebuilds once per startup (`src/main.odin`). Remaining: `PRAGMA user_version` check, `SQLITE_CORRUPT`, and refusing non-restartable errors. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
 - [ ] Enforce the assumption that older event shards are fully applied: either deduplicate, clean, and compress historical shards so they are immutable (locked by convention), or check their persisted offsets against actual file lengths.
@@ -26,7 +27,8 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 Writes are log-first: handlers and Eagle import append events, then run incremental replay (`replay.initiate_replay(s, full_replay = false)`), which is the only caller of the store write procs and saves shard cursors in the same tx. No `store.apply` wrapper is planned.
 
 - [ ] Serialize appends, replay and `add` id allocation if handlers ever run concurrently; today `Serve` is synchronous.
-- [ ] Rebuild path: indexes are already deferred during full replay. Still missing: run `PRAGMA foreign_key_check` after the bulk insert. In a 1.2M-event probe this took ~2.4 s vs ~10.9 s with indexes maintained per insert. Use WAL + `synchronous=OFF` only on a disposable temp DB that is verified and published afterward; keep indexes and FKs in place for live handlers. Notes are in the pi sessions under `--srv-code-lfs-booru--` (2026-10-18), probe at `/var/tmp/lfs-booru-odin-probe/`.
+// Rebuild path defers indexes and runs with foreign_keys = OFF because we trust event log writes.
+// Consider running `PRAGMA foreign_key_check` after bulk insert if we ever stop trusting the event log.
 - [ ] Optional: CI/pre-commit check that nothing outside `replay` calls the store write procs or writes to the DB directly.
 - [ ] Normalize tags in the web handlers. Eagle import now lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_ingest` and tag edits still store tags verbatim, and existing rows stay unvalidated. Tags flow into chip URLs, so a stray `&`, `=`, `#`, `%`, or `+` breaks the URL; once every write path is normalized, `filter_urls` needs no `net.percent_encode`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
@@ -96,6 +98,25 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 - Current layout is stateless JS by design: `data-render-order-id` (stamped by `photo_grid.odin` as `offset - len(images) + i`) is the only order source; `gallery.js` holds just a sync key string and an rAF flag, with no per-card listeners.
 - If the id-free variant is ever wanted: bind the canonical card sequence to the grid node's lifetime with `WeakMap<#photo-grid, sequence>` and purge entries via `isConnected` on each sync, so a wholesale swap (filter/tag clicks replace `.gallery-content`) garbage-collects the state with the old node automatically. What it buys: O(k) appends instead of O(n) repacks — n is a few hundred re-parented nodes, sub-millisecond, no image refetch. What it costs: the invariant burden, plus arrival-order-instead-of-listing-order under concurrent requests. Not a trade worth making at gallery scale.
 - Long-term exit: if `grid-template-rows: masonry` ever lands cross-browser, the JS masonry and the render-order ids can be deleted outright; card markup needs no changes.
+
+# Frontend / Native Browser TODO
+
+- [ ] Replace JS default theme detection (`static/gallery.js`, `window.matchMedia("(prefers-color-scheme: dark)")`) and the `html:not([data-theme]) { visibility: hidden; }` render-blocking hack (`static/gallery.css`) with CSS `color-scheme: light dark` and `light-dark()` (or `@media (prefers-color-scheme: dark)`), keeping JS only for explicit `localStorage` user overrides.
+- [ ] Replace the Inspector tag-edit input toggle (`src/template/inspector.odin`, `data-hx-on-click` toggling `.hidden` and calling `.focus()`) with a native `popover` and `autofocus` on the `<input>`.
+- [ ] Replace the custom drag-and-drop upload handlers (`src/template/gallery_page.odin`, `data-hx-on-dragover`/`dragleave`/`drop` on `#upload-form`) by letting `<input type="file">` act as the native drop target.
+- [ ] Replace JS Inspector open/close class toggling (`src/template/gallery_page.odin`, `data-hx-on::after-swap` / `booruToggleInspector`) with CSS `:has()` + `:empty` (e.g. `#gallery-main:has(#inspector-content:not(:empty))`) or `popover` (keeping JS only if `localStorage` persistence across reloads is still desired).
+- [ ] Remove dead `body.light-mode` and `body.dark-mode` CSS rules and duplicate variable blocks in `static/gallery.css` (lines 48, 67, 86–120, 336–341, 364–418); theming uses `html[data-theme='light'|'dark']`.
+- [ ] Consolidate the three separate `DOMContentLoaded` listeners in `static/gallery.js`.
+
+# Web Lint TODO
+
+Templates are Odin strings, so lint the rendered fixtures (`test/html-fixture-tdd/fixture/*.expected.html`) and `static/` instead. Findings below are from a trial run of each tool.
+
+- [ ] Add `html-validate` (devDependency, `.htmlvalidate.json` extending `html-validate:recommended` with `void-style`, `no-inline-style`, `attribute-boolean-style` off) and a `task lint:html` over the fixtures. Keep it out of the pre-commit hook. Current findings: 11× `<img>` missing `alt` (`wcag/h37`; decorative images may just need `alt=""`), 2× `aria-label-misuse` (`gallery_content`, `gallery_page`), 1× `<button>` without accessible text (`gallery_page`).
+- [ ] Run `npx modern-web-guidance@latest legacy-scan static --json` occasionally (not in CI; findings need review against each rule's `keepWhen`/`dropWhen`). Current findings: `gallery.js:939` theme override doesn't update `<meta name="color-scheme">` (see the theme item above), `gallery.css:1146` recolors an icon with an `invert()`/`sepia()`/`saturate()`/`hue-rotate()` chain instead of `mask` + `currentColor`, `benchmark.html:225` Enter-to-submit isn't IME-safe (`event.isComposing`). Fixtures and `src/template` are clean. Optionally install its agent skill (`npx modern-web-guidance install`).
+- [ ] Optional: `stylelint` + `stylelint-plugin-use-baseline` on `static/gallery.css` as a warning, with the deliberately used newer features ignored (anchor positioning, `:popover-open`, `::details-content`, `content-visibility`, `scrollbar-gutter`) so new non-Baseline features stand out. Use this or `@eslint/css` `use-baseline`, not both.
+- [ ] Optional: `eslint` + `eslint-plugin-baseline-js` on `static/gallery.js`. No Baseline findings today; `recommended` reports 6× `no-redeclare` (repeated `var i`/`col`) and an unused `i` at line 826.
+- Skipped: webhint (retired), Lighthouse/axe/pa11y (need a running server and headless browser), `vnu` (needs Java, overlaps html-validate), `doiuse` (superseded by `use-baseline`).
 
 # Importer TODO
 

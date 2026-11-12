@@ -847,7 +847,6 @@
   }, true);
 
   document.addEventListener("scroll", scrollPreview, true);
-  window.addEventListener("resize", schedule);
   for (const event of ["pointerover", "pointerout", "transitionrun"]) {
     document.addEventListener(event, transitionDraw);
   }
@@ -897,12 +896,6 @@
       if (geometry) showNearbyCards(geometry);
     });
   }, true);
-
-  ["(min-width: 768px)", "(min-width: 1024px)", "(min-width: 1280px)"].forEach(
-    function (query) {
-      matchMedia(query).addEventListener("change", scheduleMasonrySync);
-    },
-  );
 
   document.addEventListener("DOMContentLoaded", function () {
     var requestedView = new URLSearchParams(window.location.search).get("view");
