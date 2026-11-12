@@ -13,8 +13,11 @@
 (function () {
   var syncQueued = false;
   var lastSyncKey = null;
-  // The current masonry columns as packed by syncMasonry: { el, cards, ratios }.
+  // The current masonry columns as packed by syncMasonry:
+  // { el, cards, ratios, first, last }, where el holds cards[first..last].
   var packedColumns = [];
+  // Hidden element in the grid that holds every card outside its column range.
+  var parking = null;
   var cardSlotHeight = 0;
   var anchorCard = null, anchorOffset = 0;
   var nearbyQueued = false;
@@ -116,7 +119,7 @@
     // metadata slot below its image, so any rendered card gives its height.
     var geometry = null;
     for (var i = 0; columns > 0 && !geometry && i < cards.length; i++) {
-      if (cards[i].style.display === "none") continue;
+      if (cards[i].parentNode === parking) continue;
       var rect = cards[i].getBoundingClientRect();
       if (!rect.height) continue;
       cardSlotHeight = rect.height - rect.width * cardRatio(cards[i]);
@@ -128,22 +131,25 @@
 
     // Grid/list views render flat cards in canonical order.
     if (columns === 0) {
-      for (var i = 0; i < cards.length; i++) {
-        cards[i].style.display = "";
-        insertBeforePagination(grid, cards[i]);
-      }
+      for (var i = 0; i < cards.length; i++) insertBeforePagination(grid, cards[i]);
       for (var i = 0; i < packed.length; i++) packed[i].remove();
+      if (parking) parking.remove();
       return;
     }
 
-    // Masonry moves each card straight from wherever it is (an old column or
-    // the grid) into its new column; showNearbyCards then sets its display.
+    // Masonry parks each card not parked yet (visible cards in the old
+    // columns, new flat cards); showNearbyCards brings the nearby ones back.
+    if (!parking || parking.parentNode !== grid) {
+      parking = document.createElement("div");
+      parking.style.display = "none";
+    }
+    insertBeforePagination(grid, parking);
     var heights = [];
     for (var i = 0; i < columns; i++) {
       var col = document.createElement("div");
       col.className = "masonry-column";
       insertBeforePagination(grid, col);
-      packedColumns.push({ el: col, cards: [], ratios: [] });
+      packedColumns.push({ el: col, cards: [], ratios: [], first: 0, last: -1 });
       heights.push(0);
     }
     for (var i = 0; i < cards.length; i++) {
@@ -152,11 +158,15 @@
         if (heights[j] < heights[shortest]) shortest = j;
       }
       var ratio = cardRatio(cards[i]);
-      packedColumns[shortest].el.appendChild(cards[i]);
-      packedColumns[shortest].cards.push(cards[i]);
-      packedColumns[shortest].ratios.push(ratio);
+      var col = packedColumns[shortest];
+      // Unmeasured: no range to render, so show the whole column.
+      if (!geometry) {
+        col.el.appendChild(cards[i]);
+        col.last++;
+      } else if (cards[i].parentNode !== parking) parking.appendChild(cards[i]);
+      col.cards.push(cards[i]);
+      col.ratios.push(ratio);
       heights[shortest] += ratio;
-      if (!geometry) cards[i].style.display = "";
     }
     for (var i = 0; i < packed.length; i++) packed[i].remove();
     if (geometry) showAroundAnchor(geometry);
@@ -207,15 +217,14 @@
   function showNearbyCards(geometry) {
     anchorCard = null;
     for (var c = 0; c < packedColumns.length; c++) {
-      var col = packedColumns[c], y = 0, start = -1, end = 0;
+      var col = packedColumns[c], y = 0, start = -1, end = 0, a = -1, b = -2;
       for (var i = 0; i < col.cards.length; i++) {
         var h = geometry.width * col.ratios[i] + cardSlotHeight;
         var near = y < geometry.visibleTop + 2 * geometry.height &&
           y + h > geometry.visibleTop - geometry.height;
         if (near && start < 0) start = y;
-        if (near) end = y + h;
-        var display = near ? "" : "none";
-        if (col.cards[i].style.display !== display) col.cards[i].style.display = display;
+        if (near && a < 0) a = i;
+        if (near) end = y + h, b = i;
         var offset = y - geometry.visibleTop;
         if (offset >= 0 && offset < geometry.height &&
             (!anchorCard || offset < anchorOffset)) {
@@ -224,6 +233,18 @@
         }
         y += h + geometry.gap;
       }
+      // Move only the cards leaving or entering the column's range.
+      for (var i = col.first; i <= col.last; i++) {
+        if (i < a || i > b) parking.appendChild(col.cards[i]);
+      }
+      if (col.first > col.last || b < col.first || a > col.last) {
+        col.el.append.apply(col.el, col.cards.slice(a, b + 1));
+      } else {
+        if (a < col.first) col.el.prepend.apply(col.el, col.cards.slice(a, col.first));
+        if (b > col.last) col.el.append.apply(col.el, col.cards.slice(col.last + 1, b + 1));
+      }
+      col.first = a;
+      col.last = b;
       var height = Math.max(0, y - geometry.gap);
       col.el.style.paddingTop = (start < 0 ? height : start) + "px";
       col.el.style.paddingBottom = (start < 0 ? 0 : height - end) + "px";
