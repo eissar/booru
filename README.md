@@ -25,7 +25,7 @@ By default, booru opens the managed library `default` under `$XDG_DATA_HOME/boor
 
 ## Frontend CSS
 
-Tailwind 3.4.17 is a pinned build-only dependency. Run `task assets:css` to install locked npm dependencies and regenerate `static/tailwind.css` from the inline Tailwind directives, the Odin templates, and `static/gallery.js`. Build, run, and preview tasks do this automatically. Commit the generated stylesheet alongside class changes; serving prebuilt assets does not require Node. Load Tailwind before `static/gallery.css` so custom styles retain precedence.
+Tailwind 3.4.17 is a build-only dependency (standalone `tailwindcss` CLI). Run `task tailwind` to regenerate `static/tailwind.css` from the inline Tailwind directives, the Odin templates, and `static/gallery.js`. Build, run, and preview tasks do this automatically. Commit the generated stylesheet alongside class changes; serving prebuilt assets does not require Node or Tailwind. Load Tailwind before `static/gallery.css` so custom styles retain precedence.
 
 ## prior work
 

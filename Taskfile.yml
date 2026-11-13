@@ -30,29 +30,24 @@ tasks:
       - 'echo "githooks are not installed (or are stale); run: task hooks:install" >&2'
       - 'false'
 
-  assets:install:
-    desc: Install pinned frontend build dependencies
-    sources: [package.json, package-lock.json]
-    generates: [node_modules/.package-lock.json]
-    cmds:
-      - npm ci
-
-  assets:css:
+  tailwind:
     desc: Generate the committed Tailwind stylesheet
-    deps: [assets:install]
     sources:
       - tailwind.config.js
-      - package.json
-      - package-lock.json
       - src/template/**/*.odin
       - static/gallery.js
     generates: [static/tailwind.css]
     cmds:
-      - npm run build:css
+      - |
+        if ! command -v tailwindcss >/dev/null 2>&1; then
+          echo "tailwindcss not found; install the standalone Tailwind CSS v3 CLI: https://github.com/tailwindlabs/tailwindcss/releases" >&2
+          exit 1
+        fi
+        printf '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n' | tailwindcss -i - -o static/tailwind.css --minify
 
   build:
     desc: Build the optimized server
-    deps: [hooks:check, assets:css]
+    deps: [hooks:check, tailwind]
     method: checksum
     sources:
       - src/*.odin
@@ -66,14 +61,14 @@ tasks:
 
   run:
     desc: 'Build and run the server (e.g. task run -- -debug -- -port:9000)'
-    deps: [hooks:check, assets:css]
+    deps: [hooks:check, tailwind]
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - odin run src -out:{{.BIN_DIR}}/booru {{.CLI_ARGS}}
 
   worktree-proxy:
     desc: 'Serve on bin/booru.sock and expose it on a free localhost port (URL printed); Ctrl-C stops both'
-    deps: [hooks:check, assets:css]
+    deps: [hooks:check, tailwind]
     cmds:
       - |
         SOCK={{.BIN_DIR}}/booru.sock
@@ -91,8 +86,8 @@ tasks:
     cmds:
       - odin check src {{.ODIN_FLAGS}}
 
-  test:
-    desc: 'Run the project''s Odin tests (extra odin flags after --; ODIN_TEST_PKGS=src/cli picks a package)'
+  test:select:
+    desc: 'Run selected Odin tests (pass package/flags after --, e.g. task test:select -- src/cli)'
     deps: [hooks:check]
     cmds:
       - mkdir -p {{.BIN_DIR}}
@@ -104,6 +99,13 @@ tasks:
     cmds:
       - mkdir -p {{.BIN_DIR}}
       - odin test src/template -out:{{.BIN_DIR}}/test-render {{.CLI_ARGS}}
+
+  test:cdp:
+    desc: 'Run browser CDP tests in test/cdp (extra Odin flags after --)'
+    deps: [hooks:check]
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - odin test test/cdp -out:{{.BIN_DIR}}/test-cdp {{.CLI_ARGS}}
 
   test:all:build:
     desc: Build the full test suite
@@ -124,14 +126,6 @@ tasks:
     cmds:
       - set -o pipefail; ./{{.BIN_DIR}}/test-all 2>&1 | grep -v 'changed state to Running'
       # - ./{{.BIN_DIR}}/test-all
-
-  test:thumbnail:
-    desc: 'test src/thumbnail'
-    deps: [hooks:check]
-    cmds:
-      - mkdir -p {{.BIN_DIR}}
-      - odin test src/thumbnail/ -out:{{.BIN_DIR}}/test-thumbnail -debug
-
 
   fmt:
     desc: 'Format Odin sources in place (pass a path with --, e.g. task fmt -- src/http)'
