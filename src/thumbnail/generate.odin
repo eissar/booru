@@ -6,7 +6,6 @@ import "core:os"
 
 import "../library"
 import "../media"
-import ffmpeg "../vendor/ffmpeg"
 import libwebp "../vendor/libwebp"
 
 VIDEO_THUMBNAIL :: bit_set[media.Format] {
@@ -114,16 +113,12 @@ encode_thumbnail :: proc {
 
 // Decodes the first video frame of `path` and encodes it at `edge`, one WebP.
 encode_thumbnail_video :: proc(root, oid: string, edge: c.int, path: string) -> bool {
-	ff, ok := ffmpeg.first_frame(path)
-	if !ok {
-		fmt.eprintfln("thumbnail: cannot decode video %s", oid)
+	ff, err := media.decode_video_first_frame(path, MAX_THUMBNAIL_SOURCE_PIXELS)
+	if err != .None {
+		fmt.eprintfln("thumbnail: cannot decode video %s: %v", oid, err)
 		return false
 	}
-	defer ffmpeg.av_frame_free(&ff.frame)
-	if ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUV420P && ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUVJ420P {
-		fmt.eprintfln("thumbnail: unsupported video pixel format %s: %d", oid, ff.pix_fmt)
-		return false
-	}
+	defer media.free_decoded(&ff)
 	img := media.Decoded_Dav1d_YUV {
 		y         = ff.y,
 		u         = ff.u,

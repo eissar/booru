@@ -4,6 +4,7 @@
 // limit supplied by callers rather than hardcoded.
 package media
 import dav1d "../vendor/dav1d"
+import ffmpeg "../vendor/ffmpeg"
 import libwebp "../vendor/libwebp"
 import "core:c"
 import "core:fmt"
@@ -166,7 +167,31 @@ free_decoded_dav1d :: proc(img: ^Decoded_Dav1d_YUV) {
 	dav1d.dav1d_picture_unref(&img.picture)
 	img^ = {}
 }
+
+decode_video_first_frame :: proc(
+	path: string,
+	max_pixels: i64 = 0,
+) -> (
+	ff: ffmpeg.Decoded_Frame,
+	err: Decode_Error,
+) {
+	ok: bool
+	ff, ok = ffmpeg.first_frame(path)
+	if !ok {return {}, .Failed}
+	if ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUV420P && ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUVJ420P {
+		ffmpeg.free_decoded_frame(&ff)
+		return {}, .Unsupported
+	}
+	if max_pixels > 0 && i64(ff.width) * i64(ff.height) > max_pixels {
+		w, h := ff.width, ff.height
+		ffmpeg.free_decoded_frame(&ff)
+		return {width = w, height = h}, .Too_Large
+	}
+	return ff, .None
+}
+
 free_decoded :: proc {
 	free_decoded_rgba,
 	free_decoded_dav1d,
+	ffmpeg.free_decoded_frame,
 }
