@@ -32,6 +32,49 @@ fmt_timestamp :: proc(elapsed: time.Duration) -> string {
 	}
 }
 
+startup_verify_older_shards_applied :: proc(
+	log: ^elog.EventLog,
+	events_dir: string,
+	current_shard: string,
+) -> bool {
+	w := os.walker_create(events_dir)
+	defer os.walker_destroy(&w)
+
+	for entry in os.walker_walk(&w) {
+		if _, err := os.walker_error(&w); err != nil {
+			fmt.panicf("startup verify older shards: walk %s: %v", events_dir, err)
+		}
+		if entry.type == .Directory || !strings.has_suffix(entry.name, ".ndjson") {
+			continue
+		}
+		if entry.name == current_shard {continue}
+
+		cursor, load_rc := elog.load_cursor(log, entry.name)
+		if load_rc != sqlite.OK {
+			fmt.eprintfln(
+				"startup verify older shards: load cursor for %s failed with sqlite error %d",
+				entry.name,
+				load_rc,
+			)
+			return false
+		}
+
+		if entry.size != cursor.offset {
+			fmt.eprintfln(
+				"startup verify older shards: %s on disk (%d bytes) does not match applied offset (%d bytes)",
+				entry.name,
+				entry.size,
+				cursor.offset,
+			)
+			return false
+		}
+	}
+	if _, err := os.walker_error(&w); err != nil {
+		fmt.panicf("startup verify older shards: walk %s: %v", events_dir, err)
+	}
+	return true
+}
+
 main :: proc() {
 	load_start := time.now()
 
@@ -160,12 +203,31 @@ main :: proc() {
 		if !fresh_store {
 			shard := elog.get_current_event_shard(context.temp_allocator)
 			copy(cursor.shard[:], shard)
-			path := fmt.tprintf("%s/events/%s", cfg.library, shard)
+			events_dir := fmt.tprintf("%s/events", cfg.library)
+			path := fmt.tprintf("%s/%s", events_dir, shard)
 			info, err := os.stat(path, context.temp_allocator)
 			if err != nil && err != .Not_Exist {
 				fmt.panicf("stat event shard: %v", err)
 			}
 			if err == nil {cursor.offset = info.size}
+			if !startup_verify_older_shards_applied(state.event_log, events_dir, shard) {
+				if STORE_DISCARDED_FOR_SCHEMA {
+					fmt.eprintln(
+						"datastore type=sqlite: older shard mismatch persists after rebuild",
+					)
+					os.exit(1)
+				}
+				STORE_DISCARDED_FOR_SCHEMA = true
+				fmt.eprintln(
+					"datastore type=sqlite: older shard incomplete; discarding store and rebuilding",
+				)
+				store.Close(&state)
+				if err := os.remove(db_c); err != nil {
+					fmt.eprintln("datastore type=sqlite: discard outdated store:", err)
+					os.exit(1)
+				}
+				continue
+			}
 			if replay.initiate_replay(&state, full_replay = false) == .SCHEMA_MISMATCH {
 				if STORE_DISCARDED_FOR_SCHEMA {
 					fmt.eprintln("datastore type=sqlite: schema mismatch persists after rebuild")

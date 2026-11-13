@@ -8,7 +8,7 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] [v1] Make events CloudEvent compatible.
 - [ ] Review existing replay panic/error states and thoroughly evaluate when a failed incremental replay (`full_replay = false`) can safely fall back to full replay.
 - [ ] Classify startup store errors and rebuild only when restartable. Already done: a stale schema (missing columns, detected as `SCHEMA_MISMATCH` from `prepare_item_patch`) discards `store.sqlite` and rebuilds once per startup (`src/main.odin`). Remaining: `PRAGMA user_version` check, `SQLITE_CORRUPT`, and refusing non-restartable errors. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
-- [ ] Enforce the assumption that older event shards are fully applied: either deduplicate, clean, and compress historical shards so they are immutable (locked by convention), or check their persisted offsets against actual file lengths.
+- [x] Enforce the assumption that older event shards are fully applied at startup: compare every non-current `.ndjson` shard's file size against its persisted offset in `replay_cursors`; if any differ (e.g. crash between `ev_append` and `replay` across a month rollover), discard/rebuild (`startup_verify_older_shards_applied` in `src/main.odin`).
 
 - [ ] Test: `name` finalization (growth, shrink, clear, multibyte) trims NUL padding to the final name; order independence is covered by `steps_test.odin`.
 - [ ] Test: comment patches at distinct anchors commute and reduce to the final text.
@@ -127,6 +127,10 @@ Templates are Odin strings, so lint the rendered fixtures (`test/html-fixture-td
 
 # JXL Support
 
+- [x] Format detection, ISOBMFF/`jxlp` extraction, codestream dimension probing, and 8-bit RGB24 WebP thumbnailing (`src/media/jxl.odin`, `src/media/media.odin`, `src/thumbnail/generate.odin`)
+- [ ] Non-RGB24 JXL decode (alpha/RGBA, grayscale, >8-bit)
+- [ ] `Accept: image/jxl` passthrough to skip WebP mipmaps
+
 Estimates, using about 85 KB in thumbnails per image:
 ~ 80 KB for LOD 0.
 ~ 4 KB for LOD 1.
@@ -210,7 +214,7 @@ A human-readable portability warning for proxied libraries.
 The root warning file isn’t generated. Its final name remains undecided.
 
 Implicit event version 0, with startup refusal for unsupported versions.
-Omitting version already matches your decision. MAX_SUPPORTED_VERSION = 0 and the compatibility gate don’t exist yet.
+Implemented: `elog.MAX_SUPPORTED_EVENT_VERSION` (`0`) and `.UnsupportedVersion` in `src/replay/replay.odin` (tested in `src/replay/replay_test.odin`).
 
 
 // TODO: test throughput MB/s for image formats -> webp
