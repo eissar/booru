@@ -261,8 +261,12 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 	}
 
 	thumb_buf: [4096]u8
-	thumb_fp :=
-		len(s.library_path) + len(oid) + len("/thumbnails/.webp") <= len(thumb_buf) ? fmt.bprintf(thumb_buf[:], "%s/thumbnails/%s.webp", s.library_path, oid) : fmt.aprintf("%s/thumbnails/%s.webp", s.library_path, oid, allocator = req.alloc)
+	thumb_fp: string
+	if len(s.library_path) + len(oid) + len("/thumbnails/.webp") <= len(thumb_buf) {
+		thumb_fp = fmt.bprintf(thumb_buf[:], "%s/thumbnails/%s.webp", s.library_path, oid)
+	} else {
+		thumb_fp = fmt.aprintf("%s/thumbnails/%s.webp", s.library_path, oid, allocator = req.alloc)
+	}
 	data, err := os.read_entire_file(thumb_fp, req.alloc)
 	if err == nil {
 		http.res_blob(data, res, .Webp)
@@ -273,42 +277,55 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		http.res_error("", res, .InternalServerError)
 		return
 	}
-	if found {
-		dir_buf: [4096]u8
-		dir :=
-			len(s.library_path) + len("/images") <= len(dir_buf) ? fmt.bprintf(dir_buf[:], "%s/images", s.library_path) : fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
-		path_buf: [4096]u8
-		if img.ext != "" {
-			data, err = os.read_entire_file(
-				len(dir) + len(img.ext) + 22 <= len(path_buf) ? fmt.bprintf(path_buf[:], "%s/%d.%s", dir, img.id, img.ext) : fmt.aprintf("%s/%d.%s", dir, img.id, img.ext, allocator = req.alloc),
-				req.alloc,
-			)
-			if err == nil {
-				http.res_blob(data, res)
-				if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
-				return
-			}
+	if !found {
+		http.res_error("", res, .NotFound)
+		return
+	}
+
+	dir_buf: [4096]u8
+	dir: string
+	if len(s.library_path) + len("/images") <= len(dir_buf) {
+		dir = fmt.bprintf(dir_buf[:], "%s/images", s.library_path)
+	} else {
+		dir = fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
+	}
+	path_buf: [4096]u8
+	if img.ext != "" {
+		fp: string
+		if len(dir) + len(img.ext) + 22 <= len(path_buf) {
+			fp = fmt.bprintf(path_buf[:], "%s/%d.%s", dir, img.id, img.ext)
+		} else {
+			fp = fmt.aprintf("%s/%d.%s", dir, img.id, img.ext, allocator = req.alloc)
 		}
-		entries, dir_err := os.read_directory_by_path(dir, -1, req.alloc)
-		if dir_err != nil {
-			http.res_error("", res, .NotFound)
-			return
-		}
-		defer os.file_info_slice_delete(entries, req.alloc)
-		// A signed 64-bit integer needs at most 20 bytes, plus the dot.
-		prefix_buf: [21]u8
-		prefix := fmt.bprintf(prefix_buf[:], "%d.", img.id)
-		for entry in entries {
-			if entry.type != .Regular || !strings.has_prefix(entry.name, prefix) {continue}
-			data, err = os.read_entire_file(
-				len(dir) + len(entry.name) + 1 <= len(path_buf) ? fmt.bprintf(path_buf[:], "%s/%s", dir, entry.name) : fmt.aprintf("%s/%s", dir, entry.name, allocator = req.alloc),
-				req.alloc,
-			)
-			if err != nil {continue}
+		data, err = os.read_entire_file(fp, req.alloc)
+		if err == nil {
 			http.res_blob(data, res)
 			if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
 			return
 		}
+	}
+	entries, dir_err := os.read_directory_by_path(dir, -1, req.alloc)
+	if dir_err != nil {
+		http.res_error("", res, .NotFound)
+		return
+	}
+	defer os.file_info_slice_delete(entries, req.alloc)
+	// A signed 64-bit integer needs at most 20 bytes, plus the dot.
+	prefix_buf: [21]u8
+	prefix := fmt.bprintf(prefix_buf[:], "%d.", img.id)
+	for entry in entries {
+		if entry.type != .Regular || !strings.has_prefix(entry.name, prefix) {continue}
+		fp: string
+		if len(dir) + len(entry.name) + 1 <= len(path_buf) {
+			fp = fmt.bprintf(path_buf[:], "%s/%s", dir, entry.name)
+		} else {
+			fp = fmt.aprintf("%s/%s", dir, entry.name, allocator = req.alloc)
+		}
+		data, err = os.read_entire_file(fp, req.alloc)
+		if err != nil {continue}
+		http.res_blob(data, res)
+		if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
+		return
 	}
 	http.res_error("", res, .NotFound)
 }
