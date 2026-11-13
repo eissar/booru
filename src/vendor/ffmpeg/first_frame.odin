@@ -3,9 +3,8 @@ package ffmpeg
 import "core:c"
 import "core:strings"
 
-// Decoded first video frame. Planes point into `frame`; valid until close.
-@(private)
-First_Frame :: struct {
+// Decoded video frame. Planes point into `frame`; valid until free_decoded_frame.
+Decoded_Frame :: struct {
 	frame:         ^AVFrame,
 	width, height: c.int,
 	pix_fmt:       c.int, // AV_PIX_FMT_*; callers must validate before using the planes.
@@ -14,14 +13,13 @@ First_Frame :: struct {
 	uv_stride:     c.int,
 }
 
-@(private)
-first_frame_close :: proc(ff: ^First_Frame) {
+free_decoded_frame :: proc(ff: ^Decoded_Frame) {
 	if ff.frame != nil {av_frame_free(&ff.frame)}
 	ff^ = {}
 }
 
 // Decodes the first video frame of `path` without seeking.
-first_frame :: proc(path: string) -> (ff: First_Frame, ok: bool) {
+first_frame :: proc(path: string) -> (ff: Decoded_Frame, ok: bool) {
 	cpath := strings.clone_to_cstring(path, context.temp_allocator)
 
 	fmt_ctx: ^AVFormatContext
@@ -65,7 +63,7 @@ first_frame :: proc(path: string) -> (ff: First_Frame, ok: bool) {
 	}
 	if !got {return}
 
-	ff = First_Frame {
+	ff = Decoded_Frame {
 		frame     = frame,
 		width     = frame.width,
 		height    = frame.height,
