@@ -2,39 +2,11 @@ package media
 
 import "core:c"
 import "core:encoding/endian"
-import "core:fmt"
-import "core:testing"
 
 // https://www.iso.org/standard/80617.html
 
-JXL_Box_Type :: enum {
-	Unknown,
-	JXL,
-	ftyp,
-	jxlc, // codestream
-	jxlp, // picture
-}
-
-
-JXL_FourCC :: [4]u8{'J', 'X', 'L', ' '}
 JXL_Codestream_Prefix :: [2]u8{'\xFF', '\n'}
 JXL_SIGNATURE_BOX :: [12]u8{0x00, 0x00, 0x00, 0x0C, 'J', 'X', 'L', ' ', 0x0D, 0x0A, 0x87, 0x0A}
-
-// 12 bytes
-JXL_Prefix :: struct {
-	size:  [4]u8,
-	type:  [4]u8,
-	magic: [4]u8,
-}
-
-parse_jxl_prelude :: proc(data: []u8) -> (prefix: JXL_Prefix, ok: bool) {
-	if len(data) < 12 {return JXL_Prefix{}, false}
-	if ([2]u8{data[0], data[1]}) == JXL_Codestream_Prefix {return JXL_Prefix{}, false}
-
-	mptr := cast(^[12]u8)raw_data(data[:12])
-
-	return transmute(JXL_Prefix)mptr^, true
-}
 
 // An ISOBMFF-based container. This is a box-based container that includes a JPEG XL codestream box (jxlc)
 // and can optionally include other boxes with additional information,
