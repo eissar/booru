@@ -70,6 +70,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 - [x] Check dimensions before decoding and skip oversized thumbnail inputs with a documented pixel-count limit and clear log (`8192 * 8192` in `src/media/decode.odin`, `src/thumbnail/generate.odin`).
 - [ ] Non-bounded thumbnail generation unimplemented (images over `8192 * 8192` pixels are skipped).
+- [ ] 1-byte thumbnail failure sentinel: when `media.decode_frame` in `src/thumbnail/generate.odin` fails deterministically (`.Unsupported`, `.Too_Large`, or corrupt `.Failed` data), write a 1-byte failure-reason enum to `thumbnails/{64,128}/{oid}.webp` instead of leaving the file missing. This lets `exclude_existing_thumbnails` skip permanently failed items via its `getdents` scan and `/mipmap` pick the embedded fallback (`NOT_FOUND_*` vs `UNSUPPORTED_FILETYPE_*`) by checking `len(bytes) == 1` on its existing file read, with no extra syscalls or DB columns. However, because `getdents` only sees filenames and not sizes, startup cannot distinguish 1-byte sentinels from real WebPs without `stat`, so `.Too_Large`/`.Unsupported` items won't auto-regenerate when support is later added unless sentinels are purged. Writing sentinels on transient I/O or missing-source `.Failed` errors would also suppress retries (breaking `generate_missing_fixture_thumbnails`), and direct readers of `thumbnails/{64,128}/*.webp` will see non-WebP 1-byte files.
 
 
 # Thumbnail Preview TODO
@@ -223,3 +224,11 @@ FS_Heuristics :: struct {
    mount_nobarrier:  bool,
    syncfs_reports_errors: bool, // kernel >= 5.8
 }
+-> is rotational/slow & has lots of memory - mmap actual memory during replay?
+
+gallery views are persistent - not disposable !
+certain views are dynamic e.g., unsorted
+other, static views - can retain scroll position.
+navigation is an easy win as far as utility and
+convenience : BUT - retaining layout and filters
+should be done very carefully. should be opt in?

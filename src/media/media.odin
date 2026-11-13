@@ -8,6 +8,7 @@ import ffmpeg "../vendor/ffmpeg"
 import libwebp "../vendor/libwebp"
 import "core:c"
 import "core:fmt"
+import "core:os"
 import stbi "vendor:stb/image"
 
 // dav1d reports "try again" as -EAGAIN (DAV1D_ERR(EAGAIN)). EAGAIN is 11 on
@@ -232,4 +233,61 @@ free_decoded :: proc {
 	free_decoded_rgba,
 	free_decoded_yuv,
 	free_decoded_frame,
+}
+
+// Decodes a still image or first video frame from `path`.
+// Returns .Unsupported for formats that cannot be decoded, .Too_Large when
+// dimensions exceed max_pixels (if > 0), and .Failed on I/O or decode errors.
+decode_frame :: proc(
+	path: string,
+	max_pixels: i64 = 0,
+) -> (
+	frame: Decoded_Frame,
+	err: Decode_Error,
+) {
+	format, sniff_err := hack_sniff_first_32_bytes(path)
+	if sniff_err != nil {return nil, .Failed}
+	switch format {
+	case .MP4, .MOV, .M4V, .ThreeGP, .WebM, .MKV, .AVI, .OGV, .MPG, .MPV, .WMV, .FLV:
+		// Video formats decode only the first frame, never reading the whole file.
+		return decode_video_first_frame(path, max_pixels)
+	case .AVIF, .PNG, .JPEG, .GIF, .WebP:
+	case .Unknown:
+		return nil, .Unsupported
+	}
+
+	data, read_err := os.read_entire_file(path, context.allocator)
+	if read_err != nil {return nil, .Failed}
+	defer delete(data)
+
+	#partial switch format {
+	case .AVIF:
+		offset, length, alpha_offset, alpha_length, ok := avif_decode(data)
+		if !ok {return nil, .Failed}
+		yuv, decode_err := decode_yuv_dav1d(data[offset:offset + length], max_pixels = max_pixels)
+		if decode_err != .None {return nil, decode_err}
+		if alpha_length != 0 {
+			alpha, alpha_err := decode_yuv_dav1d(
+				data[alpha_offset:alpha_offset + alpha_length],
+				.I400,
+				max_pixels,
+			)
+			if alpha_err != .None {
+				free_decoded_yuv(&yuv)
+				return nil, alpha_err
+			}
+			if alpha.width != yuv.width || alpha.height != yuv.height {
+				free_decoded_yuv(&yuv)
+				free_decoded_yuv(&alpha)
+				return nil, .Failed
+			}
+			yuv.a = alpha.y
+			yuv.a_stride = alpha.y_stride
+			yuv.alpha_picture = alpha.backing.(dav1d.Dav1dPicture)
+		}
+		return yuv, .None
+	case .PNG, .JPEG, .GIF, .WebP:
+		return decode_rgba(data, max_pixels)
+	}
+	return nil, .Unsupported
 }
