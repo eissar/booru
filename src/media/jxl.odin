@@ -39,16 +39,21 @@ parse_jxl_prelude :: proc(data: []u8) -> (prefix: JXL_Prefix, ok: bool) {
 // and can optionally include other boxes with additional information,
 // such as Exif metadata. In this case, the file starts with the bytes
 
-/// Returns the byte range of the JXL codestream in `data`.
-jxlc_decode :: proc(data: []u8) -> (offset, length: int, ok: bool) {
+// Scope: JXL decode currently targets 8-bit opaque RGB24 only (via avcodec libjxl).
+// Returns the JXL codestream bytes in `data`.
+// Zero-copy subslice for bare codestreams, `jxlc`, and single-chunk `jxlp`;
+// multi-chunk `jxlp` streams are concatenated using `allocator`.
+jxlc_decode :: proc(data: []u8, allocator := context.allocator) -> (codestream: []u8, ok: bool) {
 	if len(data) < 2 {return}
 	if ([2]u8{data[0], data[1]}) == JXL_Codestream_Prefix {
-		return 0, len(data), true
+		return data, true
 	}
 
 	if len(data) < 12 {return}
 	if (cast(^[12]u8)raw_data(data))^ != JXL_SIGNATURE_BOX {return}
 
+	chunks: [dynamic]u8
+	expected_seq: u32 = 0
 	pos := 12
 	for pos + 8 <= len(data) {
 		n, _ := endian.get_u32(data[pos:pos + 4], .Big)
@@ -60,29 +65,54 @@ jxlc_decode :: proc(data: []u8) -> (offset, length: int, ok: bool) {
 		case 0:
 			box_size = u64(len(data) - pos)
 		case 1:
-			if pos + 16 > len(data) {return}
+			if pos + 16 > len(data) {
+				delete(chunks)
+				return
+			}
 			box_size, _ = endian.get_u64(data[pos + 8:pos + 16], .Big)
 			header_sz = 16
 		}
 		if fourcc == {'u', 'u', 'i', 'd'} {header_sz += 16}
-		if box_size < u64(header_sz) || box_size > u64(len(data) - pos) {return}
+		if box_size < u64(header_sz) || box_size > u64(len(data) - pos) {
+			delete(chunks)
+			return
+		}
 
 		switch fourcc {
 		case {'j', 'x', 'l', 'c'}:
-			return pos + header_sz, int(box_size) - header_sz, true
+			delete(chunks)
+			return data[pos + header_sz:pos + int(box_size)], true
 		case {'j', 'x', 'l', 'p'}:
 			// jxlp payload starts with a 4-byte big-endian sequence counter;
 			// bit 31 (0x80000000) is set on the final chunk.
-			if int(box_size) - header_sz < 4 {return}
-			counter, _ := endian.get_u32(data[pos + header_sz:pos + header_sz + 4], .Big)
-			if counter == 0x80000000 {
-				return pos + header_sz + 4, int(box_size) - header_sz - 4, true
+			if int(box_size) - header_sz < 4 {
+				delete(chunks)
+				return
 			}
-			// Multi-chunk jxlp streams are non-contiguous and must be concatenated.
-			return
+			payload := data[pos + header_sz:pos + int(box_size)]
+			counter, _ := endian.get_u32(payload[:4], .Big)
+			seq := counter & 0x7FFFFFFF
+			is_last := (counter & 0x80000000) != 0
+			if seq != expected_seq {
+				delete(chunks)
+				return
+			}
+			chunk := payload[4:]
+			if expected_seq == 0 && is_last {
+				return chunk, true
+			}
+			if expected_seq == 0 {
+				chunks = make([dynamic]u8, allocator)
+			}
+			append(&chunks, ..chunk)
+			if is_last {
+				return chunks[:], true
+			}
+			expected_seq += 1
 		}
 
 		pos += int(box_size)
 	}
+	delete(chunks)
 	return
 }
