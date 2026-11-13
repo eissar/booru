@@ -125,6 +125,11 @@ Templates are Odin strings, so lint the rendered fixtures (`test/html-fixture-td
 
 - [ ] Add `import_begin` and `import_end` events around each full-library import, where `import_begin` records the run ID, source path, and expected item count and `import_end` records the added, skipped, and failed counts, and tag every `add` from that run with the run ID. At load time, treat an `import_begin` with no matching `import_end` as an interrupted import, log how many of its `add` events exist against the expected count, and let the user resume by re-running the import. Take an exclusive non-blocking `flock` on `<library>/.import.lock` for the whole import so two runs can't append to the log at once, and keep the file handle open until the import finishes so the OS releases the lock on exit or crash.
 
+# Duplicate Detection TODO
+
+- [ ] Exact duplicate detection by content hash (`oid`) on upload/import and across existing library items, with a way to surface/merge or skip duplicates.
+- [ ] Near-duplicate detection (e.g. perceptual hash such as dHash/pHash computed during thumbnailing/ingest) to find visually similar images at different resolutions or re-encodes, plus a UI/review flow to compare and resolve pairs.
+
 # JXL Support
 
 - [x] Format detection, ISOBMFF/`jxlp` extraction, codestream dimension probing, and 8-bit RGB24 WebP thumbnailing (`src/media/jxl.odin`, `src/media/media.odin`, `src/thumbnail/generate.odin`)

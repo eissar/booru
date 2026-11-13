@@ -80,3 +80,62 @@ ingest_inserts_epoch_ms_row_immediately :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(line, fmt.tprintf("\"added_at\":%d", item.added_at)))
 	testing.expect(t, strings.contains(line, "\"mtime\":0"))
 }
+
+@(test)
+ingest_records_video_dimensions :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+
+	root, temp_err := os.make_directory_temp("", "booru-ingest-*", alloc)
+	if !testing.expect(t, temp_err == nil) {return}
+	defer os.remove_all(root)
+	if !testing.expect(t, library.init_new_library(root) == nil) {return}
+
+	cursor: elog.Cursor
+	log := elog.EventLog {
+		root   = root,
+		cursor = &cursor,
+	}
+	state := library.State {
+		library_path = root,
+		event_log    = &log,
+	}
+	if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&state)
+
+	video, read_err := os.read_entire_file("test/fixture/media/thumbnail.mp4", alloc)
+	if !testing.expect(t, read_err == nil, "read mp4 fixture") {return}
+	boundary :: "testboundary"
+	body := make([dynamic]u8, alloc)
+	head :=
+		"--" +
+		boundary +
+		"\r\nContent-Disposition: form-data; name=\"image\"; filename=\"clip.mp4\"\r\n\r\n"
+	append(&body, ..transmute([]u8)head)
+	append(&body, ..video)
+	tail := "\r\n--" + boundary + "--\r\n"
+	append(&body, ..transmute([]u8)tail)
+
+	headers := make(map[string]string, alloc)
+	headers["Content-Type"] = "multipart/form-data; boundary=" + boundary
+	res := http.Response {
+		headers = make(map[string]string, alloc),
+	}
+	handle_ingest(
+		&state,
+		&res,
+		{{method = "POST", headers = headers}, alloc, time.Time{}},
+		body[:],
+	)
+	if !testing.expect(t, res.status == .Created) {return}
+
+	items, rc := store.read_images(state.data_store, alloc)
+	if !testing.expect(t, rc == sqlite.OK && len(items) == 1) {return}
+	testing.expectf(
+		t,
+		items[0].width == 192 && items[0].height == 128,
+		"video dimensions %dx%d",
+		items[0].width,
+		items[0].height,
+	)
+}
