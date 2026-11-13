@@ -134,6 +134,17 @@ overwrite_step_all_triples :: proc(t: ^testing.T) {
 		width        = 1,
 		height       = 1,
 	}
+	// All base and shape strings are non-empty static literals, so pointer equality suffices.
+	same :: proc(x, y: ^library.Image) -> bool {
+		return(
+			raw_data(x.oid) == raw_data(y.oid) &&
+			raw_data(x.path) == raw_data(y.path) &&
+			raw_data(x.ext) == raw_data(y.ext) &&
+			raw_data(x.content_type) == raw_data(y.content_type) &&
+			x.width == y.width &&
+			x.height == y.height \
+		)
+	}
 	for a in 0 ..< 64 {for b in 0 ..< 64 {for c in 0 ..< 64 {
 				seq := [3]^library.Image {
 					&overwrite_shapes[0][a],
@@ -155,38 +166,28 @@ overwrite_step_all_triples :: proc(t: ^testing.T) {
 					if m & 32 != 0 {want.height = o.height}
 				}
 				// Base values differ from every shape value, so applying to base keeps presence visible.
-				for grouped in ([3]library.Image{got, overwrite_step(base, left), overwrite_step(base, right)}) {
-					ok :=
-						grouped.oid == want.oid &&
-						grouped.path == want.path &&
-						grouped.ext == want.ext &&
-						grouped.content_type == want.content_type &&
-						grouped.width == want.width &&
-						grouped.height == want.height
-					if !ok {testing.fail_now(t, fmt.tprint("last write differs:", a, b, c))}
+				left_applied := overwrite_step(base, left)
+				right_applied := overwrite_step(base, right)
+				for grouped in ([3]^library.Image{&got, &left_applied, &right_applied}) {
+					if !same(
+						grouped,
+						&want,
+					) {testing.fail_now(t, fmt.tprint("last write differs:", a, b, c))}
 				}
 				// L3: repeating the last overwrite changes nothing.
 				again := overwrite_step(got, seq[2]^)
-				ok :=
-					again.oid == got.oid &&
-					again.path == got.path &&
-					again.ext == got.ext &&
-					again.content_type == got.content_type &&
-					again.width == got.width &&
-					again.height == got.height
-				if !ok {testing.fail_now(t, fmt.tprint("repeated overwrite changes state:", c))}
+				if !same(
+					&again,
+					&got,
+				) {testing.fail_now(t, fmt.tprint("repeated overwrite changes state:", c))}
 				// L4: disjoint shapes commute.
 				if a & b == 0 {
 					swapped := overwrite_step(overwrite_step(base, seq[1]^), seq[0]^)
 					first := overwrite_step(overwrite_step(base, seq[0]^), seq[1]^)
-					ok =
-						swapped.oid == first.oid &&
-						swapped.path == first.path &&
-						swapped.ext == first.ext &&
-						swapped.content_type == first.content_type &&
-						swapped.width == first.width &&
-						swapped.height == first.height
-					if !ok {testing.fail_now(t, fmt.tprint("disjoint overwrites do not commute:", a, b))}
+					if !same(
+						&swapped,
+						&first,
+					) {testing.fail_now(t, fmt.tprint("disjoint overwrites do not commute:", a, b))}
 				}
 			}}}
 }
