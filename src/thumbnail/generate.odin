@@ -26,6 +26,9 @@ VIDEO_THUMBNAIL :: bit_set[media.Format] {
 
 SUPPORTED_THUMBNAIL :: bit_set[media.Format]{.PNG, .JPEG, .GIF, .WebP, .AVIF} | VIDEO_THUMBNAIL
 
+// 8K^2 pixel limit (~256 MiB RGBA) for thumbnail source decoding.
+MAX_THUMBNAIL_SOURCE_PIXELS :: 8192 * 8192
+
 encode_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded_ARGB) -> bool {
 	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
@@ -192,7 +195,10 @@ generate_image_thumbnails :: proc(
 			return 0, card(sizes)
 		}
 		decode_err: media.Decode_Error
-		yuv, decode_err = media.decode_yuv_dav1d(data[offset:offset + length])
+		yuv, decode_err = media.decode_yuv_dav1d(
+			data[offset:offset + length],
+			max_pixels = MAX_THUMBNAIL_SOURCE_PIXELS,
+		)
 		if decode_err != .None {
 			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
@@ -201,6 +207,7 @@ generate_image_thumbnails :: proc(
 			alpha, decode_err = media.decode_yuv_dav1d(
 				data[alpha_offset:alpha_offset + alpha_length],
 				.I400,
+				MAX_THUMBNAIL_SOURCE_PIXELS,
 			)
 			if decode_err != .None {
 				fmt.eprintfln("thumbnail: cannot decode alpha %s: %v", oid, decode_err)
@@ -210,14 +217,14 @@ generate_image_thumbnails :: proc(
 		}
 	case .PNG, .JPEG, .GIF, .WebP:
 		decode_err: media.Decode_Error
-		decoded, decode_err = media.decode_rgba(data)
+		decoded, decode_err = media.decode_rgba(data, MAX_THUMBNAIL_SOURCE_PIXELS)
 		if decode_err == .Too_Large {
 			fmt.eprintfln(
 				"thumbnail: skipping oversized image %s (%dx%d, limit %d pixels; non bounded thumbnail generation unimplemented)",
 				oid,
 				decoded.width,
 				decoded.height,
-				media.MAX_THUMBNAIL_SOURCE_PIXELS,
+				MAX_THUMBNAIL_SOURCE_PIXELS,
 			)
 			return 0, card(sizes)
 		}
@@ -318,7 +325,10 @@ force_generate_image_thumbnails :: proc(
 			return 0, card(sizes)
 		}
 		decode_err: media.Decode_Error
-		yuv, decode_err = media.decode_yuv_dav1d(data[offset:offset + length])
+		yuv, decode_err = media.decode_yuv_dav1d(
+			data[offset:offset + length],
+			max_pixels = MAX_THUMBNAIL_SOURCE_PIXELS,
+		)
 		if decode_err != .None {
 			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
@@ -327,6 +337,7 @@ force_generate_image_thumbnails :: proc(
 			alpha, decode_err = media.decode_yuv_dav1d(
 				data[alpha_offset:alpha_offset + alpha_length],
 				.I400,
+				MAX_THUMBNAIL_SOURCE_PIXELS,
 			)
 			if decode_err != .None {
 				fmt.eprintfln("thumbnail: cannot decode alpha %s: %v", oid, decode_err)
@@ -336,14 +347,14 @@ force_generate_image_thumbnails :: proc(
 		}
 	case .PNG, .JPEG, .GIF, .WebP:
 		decode_err: media.Decode_Error
-		decoded, decode_err = media.decode_rgba(data)
+		decoded, decode_err = media.decode_rgba(data, MAX_THUMBNAIL_SOURCE_PIXELS)
 		if decode_err == .Too_Large {
 			fmt.eprintfln(
 				"thumbnail: skipping oversized image %s (%dx%d, limit %d pixels; non bounded thumbnail generation unimplemented)",
 				oid,
 				decoded.width,
 				decoded.height,
-				media.MAX_THUMBNAIL_SOURCE_PIXELS,
+				MAX_THUMBNAIL_SOURCE_PIXELS,
 			)
 			return 0, card(sizes)
 		}

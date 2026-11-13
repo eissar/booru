@@ -1,3 +1,7 @@
+// Package media handles format detection, dimension probing, and decoding
+// supported media formats (raster images, AVIF, and video first frames) into a
+// format-agnostic decoded frame or pixel representation, with any pixel-count
+// limit supplied by callers rather than hardcoded.
 package media
 import dav1d "../vendor/dav1d"
 import libwebp "../vendor/libwebp"
@@ -27,9 +31,6 @@ Decoded_Dav1d_YUV :: struct {
 	picture:       dav1d.Dav1dPicture,
 }
 
-// 8K^2 pixel limit (~256 MiB RGBA) for thumbnail source decoding.
-MAX_THUMBNAIL_SOURCE_PIXELS :: 8192 * 8192
-
 Decode_Error :: enum {
 	None,
 	Failed,
@@ -40,9 +41,11 @@ Decode_Error :: enum {
 // Takes extracted AV1 bytes, not an AVIF container. Accepts 8-bit I420 or I400.
 // Use I400 for alpha; its samples are returned in y, with no chroma planes.
 // Input is borrowed for this call; the returned picture owns its planes.
+// If max_pixels > 0, frames exceeding that pixel count fail to decode.
 decode_yuv_dav1d :: proc(
 	data: []u8,
 	layout: dav1d.Dav1dPixelLayout = .I420,
+	max_pixels: i64 = 0,
 ) -> (
 	img: Decoded_Dav1d_YUV,
 	err: Decode_Error,
@@ -52,7 +55,9 @@ decode_yuv_dav1d :: proc(
 
 	settings: dav1d.Dav1dSettings
 	dav1d.dav1d_default_settings(&settings)
-	settings.frame_size_limit = MAX_THUMBNAIL_SOURCE_PIXELS
+	if max_pixels > 0 {
+		settings.frame_size_limit = c.uint(min(max_pixels, i64(max(c.uint))))
+	}
 
 	decoder: ^dav1d.Dav1dContext
 	if dav1d.dav1d_open(&decoder, &settings) < 0 {return {}, .Failed}
@@ -127,7 +132,7 @@ probe_dimensions :: proc(data: []u8, format: Format) -> (width, height: c.int, o
 	return width, height, true
 }
 
-decode_rgba :: proc(data: []u8) -> (img: Decoded_ARGB, err: Decode_Error) {
+decode_rgba :: proc(data: []u8, max_pixels: i64 = 0) -> (img: Decoded_ARGB, err: Decode_Error) {
 	if len(data) == 0 || len(data) > int(max(c.int)) {return {}, .Failed}
 	format := detect_format(data)
 	if format != .WebP && format != .PNG && format != .JPEG && format != .GIF {
@@ -136,7 +141,7 @@ decode_rgba :: proc(data: []u8) -> (img: Decoded_ARGB, err: Decode_Error) {
 	w, h, ok := probe_dimensions(data, format)
 	if !ok {return {}, .Failed}
 	img.width, img.height = w, h
-	if i64(w) * i64(h) > MAX_THUMBNAIL_SOURCE_PIXELS {
+	if max_pixels > 0 && i64(w) * i64(h) > max_pixels {
 		return img, .Too_Large
 	}
 
