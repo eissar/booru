@@ -176,7 +176,12 @@ replay :: proc(
 				}
 			case "overwrite":
 				if full_replay {
-					lww_items[item.id] = overwrite_step(lww_items[item.id], item)
+					if existing, ok := &lww_items[item.id]; ok {
+						overwrite_step(existing, &item)
+					} else {
+						lww_items[item.id] = {}
+						overwrite_step(&lww_items[item.id], &item)
+					}
 				} else {
 					// In incremental replay, apply overwrite directly
 					store_err = store.overwrite_item(&tx, item)
@@ -702,13 +707,11 @@ patch_fold :: proc(state: Patch_State, p: Patch_Delta, alloc: mem.Allocator) -> 
 }
 
 // overwrite_step is next from last_write.fly applied to every overwrite property.
-overwrite_step :: proc(existing: library.Image, o: library.Image) -> library.Image {
-	existing := existing
+overwrite_step :: proc(existing: ^library.Image, o: ^library.Image) {
 	if len(o.oid) > 0 {existing.oid = o.oid}
 	if len(o.path) > 0 {existing.path = o.path}
 	if len(o.ext) > 0 {existing.ext = o.ext}
 	if len(o.content_type) > 0 {existing.content_type = o.content_type}
 	if o.width > 0 {existing.width = o.width}
 	if o.height > 0 {existing.height = o.height}
-	return existing
 }

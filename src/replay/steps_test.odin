@@ -152,9 +152,14 @@ overwrite_step_all_triples :: proc(t: ^testing.T) {
 					&overwrite_shapes[2][c],
 				}
 				got := base
-				for o in seq {got = overwrite_step(got, o^)}
-				left := overwrite_step(overwrite_step(seq[0]^, seq[1]^), seq[2]^)
-				right := overwrite_step(seq[0]^, overwrite_step(seq[1]^, seq[2]^))
+				for o in seq {overwrite_step(&got, o)}
+				left := seq[0]^
+				overwrite_step(&left, seq[1])
+				overwrite_step(&left, seq[2])
+				right_tail := seq[1]^
+				overwrite_step(&right_tail, seq[2])
+				right := seq[0]^
+				overwrite_step(&right, &right_tail)
 				want := base
 				for o, i in seq {
 					m := [3]int{a, b, c}[i]
@@ -166,8 +171,10 @@ overwrite_step_all_triples :: proc(t: ^testing.T) {
 					if m & 32 != 0 {want.height = o.height}
 				}
 				// Base values differ from every shape value, so applying to base keeps presence visible.
-				left_applied := overwrite_step(base, left)
-				right_applied := overwrite_step(base, right)
+				left_applied := base
+				overwrite_step(&left_applied, &left)
+				right_applied := base
+				overwrite_step(&right_applied, &right)
 				for grouped in ([3]^library.Image{&got, &left_applied, &right_applied}) {
 					if !same(
 						grouped,
@@ -175,15 +182,20 @@ overwrite_step_all_triples :: proc(t: ^testing.T) {
 					) {testing.fail_now(t, fmt.tprint("last write differs:", a, b, c))}
 				}
 				// L3: repeating the last overwrite changes nothing.
-				again := overwrite_step(got, seq[2]^)
+				again := got
+				overwrite_step(&again, seq[2])
 				if !same(
 					&again,
 					&got,
 				) {testing.fail_now(t, fmt.tprint("repeated overwrite changes state:", c))}
 				// L4: disjoint shapes commute.
 				if a & b == 0 {
-					swapped := overwrite_step(overwrite_step(base, seq[1]^), seq[0]^)
-					first := overwrite_step(overwrite_step(base, seq[0]^), seq[1]^)
+					swapped := base
+					overwrite_step(&swapped, seq[1])
+					overwrite_step(&swapped, seq[0])
+					first := base
+					overwrite_step(&first, seq[0])
+					overwrite_step(&first, seq[1])
 					if !same(
 						&swapped,
 						&first,
