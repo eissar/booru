@@ -21,14 +21,14 @@ avif_alpha_thumbnail_fixture :: proc(t: ^testing.T) {
 	}
 	img, decode_err := media.decode_yuv_dav1d(data[offset:offset + length])
 	if !testing.expect(t, decode_err == .None, "decode color") {return}
-	defer media.free_decoded_dav1d(&img)
+	defer media.free_decoded(&img)
 
 	alpha, alpha_err := media.decode_yuv_dav1d(
 		data[alpha_offset:alpha_offset + alpha_length],
 		.I400,
 	)
 	if !testing.expect(t, alpha_err == .None, "decode alpha") {return}
-	defer media.free_decoded_dav1d(&alpha)
+	defer media.free_decoded(&alpha)
 
 	root, temp_err := os.make_directory_temp("", "booru-avif-alpha-*", context.allocator)
 	if !testing.expect(t, temp_err == nil) {return}
@@ -64,7 +64,7 @@ avif_thumbnail_fixture :: proc(t: ^testing.T) {
 	if !testing.expect(t, ok, "extract primary AV1 item") {return}
 	img, decode_err := media.decode_yuv_dav1d(data[offset:offset + length])
 	if !testing.expect(t, decode_err == .None, "decode AVIF fixture") {return}
-	defer media.free_decoded_dav1d(&img)
+	defer media.free_decoded(&img)
 
 	root, temp_err := os.make_directory_temp("", "booru-avif-*", context.allocator)
 	if !testing.expect(t, temp_err == nil) {return}

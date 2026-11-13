@@ -62,8 +62,8 @@ encode_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded
 encode_thumbnail_yuv :: proc(
 	root, oid: string,
 	edge: c.int,
-	img: media.Decoded_Dav1d_YUV,
-	alpha: ^media.Decoded_Dav1d_YUV = nil,
+	img: media.Decoded_YUV,
+	alpha: ^media.Decoded_YUV = nil,
 ) -> bool {
 	if alpha != nil && (alpha.width != img.width || alpha.height != img.height) {
 		fmt.eprintfln("thumbnail: alpha dimensions do not match: %s", oid)
@@ -94,6 +94,10 @@ encode_thumbnail_yuv :: proc(
 		pic.colorspace = libwebp.WEBP_YUV420A
 		pic.a = alpha.y
 		pic.a_stride = c.int(alpha.y_stride)
+	} else if img.a != nil {
+		pic.colorspace = libwebp.WEBP_YUV420A
+		pic.a = img.a
+		pic.a_stride = c.int(img.a_stride)
 	}
 	if ok {ok = libwebp.rescale(&pic, file, edge)}
 	close_err := os.close(file)
@@ -105,29 +109,35 @@ encode_thumbnail_yuv :: proc(
 	return true
 }
 
+encode_thumbnail_frame :: proc(
+	root, oid: string,
+	edge: c.int,
+	frame: media.Decoded_Frame,
+) -> bool {
+	switch f in frame {
+	case media.Decoded_ARGB:
+		return encode_thumbnail_argb(root, oid, edge, f)
+	case media.Decoded_YUV:
+		return encode_thumbnail_yuv(root, oid, edge, f)
+	}
+	return false
+}
+
 encode_thumbnail :: proc {
 	encode_thumbnail_argb,
 	encode_thumbnail_yuv,
+	encode_thumbnail_frame,
 	encode_thumbnail_video,
 }
 
 // Decodes the first video frame of `path` and encodes it at `edge`, one WebP.
 encode_thumbnail_video :: proc(root, oid: string, edge: c.int, path: string) -> bool {
-	ff, err := media.decode_video_first_frame(path, MAX_THUMBNAIL_SOURCE_PIXELS)
+	img, err := media.decode_video_first_frame(path, MAX_THUMBNAIL_SOURCE_PIXELS)
 	if err != .None {
 		fmt.eprintfln("thumbnail: cannot decode video %s: %v", oid, err)
 		return false
 	}
-	defer media.free_decoded(&ff)
-	img := media.Decoded_Dav1d_YUV {
-		y         = ff.y,
-		u         = ff.u,
-		v         = ff.v,
-		y_stride  = int(ff.y_stride),
-		uv_stride = int(ff.uv_stride),
-		width     = ff.width,
-		height    = ff.height,
-	}
+	defer media.free_decoded(&img)
 	return encode_thumbnail_yuv(root, oid, edge, img)
 }
 
@@ -175,13 +185,11 @@ generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	defer delete(data)
-	decoded: media.Decoded_ARGB
-	yuv: media.Decoded_Dav1d_YUV
-	alpha: media.Decoded_Dav1d_YUV
-	alpha_picture: ^media.Decoded_Dav1d_YUV
-	defer media.free_decoded(decoded)
-	defer media.free_decoded_dav1d(&yuv)
-	defer media.free_decoded_dav1d(&alpha)
+	frame: media.Decoded_Frame
+	alpha: media.Decoded_YUV
+	alpha_picture: ^media.Decoded_YUV
+	defer media.free_decoded(&frame)
+	defer media.free_decoded(&alpha)
 	#partial switch format {
 	case .AVIF:
 		offset, length, alpha_offset, alpha_length, ok := media.avif_decode(data)
@@ -189,8 +197,7 @@ generate_image_thumbnails :: proc(
 			fmt.eprintfln("thumbnail: cannot extract AVIF primary item: %s", oid)
 			return 0, card(sizes)
 		}
-		decode_err: media.Decode_Error
-		yuv, decode_err = media.decode_yuv_dav1d(
+		yuv, decode_err := media.decode_yuv_dav1d(
 			data[offset:offset + length],
 			max_pixels = MAX_THUMBNAIL_SOURCE_PIXELS,
 		)
@@ -198,6 +205,7 @@ generate_image_thumbnails :: proc(
 			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
 		}
+		frame = yuv
 		if alpha_length != 0 {
 			alpha, decode_err = media.decode_yuv_dav1d(
 				data[alpha_offset:alpha_offset + alpha_length],
@@ -211,8 +219,7 @@ generate_image_thumbnails :: proc(
 			alpha_picture = &alpha
 		}
 	case .PNG, .JPEG, .GIF, .WebP:
-		decode_err: media.Decode_Error
-		decoded, decode_err = media.decode_rgba(data, MAX_THUMBNAIL_SOURCE_PIXELS)
+		decoded, decode_err := media.decode_rgba(data, MAX_THUMBNAIL_SOURCE_PIXELS)
 		if decode_err == .Too_Large {
 			fmt.eprintfln(
 				"thumbnail: skipping oversized image %s (%dx%d, limit %d pixels; non bounded thumbnail generation unimplemented)",
@@ -227,6 +234,7 @@ generate_image_thumbnails :: proc(
 			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
 		}
+		frame = decoded
 	case:
 		return 0, 0
 	}
@@ -241,10 +249,16 @@ generate_image_thumbnails :: proc(
 			continue
 		}
 		ok: bool
-		if format == .AVIF {
-			ok = encode_thumbnail(s.library_path, oid, edge, yuv, alpha_picture)
+		if alpha_picture != nil {
+			ok = encode_thumbnail(
+				s.library_path,
+				oid,
+				edge,
+				frame.(media.Decoded_YUV),
+				alpha_picture,
+			)
 		} else {
-			ok = encode_thumbnail(s.library_path, oid, edge, decoded)
+			ok = encode_thumbnail(s.library_path, oid, edge, frame)
 		}
 		if ok {
 			generated += 1
@@ -305,13 +319,11 @@ force_generate_image_thumbnails :: proc(
 		return 0, card(sizes)
 	}
 	defer delete(data)
-	decoded: media.Decoded_ARGB
-	yuv: media.Decoded_Dav1d_YUV
-	alpha: media.Decoded_Dav1d_YUV
-	alpha_picture: ^media.Decoded_Dav1d_YUV
-	defer media.free_decoded(decoded)
-	defer media.free_decoded_dav1d(&yuv)
-	defer media.free_decoded_dav1d(&alpha)
+	frame: media.Decoded_Frame
+	alpha: media.Decoded_YUV
+	alpha_picture: ^media.Decoded_YUV
+	defer media.free_decoded(&frame)
+	defer media.free_decoded(&alpha)
 	#partial switch format {
 	case .AVIF:
 		offset, length, alpha_offset, alpha_length, ok := media.avif_decode(data)
@@ -319,8 +331,7 @@ force_generate_image_thumbnails :: proc(
 			fmt.eprintfln("thumbnail: cannot extract AVIF primary item: %s", oid)
 			return 0, card(sizes)
 		}
-		decode_err: media.Decode_Error
-		yuv, decode_err = media.decode_yuv_dav1d(
+		yuv, decode_err := media.decode_yuv_dav1d(
 			data[offset:offset + length],
 			max_pixels = MAX_THUMBNAIL_SOURCE_PIXELS,
 		)
@@ -328,6 +339,7 @@ force_generate_image_thumbnails :: proc(
 			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
 		}
+		frame = yuv
 		if alpha_length != 0 {
 			alpha, decode_err = media.decode_yuv_dav1d(
 				data[alpha_offset:alpha_offset + alpha_length],
@@ -341,8 +353,7 @@ force_generate_image_thumbnails :: proc(
 			alpha_picture = &alpha
 		}
 	case .PNG, .JPEG, .GIF, .WebP:
-		decode_err: media.Decode_Error
-		decoded, decode_err = media.decode_rgba(data, MAX_THUMBNAIL_SOURCE_PIXELS)
+		decoded, decode_err := media.decode_rgba(data, MAX_THUMBNAIL_SOURCE_PIXELS)
 		if decode_err == .Too_Large {
 			fmt.eprintfln(
 				"thumbnail: skipping oversized image %s (%dx%d, limit %d pixels; non bounded thumbnail generation unimplemented)",
@@ -357,6 +368,7 @@ force_generate_image_thumbnails :: proc(
 			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
 			return 0, card(sizes)
 		}
+		frame = decoded
 	case:
 		return 0, 0
 	}
@@ -377,10 +389,16 @@ force_generate_image_thumbnails :: proc(
 			continue
 		}
 		ok: bool
-		if format == .AVIF {
-			ok = encode_thumbnail(s.library_path, oid, edge, yuv, alpha_picture)
+		if alpha_picture != nil {
+			ok = encode_thumbnail(
+				s.library_path,
+				oid,
+				edge,
+				frame.(media.Decoded_YUV),
+				alpha_picture,
+			)
 		} else {
-			ok = encode_thumbnail(s.library_path, oid, edge, decoded)
+			ok = encode_thumbnail(s.library_path, oid, edge, frame)
 		}
 		if ok {
 			generated += 1

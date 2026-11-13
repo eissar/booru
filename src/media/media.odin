@@ -22,14 +22,25 @@ Decoded_ARGB :: struct {
 	free_pixels:   proc "c" (_: rawptr),
 }
 
-// Owns a dav1d picture reference; do not free copies of the same result.
-// Plane pointers remain valid until free_decoded_dav1d.
-Decoded_Dav1d_YUV :: struct {
+// Owns a decoded YUV frame reference (and optional alpha plane); do not free
+// copies of the same result. Plane pointers remain valid until free_decoded_yuv.
+Decoded_YUV :: struct {
 	y, u, v:       [^]u8,
 	y_stride:      int,
 	uv_stride:     int,
+	a:             [^]u8,
+	a_stride:      int,
 	width, height: c.int,
-	picture:       dav1d.Dav1dPicture,
+	backing:       union {
+		dav1d.Dav1dPicture,
+		ffmpeg.Decoded_Frame,
+	},
+	alpha_picture: dav1d.Dav1dPicture,
+}
+
+Decoded_Frame :: union {
+	Decoded_ARGB,
+	Decoded_YUV,
 }
 
 Decode_Error :: enum {
@@ -48,7 +59,7 @@ decode_yuv_dav1d :: proc(
 	layout: dav1d.Dav1dPixelLayout = .I420,
 	max_pixels: i64 = 0,
 ) -> (
-	img: Decoded_Dav1d_YUV,
+	img: Decoded_YUV,
 	err: Decode_Error,
 ) {
 	if len(data) == 0 {return {}, .Failed}
@@ -93,7 +104,7 @@ decode_yuv_dav1d :: proc(
 		return {}, .Unsupported
 	}
 
-	return Decoded_Dav1d_YUV {
+	return Decoded_YUV {
 			y = ([^]u8)(pic.data[0]),
 			u = ([^]u8)(pic.data[1]),
 			v = ([^]u8)(pic.data[2]),
@@ -101,7 +112,7 @@ decode_yuv_dav1d :: proc(
 			uv_stride = int(pic.stride[1]),
 			width = pic.p.w,
 			height = pic.p.h,
-			picture = pic,
+			backing = pic,
 		},
 		.None
 }
@@ -123,7 +134,7 @@ probe_dimensions :: proc(data: []u8, format: Format) -> (width, height: c.int, o
 		if !avif_ok {return 0, 0, false}
 		yuv, err := decode_yuv_dav1d(data[offset:offset + length])
 		if err != .None {return 0, 0, false}
-		defer free_decoded_dav1d(&yuv)
+		defer free_decoded_yuv(&yuv)
 		width, height = yuv.width, yuv.height
 	case:
 		fmt.eprintfln("media: probe_dimensions called on unsupported format: %v", format)
@@ -163,20 +174,37 @@ free_decoded_rgba :: proc(img: Decoded_ARGB) {
 	if img.pixels != nil {img.free_pixels(img.pixels)}
 }
 
-free_decoded_dav1d :: proc(img: ^Decoded_Dav1d_YUV) {
-	dav1d.dav1d_picture_unref(&img.picture)
+free_decoded_yuv :: proc(img: ^Decoded_YUV) {
+	switch &b in img.backing {
+	case dav1d.Dav1dPicture:
+		dav1d.dav1d_picture_unref(&b)
+	case ffmpeg.Decoded_Frame:
+		ffmpeg.free_decoded_frame(&b)
+	}
+	if img.a != nil {
+		dav1d.dav1d_picture_unref(&img.alpha_picture)
+	}
 	img^ = {}
+}
+
+free_decoded_frame :: proc(frame: ^Decoded_Frame) {
+	switch &f in frame {
+	case Decoded_ARGB:
+		free_decoded_rgba(f)
+	case Decoded_YUV:
+		free_decoded_yuv(&f)
+	}
+	frame^ = nil
 }
 
 decode_video_first_frame :: proc(
 	path: string,
 	max_pixels: i64 = 0,
 ) -> (
-	ff: ffmpeg.Decoded_Frame,
+	img: Decoded_YUV,
 	err: Decode_Error,
 ) {
-	ok: bool
-	ff, ok = ffmpeg.first_frame(path)
+	ff, ok := ffmpeg.first_frame(path)
 	if !ok {return {}, .Failed}
 	if ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUV420P && ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUVJ420P {
 		ffmpeg.free_decoded_frame(&ff)
@@ -187,11 +215,21 @@ decode_video_first_frame :: proc(
 		ffmpeg.free_decoded_frame(&ff)
 		return {width = w, height = h}, .Too_Large
 	}
-	return ff, .None
+	return Decoded_YUV {
+			y = ff.y,
+			u = ff.u,
+			v = ff.v,
+			y_stride = int(ff.y_stride),
+			uv_stride = int(ff.uv_stride),
+			width = ff.width,
+			height = ff.height,
+			backing = ff,
+		},
+		.None
 }
 
 free_decoded :: proc {
 	free_decoded_rgba,
-	free_decoded_dav1d,
-	ffmpeg.free_decoded_frame,
+	free_decoded_yuv,
+	free_decoded_frame,
 }
