@@ -79,7 +79,7 @@ scan_row :: proc(
 	allocator := context.allocator,
 ) -> Scan_Error where intrinsics.type_is_struct(T) {
 	if e := check_shape(stmt, T); e != .None {return e}
-	info := runtime.type_info_base(type_info_of(T)).variant.(runtime.Type_Info_Struct)
+	info := runtime.type_info_base(type_info_of(T)).variant.(^runtime.Type_Info_Struct)
 
 	row: T
 	base := cast([^]u8)&row
@@ -96,7 +96,7 @@ scan_row :: proc(
 // check_shape validates the struct type and the statement's column count.
 @(private)
 check_shape :: proc(stmt: ^Stmt, T: typeid) -> Scan_Error {
-	info, is_struct := runtime.type_info_base(type_info_of(T)).variant.(runtime.Type_Info_Struct)
+	info, is_struct := runtime.type_info_base(type_info_of(T)).variant.(^runtime.Type_Info_Struct)
 	if !is_struct || info.soa_kind != .None || .raw_union in info.flags {return .Unsupported}
 	for i in 0 ..< int(info.field_count) {
 		if !supported_field(info.types[i]) {return .Unsupported}
@@ -107,7 +107,7 @@ check_shape :: proc(stmt: ^Stmt, T: typeid) -> Scan_Error {
 
 @(private)
 supported_integer :: proc(ti: ^runtime.Type_Info) -> bool {
-	v, ok := runtime.type_info_base(ti).variant.(runtime.Type_Info_Integer)
+	v, ok := runtime.type_info_base(ti).variant.(^runtime.Type_Info_Integer)
 	if !ok || v.endianness != .Platform {return false}
 	switch ti.size {
 	case 1, 2, 4, 8:
@@ -118,7 +118,7 @@ supported_integer :: proc(ti: ^runtime.Type_Info) -> bool {
 
 @(private)
 is_u8 :: proc(ti: ^runtime.Type_Info) -> bool {
-	v, ok := runtime.type_info_base(ti).variant.(runtime.Type_Info_Integer)
+	v, ok := runtime.type_info_base(ti).variant.(^runtime.Type_Info_Integer)
 	return ok && !v.signed && v.endianness == .Platform && ti.size == 1
 }
 
@@ -127,26 +127,26 @@ is_u8 :: proc(ti: ^runtime.Type_Info) -> bool {
 supported_field :: proc(ti: ^runtime.Type_Info) -> bool {
 	base := runtime.type_info_base(ti)
 	#partial switch v in base.variant {
-	case runtime.Type_Info_Boolean:
+	case ^runtime.Type_Info_Boolean:
 		switch base.size {
 		case 1, 2, 4, 8:
 			return true
 		}
-	case runtime.Type_Info_Integer:
+	case ^runtime.Type_Info_Integer:
 		return supported_integer(base)
-	case runtime.Type_Info_Float:
+	case ^runtime.Type_Info_Float:
 		if v.endianness != .Platform {return false}
 		switch base.size {
 		case 2, 4, 8:
 			return true
 		}
-	case runtime.Type_Info_Enum:
+	case ^runtime.Type_Info_Enum:
 		return supported_integer(v.base)
-	case runtime.Type_Info_String:
+	case ^runtime.Type_Info_String:
 		return v.encoding == .UTF_8
-	case runtime.Type_Info_Slice:
+	case ^runtime.Type_Info_Slice:
 		return is_u8(v.elem)
-	case runtime.Type_Info_Array:
+	case ^runtime.Type_Info_Array:
 		return is_u8(v.elem)
 	}
 	return false
@@ -181,7 +181,7 @@ scan_field :: proc(
 	base := runtime.type_info_base(ti)
 
 	#partial switch v in base.variant {
-	case runtime.Type_Info_Boolean:
+	case ^runtime.Type_Info_Boolean:
 		if kind != .Integer {return .Type_Mismatch}
 		raw := column_int64(stmt, c)
 		if raw != 0 && raw != 1 {return .Integer_Range}
@@ -196,7 +196,7 @@ scan_field :: proc(
 		case 8:
 			(cast(^b64)dst)^ = b64(on)
 		}
-	case runtime.Type_Info_Integer:
+	case ^runtime.Type_Info_Integer:
 		if kind != .Integer {return .Type_Mismatch}
 		value := column_int64(stmt, c)
 		bits := uint(base.size * 8)
@@ -210,7 +210,7 @@ scan_field :: proc(
 			if bits < 64 && u64(value) >= (u64(1) << bits) {return .Integer_Range}
 		}
 		put_int(dst, base.size, value)
-	case runtime.Type_Info_Float:
+	case ^runtime.Type_Info_Float:
 		// SQLite stores whole-number REALs as integers on disk but reports them as FLOAT;
 		// accept either class.
 		if kind != .Float && kind != .Integer {return .Type_Mismatch}
@@ -247,7 +247,7 @@ scan_field :: proc(
 		case 8:
 			(cast(^f64)dst)^ = d
 		}
-	case runtime.Type_Info_Enum:
+	case ^runtime.Type_Info_Enum:
 		val: i64
 		found := false
 		#partial switch kind {
@@ -255,7 +255,7 @@ scan_field :: proc(
 			val = column_int64(stmt, c)
 			// Values are stored as i64 bit patterns: a u64 member above i64 max
 			// looks negative, so a negative SQL integer must not match unsigned enums.
-			backing, _ := runtime.type_info_base(v.base).variant.(runtime.Type_Info_Integer)
+			backing, _ := runtime.type_info_base(v.base).variant.(^runtime.Type_Info_Integer)
 			if backing.signed || val >= 0 {
 				for ev in v.values {if i64(ev) == val {found = true; break}}
 			}
@@ -269,7 +269,7 @@ scan_field :: proc(
 		}
 		if !found {return .Bad_Enum}
 		put_int(dst, base.size, val)
-	case runtime.Type_Info_String:
+	case ^runtime.Type_Info_String:
 		if kind != .Text {return .Type_Mismatch}
 		text := column_string(stmt, col)
 		if v.is_cstring {
@@ -282,7 +282,7 @@ scan_field :: proc(
 			if err != nil {return .Alloc}
 			(cast(^string)dst)^ = s
 		}
-	case runtime.Type_Info_Slice:
+	case ^runtime.Type_Info_Slice:
 		if kind != .Blob {return .Type_Mismatch}
 		p := column_blob(stmt, c)
 		n := int(column_bytes(stmt, c))
@@ -290,7 +290,7 @@ scan_field :: proc(
 		if err != nil {return .Alloc}
 		if n > 0 {mem.copy(raw_data(buf), p, n)}
 		(cast(^[]u8)dst)^ = buf
-	case runtime.Type_Info_Array:
+	case ^runtime.Type_Info_Array:
 		if kind != .Blob {return .Type_Mismatch}
 		p := column_blob(stmt, c)
 		n := int(column_bytes(stmt, c))
@@ -305,9 +305,9 @@ scan_field :: proc(
 @(private)
 free_scan_field :: proc(dst: [^]u8, ti: ^runtime.Type_Info, allocator: mem.Allocator) {
 	#partial switch v in runtime.type_info_base(ti).variant {
-	case runtime.Type_Info_String:
+	case ^runtime.Type_Info_String:
 		if v.is_cstring {delete((cast(^cstring)dst)^, allocator)} else {delete((cast(^string)dst)^, allocator)}
-	case runtime.Type_Info_Slice:
+	case ^runtime.Type_Info_Slice:
 		delete((cast(^[]u8)dst)^, allocator)
 	}
 }
