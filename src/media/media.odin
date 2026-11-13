@@ -39,9 +39,20 @@ Decoded_YUV :: struct {
 	alpha_picture: dav1d.Dav1dPicture,
 }
 
+// Zero-copy strided RGB24 view backed by an ffmpeg.Decoded_Frame so callers
+// like WebPPictureImportRGB can consume FFmpeg's pixel buffer directly without
+// allocating or expanding to RGBA.
+Decoded_RGB24 :: struct {
+	pixels:        [^]u8,
+	stride:        c.int,
+	width, height: c.int,
+	backing:       ffmpeg.Decoded_Frame,
+}
+
 Decoded_Frame :: union {
 	Decoded_ARGB,
 	Decoded_YUV,
+	Decoded_RGB24,
 }
 
 Decode_Error :: enum {
@@ -194,6 +205,8 @@ free_decoded_frame :: proc(frame: ^Decoded_Frame) {
 		free_decoded_rgba(f)
 	case Decoded_YUV:
 		free_decoded_yuv(&f)
+	case Decoded_RGB24:
+		ffmpeg.free_decoded_frame(&f.backing)
 	}
 	frame^ = nil
 }
@@ -251,6 +264,30 @@ decode_frame :: proc(
 	case .MP4, .MOV, .M4V, .ThreeGP, .WebM, .MKV, .AVI, .OGV, .MPG, .MPV, .WMV, .FLV:
 		// Video formats decode only the first frame, never reading the whole file.
 		return decode_video_first_frame(path, max_pixels)
+	case .JXL:
+		// Scope: JXL decode currently targets 8-bit opaque RGB24 only.
+		ff, ok := ffmpeg.first_frame(path)
+		if !ok {return nil, .Failed}
+		if ff.pix_fmt != ffmpeg.AV_PIX_FMT_RGB24 {
+			ffmpeg.free_decoded_frame(&ff)
+			return nil, .Unsupported
+		}
+		if ff.width <= 0 || ff.height <= 0 || ff.y == nil {
+			ffmpeg.free_decoded_frame(&ff)
+			return nil, .Failed
+		}
+		if max_pixels > 0 && i64(ff.width) * i64(ff.height) > max_pixels {
+			ffmpeg.free_decoded_frame(&ff)
+			return nil, .Too_Large
+		}
+		return Decoded_RGB24 {
+				pixels = ff.y,
+				stride = ff.y_stride,
+				width = ff.width,
+				height = ff.height,
+				backing = ff,
+			},
+			.None
 	case .AVIF, .PNG, .JPEG, .GIF, .WebP:
 	case .Unknown:
 		return nil, .Unsupported

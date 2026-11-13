@@ -16,6 +16,7 @@ Format :: enum {
 	MPV,
 	WMV,
 	AVIF,
+	JXL,
 	MOV,
 	ThreeGP,
 	M4V,
@@ -99,6 +100,9 @@ detect_format :: proc(data: []u8) -> Format {
 		if bytes.contains(brands, transmute([]u8)string("3gp")) {return .ThreeGP}
 		if bytes.contains(brands, transmute([]u8)string("M4V")) {return .M4V}
 		return .MP4
+	case has_magic(data, 0, {0xff, 0x0a}),
+	     has_magic(data, 0, {0x00, 0x00, 0x00, 0x0c, 'J', 'X', 'L', ' ', 0x0d, 0x0a, 0x87, 0x0a}):
+		return .JXL
 	case has_magic(data, 0, {0x1a, 0x45, 0xdf, 0xa3}):
 		header := data[:min(len(data), 4096)]
 		if bytes.contains(header, transmute([]u8)string("webm")) {return .WebM}
@@ -133,6 +137,8 @@ extension :: proc(format: Format) -> string {
 		return "wmv"
 	case .AVIF:
 		return "avif"
+	case .JXL:
+		return "jxl"
 	case .MOV:
 		return "mov"
 	case .ThreeGP:
@@ -175,6 +181,8 @@ mime :: proc(format: Format) -> string {
 		return "video/x-ms-wmv"
 	case .AVIF:
 		return "image/avif"
+	case .JXL:
+		return "image/jxl"
 	case .MOV:
 		return "video/quicktime"
 	case .ThreeGP:

@@ -42,6 +42,37 @@ encode_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded
 	return true
 }
 
+encode_thumbnail_rgb24 :: proc(root, oid: string, edge: c.int, img: media.Decoded_RGB24) -> bool {
+	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
+	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
+		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
+		return false
+	}
+	path := fmt.tprintf("%s/%s.webp", dir, oid)
+	// Exclusive creation also protects a thumbnail created since the scan.
+	file, err := os.open(path, {.Write, .Create, .Excl}, os.Permissions_Default_File)
+	if err == .Exist {return true}
+	if err != nil {
+		fmt.eprintfln("thumbnail: open %s: %v", path, err)
+		return false
+	}
+	pic: libwebp.WebPPicture
+	initialized := libwebp.WebPPictureInitInternal(&pic, 0x0210) != 0
+	defer libwebp.WebPPictureFree(&pic)
+	pic.width, pic.height = img.width, img.height
+	ok := initialized
+	pic.use_argb = 1
+	ok = ok && libwebp.WebPPictureImportRGB(&pic, img.pixels, img.stride) != 0
+	if ok {ok = libwebp.rescale(&pic, file, edge)}
+	close_err := os.close(file)
+	if !ok || close_err != nil {
+		os.remove(path)
+		fmt.eprintfln("thumbnail: encode/write failed: %s", path)
+		return false
+	}
+	return true
+}
+
 encode_thumbnail_yuv :: proc(
 	root, oid: string,
 	edge: c.int,
@@ -102,12 +133,15 @@ encode_thumbnail_frame :: proc(
 		return encode_thumbnail_argb(root, oid, edge, f)
 	case media.Decoded_YUV:
 		return encode_thumbnail_yuv(root, oid, edge, f)
+	case media.Decoded_RGB24:
+		return encode_thumbnail_rgb24(root, oid, edge, f)
 	}
 	return false
 }
 
 encode_thumbnail :: proc {
 	encode_thumbnail_argb,
+	encode_thumbnail_rgb24,
 	encode_thumbnail_yuv,
 	encode_thumbnail_frame,
 }

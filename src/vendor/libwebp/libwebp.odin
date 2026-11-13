@@ -91,6 +91,7 @@ foreign webp {
 	WebPDecodeRGBA :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int) -> [^]u8 ---
 	WebPFree :: proc(p: rawptr) ---
 	WebPPictureInitInternal :: proc(picture: ^WebPPicture, version: c.int) -> c.int ---
+	WebPPictureImportRGB :: proc(picture: ^WebPPicture, rgb: [^]u8, stride: c.int) -> c.int ---
 	WebPPictureImportRGBA :: proc(picture: ^WebPPicture, rgba: [^]u8, stride: c.int) -> c.int ---
 
 	WebPPictureRescale :: proc(picture: ^WebPPicture, width, height: c.int) -> c.int ---
