@@ -5,6 +5,11 @@ high level tasks
 Harden flat parser: validation, boundaries, tests/fuzzing.
 Harden event semantics: required fields, patch/clear rules, ordering, replay progress, and failure recovery.
 
+- [ ] [deferred] Improved error handling:
+  - Replace ad-hoc `bool` / `os.exit` / `panic` error paths with explicit error enums/unions that preserve failure context across package boundaries (`media`, `store`, `replay`, `importers`, `server`).
+  - Separate error classes consistently: caller/input validation errors (4xx), transient I/O or resource exhaustion (retryable / 503), corrupt/invariant failures (abort or rebuild), and unsupported formats.
+  - Attach actionable context (path, oid, shard/offset, sqlite error code) when logging at boundaries (`src/server/`, `src/main.odin`) without leaking internal details in HTTP responses.
+
 - [ ] [v1] Make events CloudEvent compatible.
 - [ ] Review existing replay panic/error states and thoroughly evaluate when a failed incremental replay (`full_replay = false`) can safely fall back to full replay.
 - [ ] Classify startup store errors and rebuild only when restartable. Already done: a stale schema (missing columns, detected as `SCHEMA_MISMATCH` from `prepare_item_patch`) discards `store.sqlite` and rebuilds once per startup (`src/main.odin`). Remaining: `PRAGMA user_version` check, `SQLITE_CORRUPT`, and refusing non-restartable errors. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
