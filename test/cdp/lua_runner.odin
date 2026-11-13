@@ -324,3 +324,8 @@ test_gallery_strip :: proc(t: ^testing.T) {
 test_gallery_virtual :: proc(t: ^testing.T) {
 	run_lua_spec(t, "test/cdp/gallery_virtual.lua")
 }
+
+@(test)
+test_benchmark_counters :: proc(t: ^testing.T) {
+	run_lua_spec(t, "test/cdp/benchmark_counters.lua")
+}

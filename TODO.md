@@ -18,6 +18,7 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Test: `name` finalization (growth, shrink, clear, multibyte) trims NUL padding to the final name; order independence is covered by `steps_test.odin`.
 - [ ] Test: comment patches at distinct anchors commute and reduce to the final text.
 - [ ] Test: overwrite applies in log order across shards; the last assignment per LWW field wins.
+- [ ] Simplify `case "overwrite"` in `src/replay/replay.odin` to `overwrite_step(&lww_items[item.id], &item)` during `full_replay`: remove the unreachable `else` branch that zero-initializes `lww_items[item.id] = {}`. `lifecycle_step(seen_ids[item.id], op)` already rejects `"overwrite"` unless `seen_ids[item.id] == .Live` (`model/lifecycle.fly` L2, L4), which only happens after an `"add"` event has seeded `lww_items[item.id]`, and keys are never removed from `lww_items`.
 - [ ] Test: `slop_pijul` round trip for empty comments, repeated lines, whitespace, line endings, multibyte UTF-8.
 - [ ] Benchmark comment patches against direct XOR (high-water memory, shifted-suffix cost).
 - [ ] Define behavior when a mixed patch+overwrite batch fails partway through `ev_append` (`src/server/handlers.odin`).
