@@ -1,5 +1,6 @@
 package media
 
+import "core:c"
 import "core:encoding/endian"
 import "core:fmt"
 import "core:testing"
@@ -115,4 +116,53 @@ jxlc_decode :: proc(data: []u8, allocator := context.allocator) -> (codestream: 
 	}
 	delete(chunks)
 	return
+}
+
+@(private = "file")
+read_cs_bits :: proc(b: []u8, pos: ^uint, n: uint) -> (val: u64, ok: bool) {
+	if pos^ + n > uint(len(b)) * 8 {return}
+	weight: u64 = 1
+	for _ in 0 ..< n {
+		byte_bits := transmute(bit_set[0 ..< 8;u8])b[pos^ / 8]
+		if int(pos^ % 8) in byte_bits {val += weight}
+		weight *= 2
+		pos^ += 1
+	}
+	return val, true
+}
+
+@(private = "file")
+read_cs_dim :: proc(b: []u8, pos: ^uint, div8: u64) -> (dim: u64, ok: bool) {
+	if div8 == 1 {return ((read_cs_bits(b, pos, 5) or_return) + 1) * 8, true}
+	bit_widths := [4]uint{9, 13, 18, 30}
+	bits := bit_widths[read_cs_bits(b, pos, 2) or_return]
+	return (read_cs_bits(b, pos, bits) or_return) + 1, true
+}
+
+JXL_Codestream_Ratios := [7][2]u64{{1, 1}, {12, 10}, {4, 3}, {3, 2}, {16, 9}, {5, 4}, {2, 1}}
+
+jxl_codestream_dimension :: proc(cs: []u8) -> (width, height: c.int, ok: bool) {
+	if len(cs) < 3 {return}
+	if ([2]u8{cs[0], cs[1]}) != JXL_Codestream_Prefix {return}
+
+	body := cs[2:]
+	pos: uint = 0
+
+	div8 := read_cs_bits(body, &pos, 1) or_return
+	ysize := read_cs_dim(body, &pos, div8) or_return
+	ratio := read_cs_bits(body, &pos, 3) or_return
+
+	// when ratio is set,
+	// xsize must be derived from
+	// ratio & ysize
+	if ratio != 0 {
+		r := JXL_Codestream_Ratios[ratio - 1]
+		xsize := (ysize * r[0]) / r[1]
+		if xsize == 0 || xsize > u64(max(c.int)) || ysize > u64(max(c.int)) {return}
+		return c.int(xsize), c.int(ysize), true
+	}
+
+	xsize := read_cs_dim(body, &pos, div8) or_return
+	if xsize > u64(max(c.int)) || ysize > u64(max(c.int)) {return}
+	return c.int(xsize), c.int(ysize), true
 }

@@ -148,6 +148,16 @@ probe_dimensions :: proc(data: []u8, format: Format) -> (width, height: c.int, o
 		if err != .None {return 0, 0, false}
 		defer free_decoded_yuv(&yuv)
 		width, height = yuv.width, yuv.height
+	case .JXL:
+		cs, jxl_ok := jxlc_decode(data)
+		if !jxl_ok {return 0, 0, false}
+		defer if raw_data(cs) != nil &&
+		   (uintptr(raw_data(cs)) < uintptr(raw_data(data)) ||
+				   uintptr(raw_data(cs)) >= uintptr(raw_data(data)) + uintptr(len(data))) {
+			delete(cs)
+		}
+		width, height, ok = jxl_codestream_dimension(cs)
+		if !ok {return 0, 0, false}
 	case:
 		fmt.eprintfln("media: probe_dimensions called on unsupported format: %v", format)
 		return 0, 0, false

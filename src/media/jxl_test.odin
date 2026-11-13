@@ -1,6 +1,7 @@
 package media
 
 import "core:bytes"
+import "core:os"
 import "core:testing"
 
 @(test)
@@ -291,4 +292,17 @@ jxl_invalid_inputs :: proc(t: ^testing.T) {
 	}
 	_, ok_short := jxlc_decode(short_jxlp[:])
 	testing.expect(t, !ok_short, "reject jxlp without 4-byte counter")
+}
+
+@(test)
+jxl_codestream_dimension_fixture :: proc(t: ^testing.T) {
+	data, err := os.read_entire_file("test/fixture/media/thumbnail.jxl", context.allocator)
+	if !testing.expect(t, err == nil, "read thumbnail.jxl fixture") {return}
+	defer delete(data)
+
+	cs, cs_ok := jxlc_decode(data)
+	if !testing.expect(t, cs_ok, "decode thumbnail.jxl codestream") {return}
+
+	w, h, ok := jxl_codestream_dimension(cs)
+	testing.expect(t, ok && w == 192 && h == 128, "thumbnail.jxl dimensions are 192x128")
 }
