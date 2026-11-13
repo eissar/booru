@@ -105,8 +105,6 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	)
 
 
-	thumb_src := image.oid
-
 	wr(&b, "<article class=\"masonry-item group\"")
 	ia(&b, "data-image-id", image.id)
 	if render_order >= 0 {
@@ -132,17 +130,8 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 	write_tag_badges(&b, image.tags, "image-card-tags")
 	wr(&b, "</div>")
 	render_card_actions(&b, image)
-	wr(&b, "</div></div><img")
-	attrf(&b, "src", "/image/%s", thumb_src)
-	wr(&b, " loading=\"lazy\"")
-	wr(
-		&b,
-		render_order >= 0 && render_order < 6 ? " fetchpriority=\"high\"" : " fetchpriority=\"low\"",
-	)
-	ia(&b, "width", image.width)
-	ia(&b, "height", image.height)
-	attr(&b, "style", aspect_ratio)
-	wr(&b, " class=\"gallery-card-image order-1\"/>")
+	wr(&b, "</div></div>")
+	write_card_media(&b, image, render_order, aspect_ratio)
 	wr(&b, "</div></article>")
 
 	return strings.to_string(b)

@@ -28,13 +28,20 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	attr(&b, "value", id)
 	wr(&b, "/><input type=\"hidden\" name=\"order\"")
 	ia(&b, "value", order)
-	wr(&b, "/><img")
-	attrf(&b, "src", "/image/%s", image.oid)
-	attr(&b, "alt", image.name)
-	wr(
-		&b,
-		" class=\"aspect-square w-full rounded-lg object-cover\"/><div class=\"flex\"><p class=\"text-muted w-full\">",
-	)
+	if strings.has_prefix(image.content_type, "video/") {
+		wr(&b, "/><video")
+		attrf(&b, "src", "/image/%s", image.oid)
+		wr(
+			&b,
+			" controls preload=\"none\" class=\"aspect-square w-full rounded-lg object-cover\"></video>",
+		)
+	} else {
+		wr(&b, "/><img")
+		attrf(&b, "src", "/image/%s", image.oid)
+		attr(&b, "alt", image.name)
+		wr(&b, " class=\"aspect-square w-full rounded-lg object-cover\"/>")
+	}
+	wr(&b, "<div class=\"flex\"><p class=\"text-muted w-full\">")
 	textf(&b, "%d × %d\t|\t%s", image.width, image.height, image.content_type)
 	wr(&b, "</p>")
 
