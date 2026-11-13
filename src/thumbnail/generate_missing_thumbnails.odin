@@ -1,6 +1,7 @@
 package thumbnail
 
 import "core:fmt"
+import "core:log"
 import "core:os"
 import "core:strings"
 import "core:sys/linux"
@@ -24,14 +25,22 @@ generate_missing_thumbnails :: proc(
 
 	images, rc := store.read_images(s.data_store, context.temp_allocator)
 	if rc != sqlite.OK {
-		fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
+		when ODIN_TEST {
+			log.errorf("thumbnail: read items: sqlite rc=%d", rc)
+		} else {
+			fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
+		}
 		return
 	}
 
 	missing := make(map[string]bit_set[LOD_RESOLUTION])
 	defer delete(missing)
 	find_missing_thumbnails(s, images, &missing)
-	fmt.eprintln("thumbnails: generate missing start")
+	when ODIN_TEST {
+		log.debug("thumbnails: generate missing start")
+	} else {
+		fmt.eprintln("thumbnails: generate missing start")
+	}
 
 	finished, total: u64
 	if prog_callback != nil {

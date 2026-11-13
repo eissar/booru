@@ -1,6 +1,7 @@
 package server
 
 import "core:fmt"
+import "core:log"
 import "core:mem"
 import "core:net"
 import "core:strings"
@@ -36,7 +37,11 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 	alloc := mem.arena_allocator(&arena)
 	if accept == accept_tcp {
 		if ep, endpoint_err := net.bound_endpoint(sock); endpoint_err == nil {
-			fmt.eprintfln("server listening on http://%v", net.endpoint_to_string(ep))
+			when ODIN_TEST {
+				log.debugf("server listening on http://%v", net.endpoint_to_string(ep))
+			} else {
+				fmt.eprintfln("server listening on http://%v", net.endpoint_to_string(ep))
+			}
 		}
 	}
 

@@ -105,7 +105,7 @@ tasks:
     deps: [hooks:check]
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin test test/cdp -out:{{.BIN_DIR}}/test-cdp {{.CLI_ARGS}}
+      - odin test test/cdp -out:{{.BIN_DIR}}/test-cdp -define:ODIN_TEST_PROGRESS_WIDTH=0 {{.CLI_ARGS}}
 
   test:all:build:
     desc: Build the full test suite
@@ -118,14 +118,13 @@ tasks:
       - '{{.BIN_DIR}}/test-all'
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin build test/ -build-mode:test -all-packages -debug -out:{{.BIN_DIR}}/test-all -define:ODIN_TEST_LOG_STATE_CHANGES=true
+      - odin build test/ -build-mode:test -all-packages -debug -out:{{.BIN_DIR}}/test-all -define:ODIN_TEST_PROGRESS_WIDTH=0
 
   test:all:
     desc: Run the full test suite (reuse the build when sources are unchanged)
     deps: [hooks:check, test:all:build]
     cmds:
-      - set -o pipefail; ./{{.BIN_DIR}}/test-all 2>&1 | grep -v 'changed state to Running'
-      # - ./{{.BIN_DIR}}/test-all
+      - ./{{.BIN_DIR}}/test-all
 
   fmt:
     desc: 'Format Odin sources in place (pass a path with --, e.g. task fmt -- src/http)'

@@ -68,6 +68,7 @@ AV_TIME_BASE :: 1000000
 AVERROR_EOF :: -541478725 // FFERRTAG('E','O','F',' ')
 AVERROR_EAGAIN :: -11 // AVERROR(EAGAIN) on Linux
 AVDISCARD_NONKEY :: 32
+AV_LOG_QUIET :: -8
 
 @(default_calling_convention = "c")
 foreign avformat {
@@ -96,4 +97,5 @@ foreign avcodec {
 foreign avutil {
 	av_frame_alloc :: proc() -> ^AVFrame ---
 	av_frame_free :: proc(frame: ^^AVFrame) ---
+	av_log_set_level :: proc(level: c.int) ---
 }

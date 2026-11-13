@@ -4,6 +4,7 @@ package template
 
 import "core:encoding/json"
 import "core:fmt"
+import "core:log"
 import "core:os"
 import "core:strings"
 
@@ -27,7 +28,7 @@ Event :: struct {
 load_images :: proc(path: string) -> []library.Image {
 	data, err := os.read_entire_file(path, context.allocator)
 	if err != nil {
-		fmt.eprintln("cannot read", path)
+		log.errorf("cannot read %s", path)
 		os.exit(1)
 	}
 	images: [dynamic]library.Image
@@ -37,7 +38,7 @@ load_images :: proc(path: string) -> []library.Image {
 		if strings.trim_space(line) == "" {continue}
 		ev: Event
 		if err := json.unmarshal(transmute([]u8)line, &ev); err != nil {
-			fmt.eprintln("bad event:", err)
+			log.errorf("bad event: %v", err)
 			os.exit(1)
 		}
 		if ev.op != "add" {continue}

@@ -9,16 +9,26 @@ end
 
 local fixture_html = [[<!doctype html><html><head><style>
 ]] .. read_file("static/gallery.css") .. [[
-html,body { margin:0; height:100%; } .main-content { height:400px; width:600px; overflow:auto; }
+html,body { margin:0; height:100%; } .main-content { height:400px; width:600px; overflow:auto; padding:0; }
 #photo-grid { display:block; width:100%; } .masonry-item { height:200px; }
 .gallery-card { height:200px; overflow:hidden; } .gallery-card-image { width:100px; height:180px; }
 </style><script>
+// Each mipmap response contains one frame per requested image, not all cards.
+const frameCounts = new WeakMap();
+const realFetch = window.fetch;
+window.fetch = async (...args) => {
+  const response = await realFetch(...args);
+  const url = new URL(args[0], location.href);
+  if (url.pathname.startsWith('/mipmap/'))
+    frameCounts.set(response.body, url.searchParams.get('ids').split(',').length);
+  return response;
+};
 window.ImageDecoder = class {
   static async isTypeSupported() { return true; }
-  constructor() {
+  constructor({ data }) {
     this.complete = true;
     this.completed = Promise.resolve();
-    this.tracks = { ready: Promise.resolve(), selectedTrack: { frameCount: 40 } };
+    this.tracks = { ready: Promise.resolve(), selectedTrack: { frameCount: frameCounts.get(data) } };
   }
   async decode() {
     const image = document.createElement('canvas');

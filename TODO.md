@@ -59,6 +59,10 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 # Performance Audit TODO
 
+- [ ] Speed up `replay.replay` / `server.metadata_edits_write_membership_deltas` (~149ms, 1.35B Ir under callgrind because every `replay` scans all `swap.max_id` = 1,000,000 slots in `vtab_insert_items.advance`, `vtab_insert_item_tags.advance`, and `replay.odin:286` even for 1 item):
+  - Track `high_id = max(high_id, item.id)` in `replay` / `Swap_Store` and bound those three loops to `high_id` instead of `swap.max_id`.
+  - For sparse or small `!full_replay` runs, iterate `seen_ids` / dirty IDs (or `patch_states.entries` directly when nothing evicted to swap) instead of scanning `1..=high_id`.
+  - Defer `init_swap` (`swap.bin` create / 64 MiB `ftruncate` / `mmap`) until the first LRU eviction so small replays don't allocate/unlink `swap.bin` at all.
 - [ ] Verify `search_images` query plans use index order for all four sorts (unfiltered and tag-filtered) and benchmark them.
 
 - [ ] Compare item and tag snapshots across the pre- and post-prepared-insert replay revisions using the same 100,000-event fixture; the benchmark currently checks repeatability within each run, not equality between revisions.

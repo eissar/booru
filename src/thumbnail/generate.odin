@@ -2,6 +2,7 @@ package thumbnail
 
 import "core:c"
 import "core:fmt"
+import "core:log"
 import "core:os"
 
 import "../library"
@@ -159,7 +160,11 @@ generate_image_thumbnails :: proc(
 	defer media.free_decoded(&frame)
 	if decode_err == .Unsupported {return 0, 0}
 	if decode_err != .None {
-		fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
+		when ODIN_TEST {
+			log.debugf("thumbnail: cannot decode %s: %v", oid, decode_err)
+		} else {
+			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
+		}
 		return 0, card(sizes)
 	}
 	for size in sizes {
@@ -195,7 +200,11 @@ force_generate_image_thumbnails :: proc(
 	defer media.free_decoded(&frame)
 	if decode_err == .Unsupported {return 0, 0}
 	if decode_err != .None {
-		fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
+		when ODIN_TEST {
+			log.debugf("thumbnail: cannot decode %s: %v", oid, decode_err)
+		} else {
+			fmt.eprintfln("thumbnail: cannot decode %s: %v", oid, decode_err)
+		}
 		return 0, card(sizes)
 	}
 	for size in sizes {

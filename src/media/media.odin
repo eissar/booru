@@ -8,6 +8,7 @@ import ffmpeg "../vendor/ffmpeg"
 import libwebp "../vendor/libwebp"
 import "core:c"
 import "core:fmt"
+import "core:log"
 import "core:os"
 import stbi "vendor:stb/image"
 
@@ -159,7 +160,11 @@ probe_dimensions :: proc(data: []u8, format: Format) -> (width, height: c.int, o
 		width, height, ok = jxl_codestream_dimension(cs)
 		if !ok {return 0, 0, false}
 	case:
-		fmt.eprintfln("media: probe_dimensions called on unsupported format: %v", format)
+		when ODIN_TEST {
+			log.debugf("media: probe_dimensions called on unsupported format: %v", format)
+		} else {
+			fmt.eprintfln("media: probe_dimensions called on unsupported format: %v", format)
+		}
 		return 0, 0, false
 	}
 	if width <= 0 || height <= 0 {return 0, 0, false}

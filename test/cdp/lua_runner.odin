@@ -4,6 +4,7 @@ import "base:runtime"
 import "core:c"
 import "core:encoding/json"
 import "core:fmt"
+import "core:log"
 import "core:mem"
 import vmem "core:mem/virtual"
 import "core:strings"
@@ -13,6 +14,7 @@ import lua "vendor:lua/5.4"
 Host :: struct {
 	arena: vmem.Arena,
 	alloc: mem.Allocator,
+	ctx:   runtime.Context,
 }
 
 push_json :: proc(L: ^lua.State, v: json.Value) {
@@ -171,6 +173,14 @@ l_browser_eval :: proc "c" (L: ^lua.State) -> c.int {
 	return 1
 }
 
+l_log_debug :: proc "c" (L: ^lua.State) -> c.int {
+	context = runtime.default_context()
+	h := get_host(L)
+	context = h.ctx
+	log.debug(lua_str(L, 1))
+	return 0
+}
+
 register_cdp :: proc(L: ^lua.State, h: ^Host) {
 	lua.pushlightuserdata(L, h)
 	lua.setfield(L, lua.REGISTRYINDEX, "cdp.Host")
@@ -207,6 +217,7 @@ register_cdp :: proc(L: ^lua.State, h: ^Host) {
 	}
 	lua.L_newlib(L, mod_funcs)
 	lua.setglobal(L, "cdp")
+	lua.register(L, "log_debug", l_log_debug)
 }
 
 LUA_PRELUDE :: `
@@ -281,7 +292,7 @@ function run_specs()
     local ok, err = pcall(function()
       for _, t in ipairs(s.tests) do
         t.fn()
-        print("PASS: " .. s.name .. " :: " .. t.name)
+        log_debug("PASS: " .. s.name .. " :: " .. t.name)
       end
     end)
     if s.after then pcall(s.after) end
@@ -297,6 +308,7 @@ run_lua_spec :: proc(t: ^testing.T, path: string) {
 	}
 	defer vmem.arena_destroy(&h.arena)
 	h.alloc = vmem.arena_allocator(&h.arena)
+	h.ctx = context
 
 	L := lua.L_newstate()
 	defer lua.close(L)

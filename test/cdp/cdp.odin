@@ -361,6 +361,18 @@ browser_open :: proc(base_url: string, alloc: mem.Allocator) -> (^Browser, strin
 		chrome = "chromium"
 	}
 
+	chrome_env: [dynamic]string
+	chrome_env.allocator = context.temp_allocator
+	if parent_env, env_err := os.environ(context.temp_allocator); env_err == nil {
+		for entry in parent_env {
+			if strings.starts_with(entry, "DISPLAY=") ||
+			   strings.starts_with(entry, "WAYLAND_DISPLAY=") {
+				continue
+			}
+			append(&chrome_env, entry)
+		}
+	}
+
 	proc_handle, serr := os.process_start(
 		os.Process_Desc {
 			command = {
@@ -377,6 +389,7 @@ browser_open :: proc(base_url: string, alloc: mem.Allocator) -> (^Browser, strin
 				"--remote-debugging-port=0",
 				"about:blank",
 			},
+			env = chrome_env[:] if len(chrome_env) > 0 else nil,
 		},
 	)
 	if serr != nil {

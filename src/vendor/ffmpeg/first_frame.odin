@@ -20,6 +20,7 @@ free_decoded_frame :: proc(ff: ^Decoded_Frame) {
 
 // Decodes the first video frame of `path` without seeking.
 first_frame :: proc(path: string) -> (ff: Decoded_Frame, ok: bool) {
+	when ODIN_TEST {av_log_set_level(AV_LOG_QUIET)}
 	cpath := strings.clone_to_cstring(path, context.temp_allocator)
 
 	fmt_ctx: ^AVFormatContext
