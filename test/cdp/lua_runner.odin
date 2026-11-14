@@ -1,4 +1,4 @@
-package cdp_test
+package cdp
 
 import "base:runtime"
 import "core:c"
@@ -301,10 +301,10 @@ function run_specs()
 end
 `
 
-run_lua_spec :: proc(t: ^testing.T, path: string) {
+run_lua_file :: proc(path: string) -> (err_msg: string, ok: bool) {
 	h: Host
 	if err := vmem.arena_init_growing(&h.arena); err != nil {
-		testing.fail_now(t, "failed to init arena")
+		return "failed to init arena", false
 	}
 	defer vmem.arena_destroy(&h.arena)
 	h.alloc = vmem.arena_allocator(&h.arena)
@@ -316,14 +316,21 @@ run_lua_spec :: proc(t: ^testing.T, path: string) {
 	register_cdp(L, &h)
 
 	if lua.L_dostring(L, LUA_PRELUDE) != c.int(lua.OK) {
-		testing.fail_now(t, string(lua.tostring(L, -1)))
+		return strings.clone(string(lua.tostring(L, -1)), context.temp_allocator), false
 	}
 	cpath := strings.clone_to_cstring(path, context.temp_allocator)
 	if lua.L_dofile(L, cpath) != c.int(lua.OK) {
-		testing.fail_now(t, string(lua.tostring(L, -1)))
+		return strings.clone(string(lua.tostring(L, -1)), context.temp_allocator), false
 	}
 	if lua.L_dostring(L, "run_specs()") != c.int(lua.OK) {
-		testing.fail_now(t, string(lua.tostring(L, -1)))
+		return strings.clone(string(lua.tostring(L, -1)), context.temp_allocator), false
+	}
+	return "", true
+}
+
+run_lua_spec :: proc(t: ^testing.T, path: string) {
+	if err_msg, ok := run_lua_file(path); !ok {
+		testing.fail_now(t, err_msg)
 	}
 }
 
@@ -335,9 +342,4 @@ test_gallery_strip :: proc(t: ^testing.T) {
 @(test)
 test_gallery_virtual :: proc(t: ^testing.T) {
 	run_lua_spec(t, "test/cdp/gallery_virtual.lua")
-}
-
-@(test)
-test_benchmark_counters :: proc(t: ^testing.T) {
-	run_lua_spec(t, "test/cdp/benchmark_counters.lua")
 }

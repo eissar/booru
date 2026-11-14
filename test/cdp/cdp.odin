@@ -1,4 +1,4 @@
-package cdp_test
+package cdp
 
 import "core:crypto"
 import "core:encoding/base64"

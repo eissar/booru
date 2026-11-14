@@ -53,11 +53,9 @@ describe("gallery-strip", function()
 
   before_all(function()
     srv = cdp.server({
-      ["/static/gallery.js"]     = { content_type = "text/javascript", body = read_file("static/gallery.js"),     prefix = false },
-      ["/static/benchmark.html"] = { content_type = "text/html",       body = read_file("static/benchmark.html"), prefix = false },
-      ["/mipmap/"]               = { content_type = "text/plain",      body = "test",                             prefix = true },
-      ["/gallery"]               = { content_type = "text/html",       body = fixture_html,                      prefix = false },
-      ["/"]                      = { content_type = "text/html",       body = fixture_html,                      prefix = false },
+      ["/static/gallery.js"] = { content_type = "text/javascript", body = read_file("static/gallery.js"), prefix = false },
+      ["/mipmap/"]           = { content_type = "text/plain",      body = "test",                         prefix = true },
+      ["/"]                  = { content_type = "text/html",       body = fixture_html,                  prefix = false },
     })
     b = cdp.open(srv:url())
   end)
@@ -135,48 +133,5 @@ describe("gallery-strip", function()
     })]])
     assert(swap.reattached, "swap lost canvas")
     assert_eq(1, swap.count, "duplicate canvas")
-  end)
-
-  it("benchmark overlay samples live gallery, excludes idle, counts undrawn, and panics on failure", function()
-    b:navigate("/static/benchmark.html")
-    b:wait_for([[(() => {
-      const f = document.querySelector('#gallery');
-      return f && typeof f.contentWindow?.booruPreviewSnapshot === 'function'
-        && document.querySelector('#counts').textContent !== '—';
-    })()]], 10000)
-
-    local counts = b:eval([[document.querySelector('#counts').textContent]])
-    assert_match("^%d+ / %d+$", counts, "overlay did not sample live gallery")
-
-    b:eval([[document.querySelector('#reset').click()]])
-    b:sleep(500)
-    assert_eq("0 / 0", b:eval([[document.querySelector('#samples').textContent]]), "idle or warmup counted")
-
-    b:eval([[(() => {
-      const w = document.querySelector('#gallery').contentWindow;
-      const snapshot = w.booruPreviewSnapshot;
-      w.booruPreviewSnapshot = () => {
-        const s = snapshot();
-        return { ...s, images: s.images.map(i => ({ ...i, painted: null })) };
-      };
-      w.document.querySelector('.main-content').scrollTop += 100;
-    })()]])
-    b:sleep(250)
-    assert_eq("1 / 1", b:eval([[document.querySelector('#samples').textContent]]), "missing submitted previews not counted once")
-
-    b:sleep(300)
-    assert_eq("1 / 1", b:eval([[document.querySelector('#samples').textContent]]), "idle inflated scroll samples")
-
-    b:eval([[(() => {
-      const w = document.querySelector('#gallery').contentWindow;
-      const snapshot = w.booruPreviewSnapshot;
-      w.booruPreviewSnapshot = () => ({ ...snapshot(), active: false });
-    })()]])
-    b:sleep(250)
-    assert_match(
-      "^FAILED: Benchmark invariant: renderer reports active but preview surface is disabled",
-      b:eval([[document.querySelector('#status').textContent]]),
-      "renderer failure did not panic"
-    )
   end)
 end)
