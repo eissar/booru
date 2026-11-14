@@ -654,7 +654,7 @@ html[data-theme='dark'] input::placeholder {
     width: 100%;
 }
 
-.masonry-item img {
+.masonry-item .gallery-card-media {
     width: 100%;
     height: auto;
     display: block;
@@ -832,6 +832,7 @@ html[data-theme='dark'] input::placeholder {
     min-width: 0;
     padding: 0.5rem var(--app-gutter) var(--app-gutter);
     overflow: auto;
+    overflow-anchor: none;
     scrollbar-gutter: stable;
 }
 

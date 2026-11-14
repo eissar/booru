@@ -40,7 +40,7 @@
   }
 
   function cardRatio(card) {
-    var img = card.querySelector("img[width][height]");
+    var img = card.querySelector(".gallery-card-media[width][height]");
     if (!img) return 1;
     var w = Number(img.getAttribute("width"));
     var h = Number(img.getAttribute("height"));
