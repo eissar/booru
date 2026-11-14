@@ -21,7 +21,7 @@ write_card_media :: proc(
 		ia(b, "width", image.width)
 		ia(b, "height", image.height)
 		attr(b, "style", aspect_ratio)
-		wr(b, " class=\"gallery-card-image order-1\"></video>")
+		wr(b, " class=\"gallery-card-media order-1\"></video>")
 	case:
 		wr(b, "<img")
 		attrf(b, "src", "/image/%s", image.oid)
@@ -33,6 +33,6 @@ write_card_media :: proc(
 		ia(b, "width", image.width)
 		ia(b, "height", image.height)
 		attr(b, "style", aspect_ratio)
-		wr(b, " class=\"gallery-card-image order-1\"/>")
+		wr(b, " class=\"gallery-card-media order-1\"/>")
 	}
 }

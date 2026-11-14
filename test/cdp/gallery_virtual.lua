@@ -11,7 +11,7 @@ local function card_html(i)
     '<div class="gallery-card-slot order-2">' ..
     '<div class="gallery-card-meta block p-4 w-full peer" hx-get="/fragment/inspect/%d">' ..
     '<span class="font-medium truncate">%d</span></div></div>' ..
-    '<img width="600" height="%d" style="aspect-ratio: 600/%d" class="gallery-card-image order-1"></div></article>',
+    '<img width="600" height="%d" style="aspect-ratio: 600/%d" class="gallery-card-media order-1"></div></article>',
     i, i, i, i, h, h
   )
 end
@@ -41,7 +41,7 @@ const height = (i) => 300 + (i * 37) %% 900;
 const card = (i) => `<article class="masonry-item group" data-image-id="${i}" data-render-order-id="${i}">`
   + '<div class="gallery-card relative overflow-hidden flex flex-col rounded-lg hover-card"><div class="gallery-card-slot order-2">'
   + `<div class="gallery-card-meta block p-4 w-full peer" hx-get="/fragment/inspect/${i}"><span class="font-medium truncate">${i}</span></div></div>`
-  + `<img width="600" height="${height(i)}" style="aspect-ratio: 600/${height(i)}" class="gallery-card-image order-1"></div></article>`;
+  + `<img width="600" height="${height(i)}" style="aspect-ratio: 600/${height(i)}" class="gallery-card-media order-1"></div></article>`;
 const f = document.querySelector('iframe');
 const assert = (ok, msg) => { if (!ok) throw Error(msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

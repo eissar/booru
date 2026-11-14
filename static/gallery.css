@@ -724,7 +724,7 @@ html[data-theme='dark'] input::placeholder {
     height: 100%;
 }
 
-#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-image {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-media {
     width: 100%;
     height: clamp(8rem, 16vw, 12rem);
     object-fit: cover;
@@ -739,7 +739,7 @@ html[data-theme='dark'] input::placeholder {
     min-height: 8rem;
 }
 
-#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-image {
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-media {
     flex: 0 0 12rem;
     width: 12rem;
     height: 8rem;
@@ -761,7 +761,7 @@ html[data-theme='dark'] input::placeholder {
 }
 
 @media (width < 640px) {
-    #filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-image {
+    #filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-media {
         flex-basis: 7rem;
         width: 7rem;
     }
@@ -971,7 +971,7 @@ html[data-theme='dark'] input::placeholder {
 /* Image loading placeholder — prevents flash of empty content when
    htmx outerHTML swaps in a fresh <img> whose URL hasn't loaded yet.
    The background colour shows through while the browser fetches the image. */
-.gallery-card-image {
+.gallery-card-media {
     background-color: var(--bg-surface-hover);
     object-fit: cover;
 }
@@ -1014,7 +1014,7 @@ html[data-theme='dark'] input::placeholder {
     background-color: var(--bg-surface);
 }
 
-.gallery-previews-active .gallery-card-image {
+.gallery-previews-active .gallery-card-media {
     background-color: transparent;
 }
 

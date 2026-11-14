@@ -5,7 +5,7 @@ local function build_fixture_html()
   for i = 1, 40 do
     cards[#cards + 1] = string.format(
       "<article class=masonry-item data-render-order-id='%d' data-image-id='%d'>" ..
-      "<div class=gallery-card><img class=gallery-card-image src='/thumb/%d' width=100 height=180></div></article>",
+      "<div class=gallery-card><img class=gallery-card-media src='/thumb/%d' width=100 height=180></div></article>",
       i, i, i
     )
   end
@@ -14,7 +14,7 @@ local function build_fixture_html()
 *, *::before, *::after { box-sizing: border-box; }
 html,body { margin:0; height:100%; } .main-content { height:600px; width:800px; overflow:auto; }
 #photo-grid { display:block; width:100%; } .masonry-item { height:200px; }
-.gallery-card { height:200px; overflow:hidden; } .gallery-card-image { width:100px; height:180px; }
+.gallery-card { height:200px; overflow:hidden; } .gallery-card-media { width:100px; height:180px; }
 </style><script>
 window.ImageDecoder = class {
   static async isTypeSupported() { return true; }
@@ -125,7 +125,7 @@ describe("gallery-scroll-bench", function()
             samples++;
             const byImg = new Map(snap.images.map(i => [i.image, i]));
             let blanks = 0;
-            for (const img of document.querySelectorAll('.gallery-card-image')) {
+            for (const img of document.querySelectorAll('.gallery-card-media')) {
               const ir = img.getBoundingClientRect();
               const cr = img.closest('.gallery-card')?.getBoundingClientRect() || ir;
               const r = {

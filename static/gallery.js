@@ -172,7 +172,7 @@
 
   function sampleCardStyle(grid) {
     var cardEl = grid.querySelector(":scope > .masonry-column .gallery-card, :scope > .masonry-item .gallery-card");
-    var imgEl = cardEl ? cardEl.querySelector(".gallery-card-image") : null;
+    var imgEl = cardEl ? cardEl.querySelector(".gallery-card-media") : null;
     return {
       radius: cardEl ? parseFloat(getComputedStyle(cardEl).borderTopLeftRadius) || 0 : 0,
       objectFit: imgEl ? getComputedStyle(imgEl).objectFit : "",
@@ -213,7 +213,7 @@
     for (var i = 0; i < cards.length; i++) {
       var card = cards[i];
       var cardEl = card.querySelector(".gallery-card");
-      var imgEl = card.querySelector(".gallery-card-image");
+      var imgEl = card.querySelector(".gallery-card-media");
       if (!cardEl || !imgEl) continue;
       var ir = imgEl.getBoundingClientRect();
       var cr = cardEl.getBoundingClientRect();
@@ -701,7 +701,7 @@
       releaseBatch();
       const grid = getGrid();
       const cards = grid ? collectCards(grid) : [];
-      const images = cards.map((card) => card.querySelector(".gallery-card-image"));
+      const images = cards.map((card) => card.querySelector(".gallery-card-media"));
       const current = (batch = {
         cards,
         images,
@@ -717,7 +717,7 @@
       // Capture request order before masonry or another response changes the DOM.
       const ids = [], urls = [];
       for (const card of cards) {
-        const url = card.querySelector(".gallery-card-image").src;
+        const url = card.querySelector(".gallery-card-media").src;
         if (thumbnailsByURL.has(url)) continue;
         thumbnailsByURL.set(url, null);
         ids.push(card.dataset.imageId);
@@ -916,7 +916,7 @@
 
   document.addEventListener("load", (event) => {
     if (event.target instanceof HTMLImageElement &&
-        event.target.classList.contains("gallery-card-image")) {
+        event.target.classList.contains("gallery-card-media")) {
       schedule();
     }
   }, true);

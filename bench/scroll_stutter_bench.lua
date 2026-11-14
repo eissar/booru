@@ -9,12 +9,12 @@ local function build_fixture_html()
     local media
     if i % 5 == 0 then
       media = string.format(
-        '<video src="/image/%d" preload="none" muted loop playsinline width="600" height="%d" style="aspect-ratio: 600/%d" class="gallery-card-image order-1"></video>',
+        '<video src="/image/%d" preload="none" muted loop playsinline width="600" height="%d" style="aspect-ratio: 600/%d" class="gallery-card-media order-1"></video>',
         i, h, h
       )
     else
       media = string.format(
-        '<img src="/image/%d" loading="lazy" width="600" height="%d" style="aspect-ratio: 600/%d" class="gallery-card-image order-1"/>',
+        '<img src="/image/%d" loading="lazy" width="600" height="%d" style="aspect-ratio: 600/%d" class="gallery-card-media order-1"/>',
         i, h, h
       )
     end
@@ -117,7 +117,7 @@ describe("scroll-stutter-bench", function()
       const countBlanks = (snap, portClient, sr) => {
         const byImg = new Map(snap.images.map(i => [i.image, i]));
         let blanks = 0;
-        for (const el of document.querySelectorAll('.gallery-card-image')) {
+        for (const el of document.querySelectorAll('.gallery-card-media')) {
           const ir = el.getBoundingClientRect();
           if (ir.width <= 0 || ir.height <= 0) continue;
           const cr = el.closest('.gallery-card')?.getBoundingClientRect() || ir;
