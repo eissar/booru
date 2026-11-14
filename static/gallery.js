@@ -16,6 +16,7 @@
   var parking = null;
   var anchorCard = null, anchorOffset = 0;
   var nearbyQueued = false;
+  var cardLayouts = new WeakMap();
   // Resize can change packing or just the visible range.
   var portSize = new ResizeObserver(function () {
     syncMasonry();
@@ -105,7 +106,12 @@
 
     var key = buildSyncKey(view, columns, cards, geometry);
     if (key === lastSyncKey && packedColumnsMatch(grid, columns)) {
-      if (geometry) showAroundAnchor(geometry);
+      if (geometry) {
+        showAroundAnchor(geometry);
+        recordMasonryLayouts(grid, geometry);
+      } else if (columns === 0) {
+        recordFlatLayouts(grid, cards);
+      }
       return;
     }
     lastSyncKey = key;
@@ -118,6 +124,7 @@
       for (var i = 0; i < cards.length; i++) insertBeforePagination(grid, cards[i]);
       for (var i = 0; i < packed.length; i++) packed[i].remove();
       if (parking) parking.remove();
+      recordFlatLayouts(grid, cards);
       return;
     }
 
@@ -157,7 +164,82 @@
       }
     }
     for (var i = 0; i < packed.length; i++) packed[i].remove();
-    if (geometry) showAroundAnchor(geometry);
+    if (geometry) {
+      showAroundAnchor(geometry);
+      recordMasonryLayouts(grid, geometry);
+    }
+  }
+
+  function sampleCardStyle(grid) {
+    var cardEl = grid.querySelector(":scope > .masonry-column .gallery-card, :scope > .masonry-item .gallery-card");
+    var imgEl = cardEl ? cardEl.querySelector(".gallery-card-image") : null;
+    return {
+      radius: cardEl ? parseFloat(getComputedStyle(cardEl).borderTopLeftRadius) || 0 : 0,
+      objectFit: imgEl ? getComputedStyle(imgEl).objectFit : "",
+    };
+  }
+
+  function recordMasonryLayouts(grid, geometry) {
+    if (!packedColumns.length || !geometry) return;
+    var gridRect = grid.getBoundingClientRect();
+    var style = sampleCardStyle(grid);
+    for (var c = 0; c < packedColumns.length; c++) {
+      var col = packedColumns[c];
+      var colLeft = col.el.getBoundingClientRect().left - gridRect.left;
+      var y = 0;
+      for (var i = 0; i < col.cards.length; i++) {
+        var imgH = geometry.width * col.ratios[i];
+        cardLayouts.set(col.cards[i], {
+          left: colLeft,
+          top: y,
+          width: geometry.width,
+          height: imgH,
+          cardLeft: colLeft,
+          cardTop: y,
+          cardWidth: geometry.width,
+          cardHeight: imgH + geometry.slotHeight,
+          radius: style.radius,
+          objectFit: style.objectFit,
+        });
+        y += imgH + geometry.gap;
+      }
+    }
+  }
+
+  function recordFlatLayouts(grid, cards) {
+    if (!cards.length) return;
+    var gridRect = grid.getBoundingClientRect();
+    var style = sampleCardStyle(grid);
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      var cardEl = card.querySelector(".gallery-card");
+      var imgEl = card.querySelector(".gallery-card-image");
+      if (!cardEl || !imgEl) continue;
+      var ir = imgEl.getBoundingClientRect();
+      var cr = cardEl.getBoundingClientRect();
+      cardLayouts.set(card, {
+        left: ir.left - gridRect.left,
+        top: ir.top - gridRect.top,
+        width: ir.width,
+        height: ir.height,
+        cardLeft: cr.left - gridRect.left,
+        cardTop: cr.top - gridRect.top,
+        cardWidth: cr.width,
+        cardHeight: cr.height,
+        radius: style.radius,
+        objectFit: style.objectFit,
+      });
+    }
+  }
+
+  function ensureCardLayouts(grid, cards) {
+    if (!cards.length || cardLayouts.has(cards[0])) return;
+    if (packedColumns.length > 0) {
+      var geometry = measureMasonry(grid);
+      if (geometry) recordMasonryLayouts(grid, geometry);
+    } else {
+      recordFlatLayouts(grid, cards);
+    }
   }
 
   // Renders around the anchor's predicted top, then scrolls it back to its
@@ -210,6 +292,7 @@
         grid.getBoundingClientRect().top,
       height: port.clientHeight,
       width: parseFloat(style.gridTemplateColumns),
+      slotHeight: height,
       gap: height + parseFloat(style.rowGap),
     };
   }
@@ -276,7 +359,7 @@
     batchQueued = false,
     animateUntil = 0;
   const endpoint = "/mipmap/64";
-  const imageSizes = new ResizeObserver(() => draw());
+  let maxViewport = null, maxRenderbuffer = 0;
   let previewSurface, stripTop = null, stripHeight = 0;
   let diagnosticsEnabled = false;
   const paintedPreviews = new Map();
@@ -330,15 +413,26 @@
     const portRect = scrollport.getBoundingClientRect();
     const h = scrollport.clientHeight;
     const visibleTop = portRect.top + scrollport.clientTop - gridRect.top;
-    if (stripTop === null || stripHeight !== h * 7 ||
+    const nextHeight = h * 7;
+    if (stripTop === null || stripHeight !== nextHeight ||
         visibleTop < stripTop + h || visibleTop + h > stripTop + stripHeight - h) {
       stripTop = visibleTop - h * 3;
-      stripHeight = h * 7;
+      canvas.style.top = `${stripTop}px`;
+      if (stripHeight !== nextHeight) {
+        stripHeight = nextHeight;
+        canvas.style.height = `${stripHeight}px`;
+      }
     }
-    canvas.style.top = `${stripTop}px`;
-    canvas.style.height = `${stripHeight}px`;
-    return { left: gridRect.left, top: gridRect.top + stripTop,
-      width: grid.clientWidth, height: stripHeight };
+    const portLeft = portRect.left + scrollport.clientLeft - gridRect.left;
+    const w = grid.clientWidth;
+    return {
+      grid,
+      stripTop,
+      width: w,
+      height: stripHeight,
+      clipLeft: Math.max(0, portLeft),
+      clipRight: Math.min(w, portLeft + scrollport.clientWidth),
+    };
   }
 
   function scrollPreview() {
@@ -368,14 +462,16 @@
       alpha: true, premultipliedAlpha: true, antialias: false, depth: false,
     });
     if (!gl) throw Error("WebGL2 unavailable");
+    maxViewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+    maxRenderbuffer = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
     const rendererInfo = gl.getExtension("WEBGL_debug_renderer_info");
     previewLog("context-created", {
       attributes: gl.getContextAttributes(),
       version: gl.getParameter(gl.VERSION),
       renderer: gl.getParameter(rendererInfo ? rendererInfo.UNMASKED_RENDERER_WEBGL : gl.RENDERER),
       vendor: gl.getParameter(rendererInfo ? rendererInfo.UNMASKED_VENDOR_WEBGL : gl.VENDOR),
-      maxViewport: Array.from(gl.getParameter(gl.MAX_VIEWPORT_DIMS) || []),
-      maxRenderbuffer: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
+      maxViewport: Array.from(maxViewport || []),
+      maxRenderbuffer,
       maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
       maxArrayLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS),
     });
@@ -387,7 +483,7 @@
     out vec2 uv;
     out vec2 position;
     void main() {
-      vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+      vec2 p = vec2(gl_VertexID & 1, (gl_VertexID >> 1) & 1);
       uv = p;
       position = rect.xy + p * rect.zw;
       gl_Position = vec4(position.x / screen.x * 2. - 1., 1. - position.y / screen.y * 2., 0, 1);
@@ -407,7 +503,6 @@
     in vec2 position;
     out vec4 color;
     void main() {
-      if (any(lessThan(uv, vec2(0))) || any(greaterThan(uv, vec2(1)))) discard;
       if (any(lessThan(position, clipRect.xy)) || any(greaterThan(position, clipRect.zw))) discard;
       vec2 halfSize = cardRect.zw * .5;
       vec2 q = abs(position - cardRect.xy - halfSize) - halfSize + radius;
@@ -451,31 +546,31 @@
       return;
     }
     if (diagnosticsEnabled) paintedPreviews.clear();
+    const cards = batch ? batch.cards : [];
     const images = batch ? batch.images : [];
     const strip = positionPreviewStrip();
     if (!strip || !strip.width || !strip.height) return;
+    ensureCardLayouts(strip.grid, cards);
     const w = strip.width,
       h = strip.height;
     // Seven viewport heights can exceed the GPU's maximum backing-store size.
     // Preserve the CSS coverage and lower resolution rather than truncate it.
-    const viewportLimit = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
-    const backingLimit = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
-    if (!viewportLimit || !backingLimit) {
+    if (!maxViewport || !maxRenderbuffer) {
       failPreview(Error("WebGL drawing limits unavailable; context may be lost"));
       return;
     }
     // Low-resolution previews do not need display-resolution backing pixels.
     const previewScale = 0.5;
     const dpr = Math.min(previewScale,
-      viewportLimit[0] / w, viewportLimit[1] / h,
-      backingLimit / w, backingLimit / h);
+      maxViewport[0] / w, maxViewport[1] / h,
+      maxRenderbuffer / w, maxRenderbuffer / h);
     const width = Math.max(1, Math.floor(w * dpr)),
       height = Math.max(1, Math.floor(h * dpr));
     if (canvas.width !== width || canvas.height !== height) {
       lastBacking = {
         css: [w, h], requestedDpr: previewScale, effectiveDpr: dpr,
         pixels: [width, height], rgbaMiB: +(width * height * 4 / 1048576).toFixed(2),
-        maxViewport: Array.from(viewportLimit), maxRenderbuffer: backingLimit,
+        maxViewport: Array.from(maxViewport), maxRenderbuffer,
       };
       previewLog("backing-resize", lastBacking);
       canvas.width = width;
@@ -490,53 +585,35 @@
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(program);
     gl.uniform2f(uniforms.screen, w, h);
+    const sTop = strip.stripTop;
+    const clipLeft = strip.clipLeft;
+    const clipRight = strip.clipRight;
+    const srcs = batch ? batch.srcs : [];
+    const widths = batch ? batch.widths : [];
+    const heights = batch ? batch.heights : [];
+    let lastTexture = null;
     for (let i = 0; i < images.length; i++) {
       const img = images[i],
-        thumb = thumbnailsByURL.get(img.src);
+        thumb = thumbnailsByURL.get(srcs[i]);
       if (!thumb || !img.isConnected ||
           (img.complete && img.naturalWidth > 0)) continue;
-      const rect = img.getBoundingClientRect(); // Includes the actual CSS hover transform.
-      if (!rect.width || !rect.height ||
-          rect.bottom <= strip.top || rect.top >= strip.top + h)
+      const box = cardLayouts.get(cards[i]);
+      if (!box || !box.width || !box.height ||
+          box.top + box.height <= sTop || box.top >= sTop + h)
         continue;
-      let left = strip.left,
-        top = strip.top,
-        right = strip.left + w,
-        bottom = strip.top + h;
-      let insideGrid = true;
-      // Respect the real scrollport and all overflow-clipping ancestors, not
-      // just the window. clientWidth excludes the scrollbars.
-      for (let node = img.parentElement; node; node = node.parentElement) {
-        const css = getComputedStyle(node),
-          box = node.getBoundingClientRect();
-        if (css.overflowX !== "visible") {
-          left = Math.max(left, box.left + node.clientLeft);
-          right = Math.min(
-            right,
-            box.left + node.clientLeft + node.clientWidth,
-          );
-        }
-        // Outer scrollport clipping is performed by the browser, not baked into
-        // the bitmap: offscreen previews must already exist before scrolling.
-        if (insideGrid && css.overflowY !== "visible") {
-          top = Math.max(top, box.top + node.clientTop);
-          bottom = Math.min(
-            bottom,
-            box.top + node.clientTop + node.clientHeight,
-          );
-        }
-        if (node.id === "photo-grid") insideGrid = false;
-      }
+      const rLeft = box.left;
+      const rTop = box.top - sTop;
+      const cLeft = box.cardLeft;
+      const cTop = box.cardTop - sTop;
+      const left = Math.max(clipLeft, cLeft);
+      const top = Math.max(0, cTop);
+      const right = Math.min(clipRight, cLeft + box.cardWidth);
+      const bottom = Math.min(h, cTop + box.cardHeight);
       if (right <= left || bottom <= top) continue;
-      const card = img.closest(".gallery-card"),
-        cardRect = card.getBoundingClientRect();
-      const radius =
-        parseFloat(getComputedStyle(card).borderTopLeftRadius) || 0;
-      const css = getComputedStyle(img);
       // The decoded animation canvas is square; each thumbnail's content starts
       // at (0,0). Match WebPPictureRescale's rounded aspect-preserving dimensions.
-      const originalW = Number(img.getAttribute("width")) || 1;
-      const originalH = Number(img.getAttribute("height")) || 1;
+      const originalW = widths[i];
+      const originalH = heights[i];
       const edge = thumb.width;
       const contentW =
         originalW >= originalH
@@ -550,8 +627,8 @@
         sy = 0,
         sw = contentW,
         sh = contentH;
-      if (css.objectFit === "cover") {
-        const ratio = rect.width / rect.height,
+      if (box.objectFit === "cover") {
+        const ratio = box.width / box.height,
           originalRatio = originalW / originalH;
         if (ratio > originalRatio) {
           sh *= originalRatio / ratio;
@@ -569,26 +646,21 @@
         Math.max(0, sw - 1) / thumb.width,
         Math.max(0, sh - 1) / thumb.height,
       );
-      gl.uniform4f(uniforms.rect,
-        rect.left - strip.left, rect.top - strip.top, rect.width, rect.height);
-      gl.uniform4f(uniforms.clipRect,
-        left - strip.left, top - strip.top, right - strip.left, bottom - strip.top);
-      gl.uniform4f(
-        uniforms.cardRect,
-        cardRect.left - strip.left,
-        cardRect.top - strip.top,
-        cardRect.width,
-        cardRect.height,
-      );
-      gl.uniform1f(uniforms.radius, radius);
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, thumb.texture);
+      gl.uniform4f(uniforms.rect, rLeft, rTop, box.width, box.height);
+      gl.uniform4f(uniforms.clipRect, left, top, right, bottom);
+      gl.uniform4f(uniforms.cardRect, cLeft, cTop, box.cardWidth, box.cardHeight);
+      gl.uniform1f(uniforms.radius, box.radius);
+      if (thumb.texture !== lastTexture) {
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, thumb.texture);
+        lastTexture = thumb.texture;
+      }
       gl.uniform1i(uniforms.layer, thumb.layer);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       if (diagnosticsEnabled) paintedPreviews.set(img, {
-        left: Math.max(rect.left, left) - strip.left,
-        top: Math.max(rect.top, top) - strip.top,
-        right: Math.min(rect.right, right) - strip.left,
-        bottom: Math.min(rect.bottom, bottom) - strip.top,
+        left: Math.max(rLeft, left),
+        top: Math.max(rTop, top),
+        right: Math.min(rLeft + box.width, right),
+        bottom: Math.min(rTop + box.height, bottom),
       });
     }
     if (rendererState === "starting") rendererState = "active";
@@ -627,17 +699,20 @@
       batchQueued = false;
       if (rendererState === "failed") return;
       releaseBatch();
-      imageSizes.disconnect();
       const grid = getGrid();
       const cards = grid ? collectCards(grid) : [];
+      const images = cards.map((card) => card.querySelector(".gallery-card-image"));
       const current = (batch = {
-        images: cards.map((card) => card.querySelector(".gallery-card-image")),
+        cards,
+        images,
+        srcs: images.map((img) => img.src),
+        widths: images.map((img) => Number(img.getAttribute("width")) || 1),
+        heights: images.map((img) => Number(img.getAttribute("height")) || 1),
         requestedUrls: [],
         abort: new AbortController(),
         decoder: null,
       });
       previewLog("batch-start");
-      for (const img of current.images) imageSizes.observe(img);
       draw();
       // Capture request order before masonry or another response changes the DOM.
       const ids = [], urls = [];
@@ -926,6 +1001,11 @@
     nearbyQueued = true;
     requestAnimationFrame(function () {
       nearbyQueued = false;
+      if (pending) {
+        pending = false;
+        draw();
+        if (performance.now() < animateUntil) schedule();
+      }
       var geometry = getGrid() && measureMasonry(getGrid());
       if (geometry) showNearbyCards(geometry);
     });
