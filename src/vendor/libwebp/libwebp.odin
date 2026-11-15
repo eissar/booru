@@ -44,6 +44,66 @@ WebPConfig :: struct {
 }
 
 WEBP_YUV420A :: 4
+WEBP_DECODER_ABI_VERSION :: 0x0209
+MODE_RGBA :: 1
+
+WebPBitstreamFeatures :: struct {
+	width:         c.int,
+	height:        c.int,
+	has_alpha:     c.int,
+	has_animation: c.int,
+	format:        c.int,
+	pad:           [5]u32,
+}
+
+WebPRGBABuffer :: struct {
+	rgba:   [^]u8,
+	stride: c.int,
+	size:   c.size_t,
+}
+
+WebPYUVABuffer :: struct {
+	y, u, v, a:             [^]u8,
+	y_stride:               c.int,
+	u_stride, v_stride:     c.int,
+	a_stride:               c.int,
+	y_size, u_size, v_size: c.size_t,
+	a_size:                 c.size_t,
+}
+
+WebPDecBuffer :: struct {
+	colorspace:         c.int,
+	width, height:      c.int,
+	is_external_memory: c.int,
+	u:                  struct #raw_union {
+		RGBA: WebPRGBABuffer,
+		YUVA: WebPYUVABuffer,
+	},
+	pad:                [4]u32,
+	private_memory:     [^]u8,
+}
+
+WebPDecoderOptions :: struct {
+	bypass_filtering:         c.int,
+	no_fancy_upsampling:      c.int,
+	use_cropping:             c.int,
+	crop_left, crop_top:      c.int,
+	crop_width, crop_height:  c.int,
+	use_scaling:              c.int,
+	scaled_width:             c.int,
+	scaled_height:            c.int,
+	use_threads:              c.int,
+	dithering_strength:       c.int,
+	flip:                     c.int,
+	alpha_dithering_strength: c.int,
+	pad:                      [5]u32,
+}
+
+WebPDecoderConfig :: struct {
+	input:   WebPBitstreamFeatures,
+	output:  WebPDecBuffer,
+	options: WebPDecoderOptions,
+}
 
 WebPPicture :: struct {
 	use_argb:        c.int,
@@ -89,6 +149,8 @@ foreign webp {
 	WebPGetInfo :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int) -> c.int ---
 	WebPDecodeYUV :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int, u, v: ^^u8, stride, uv_stride: ^c.int) -> ^u8 ---
 	WebPDecodeRGBA :: proc(data: [^]u8, data_size: c.size_t, width, height: ^c.int) -> [^]u8 ---
+	WebPInitDecoderConfigInternal :: proc(config: ^WebPDecoderConfig, abi_version: c.int) -> c.int ---
+	WebPDecode :: proc(data: [^]u8, data_size: c.size_t, config: ^WebPDecoderConfig) -> c.int ---
 	WebPFree :: proc(p: rawptr) ---
 	WebPPictureInitInternal :: proc(picture: ^WebPPicture, version: c.int) -> c.int ---
 	WebPPictureImportRGB :: proc(picture: ^WebPPicture, rgb: [^]u8, stride: c.int) -> c.int ---

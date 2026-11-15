@@ -7,6 +7,7 @@ import dav1d "../vendor/dav1d"
 import ffmpeg "../vendor/ffmpeg"
 import libwebp "../vendor/libwebp"
 import "core:c"
+import "core:c/libc"
 import "core:fmt"
 import "core:log"
 import "core:os"
@@ -187,8 +188,37 @@ decode_rgba :: proc(data: []u8, max_pixels: i64 = 0) -> (img: Decoded_ARGB, err:
 	p, n := raw_data(data), len(data)
 	#partial switch format {
 	case .WebP:
-		img.free_pixels = libwebp.WebPFree
-		img.pixels = libwebp.WebPDecodeRGBA(p, c.size_t(n), &img.width, &img.height)
+		sw, sh: c.int = 128, 128
+		if w >= h {
+			sh = max(1, (h * 128 + w / 2) / w)
+		} else {
+			sw = max(1, (w * 128 + h / 2) / h)
+		}
+		buf_size := c.size_t(sw) * c.size_t(sh) * 4
+		buf := ([^]u8)(libc.malloc(buf_size))
+		if buf == nil {return {}, .Failed}
+		cfg: libwebp.WebPDecoderConfig
+		if libwebp.WebPInitDecoderConfigInternal(&cfg, libwebp.WEBP_DECODER_ABI_VERSION) == 0 {
+			libc.free(buf)
+			return {}, .Failed
+		}
+		cfg.output.colorspace = libwebp.MODE_RGBA
+		cfg.output.is_external_memory = 1
+		cfg.output.u.RGBA = {
+			rgba   = buf,
+			stride = sw * 4,
+			size   = buf_size,
+		}
+		cfg.options.use_scaling = 1
+		cfg.options.scaled_width = sw
+		cfg.options.scaled_height = sh
+		if libwebp.WebPDecode(p, c.size_t(n), &cfg) != 0 {
+			libc.free(buf)
+			return {}, .Failed
+		}
+		img.width, img.height = sw, sh
+		img.pixels = buf
+		img.free_pixels = libc.free
 	case .PNG, .JPEG, .GIF:
 		img.free_pixels = stbi.image_free
 		img.pixels = stbi.load_from_memory(p, c.int(n), &img.width, &img.height, nil, 4)
