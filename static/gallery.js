@@ -356,7 +356,8 @@
   const ringPages = [];
   let ringCursor = 0;
   let pending = false,
-    batchQueued = false;
+    batchQueued = false,
+    hasPainted = false;
   const endpoint = "/mipmap/64";
   let maxViewport = null, maxRenderbuffer = 0;
   let previewSurface, stripTop = null, stripHeight = 0;
@@ -575,23 +576,20 @@
       previewLog("backing-resize", lastBacking);
       canvas.width = width;
       canvas.height = height;
+      hasPainted = false;
       if (gl.isContextLost()) {
         failPreview(Error("WebGL context lost during canvas resize"));
         return;
       }
     }
-    gl.viewport(0, 0, width, height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(program);
-    gl.uniform2f(uniforms.screen, w, h);
     const sTop = strip.stripTop;
     const clipLeft = strip.clipLeft;
     const clipRight = strip.clipRight;
     const srcs = batch ? batch.srcs : [];
     const widths = batch ? batch.widths : [];
     const heights = batch ? batch.heights : [];
-    let lastTexture = null;
+    let lastTexture = null,
+      drew = false;
     for (let i = 0; i < images.length; i++) {
       const img = images[i],
         thumb = thumbnailsByURL.get(srcs[i]);
@@ -610,6 +608,14 @@
       const right = Math.min(clipRight, cLeft + box.cardWidth);
       const bottom = Math.min(h, cTop + box.cardHeight);
       if (right <= left || bottom <= top) continue;
+      if (!drew) {
+        gl.viewport(0, 0, width, height);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(program);
+        gl.uniform2f(uniforms.screen, w, h);
+        drew = true;
+      }
       // The decoded animation canvas is square; each thumbnail's content starts
       // at (0,0). Match WebPPictureRescale's rounded aspect-preserving dimensions.
       const originalW = widths[i];
@@ -663,6 +669,12 @@
         bottom: Math.min(rTop + box.height, bottom),
       });
     }
+    if (!drew && hasPainted) {
+      gl.viewport(0, 0, width, height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    hasPainted = drew;
     if (rendererState === "starting") rendererState = "active";
   }
 
@@ -908,10 +920,16 @@
   });
 
   document.addEventListener("load", (event) => {
-    if (event.target instanceof HTMLImageElement &&
-        event.target.classList.contains("gallery-card-media")) {
-      schedule();
-    }
+    if (!hasPainted) return;
+    const img = event.target;
+    if (!(img instanceof HTMLImageElement) ||
+        !img.classList.contains("gallery-card-media")) return;
+    const card = img.closest(".masonry-item");
+    const box = card && cardLayouts.get(card);
+    if (box && stripTop !== null &&
+        (box.top + box.height <= stripTop || box.top >= stripTop + stripHeight))
+      return;
+    schedule();
   }, true);
 
   document.addEventListener("scroll", scrollPreview, true);
