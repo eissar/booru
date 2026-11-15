@@ -539,6 +539,7 @@
   }
 
   function draw() {
+    pending = false;
     if (!uniforms || rendererState === "failed") return;
     if (gl.isContextLost()) {
       failPreview(Error("WebGL context lost; reload the page to retry"));
@@ -669,8 +670,7 @@
     if (pending || !uniforms || rendererState === "failed") return;
     pending = true;
     requestAnimationFrame(() => {
-      pending = false;
-      draw();
+      if (pending) draw();
     });
   }
 
@@ -991,10 +991,7 @@
     nearbyQueued = true;
     requestAnimationFrame(function () {
       nearbyQueued = false;
-      if (pending) {
-        pending = false;
-        draw();
-      }
+      if (pending) draw();
       var geometry = getGrid() && measureMasonry(getGrid());
       if (geometry) showNearbyCards(geometry);
     });
