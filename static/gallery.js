@@ -566,12 +566,26 @@
     };
   };
 
-  // Only gallery responses request mipmap previews.
+  // Only gallery responses request mipmap previews; sync masonry immediately
+  // on swap so appended cards never paint below the makespan before settling.
+  let lastSwapXhr = null;
   document.addEventListener("htmx:afterSwap", (event) => {
+    const xhr = event.detail.xhr;
+    if (xhr && xhr === lastSwapXhr) return;
+    if (xhr) {
+      lastSwapXhr = xhr;
+      queueMicrotask(() => {
+        if (lastSwapXhr === xhr) lastSwapXhr = null;
+      });
+    }
     canonicalCards = null;
-    const url = event.detail.xhr?.responseURL;
-    if (!url) return;
-    const path = new URL(url, location.href).pathname;
+    const url = xhr?.responseURL;
+    const path = url ? new URL(url, location.href).pathname : "";
+    const grid = getGrid();
+    if (path === "/fragment/items" || path === "/fragment/gallery-content" ||
+        (grid && getCurrentView() === "masonry" && grid.querySelector(":scope > .masonry-item"))) {
+      syncMasonry();
+    }
     if (path === "/fragment/items") requestBatch(false);
     else if (path === "/fragment/gallery-content") requestBatch(true);
   });
