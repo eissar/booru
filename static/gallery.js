@@ -356,8 +356,7 @@
   const ringPages = [];
   let ringCursor = 0;
   let pending = false,
-    batchQueued = false,
-    animateUntil = 0;
+    batchQueued = false;
   const endpoint = "/mipmap/64";
   let maxViewport = null, maxRenderbuffer = 0;
   let previewSurface, stripTop = null, stripHeight = 0;
@@ -672,13 +671,7 @@
     requestAnimationFrame(() => {
       pending = false;
       draw();
-      if (performance.now() < animateUntil) schedule();
     });
-  }
-
-  function transitionDraw() {
-    animateUntil = performance.now() + 400;
-    schedule();
   }
 
   function releaseBatch() {
@@ -922,9 +915,6 @@
   }, true);
 
   document.addEventListener("scroll", scrollPreview, true);
-  for (const event of ["pointerover", "pointerout", "transitionrun"]) {
-    document.addEventListener(event, transitionDraw);
-  }
 
   document.addEventListener("DOMContentLoaded", async function () {
     var requestedView = new URLSearchParams(window.location.search).get("view");
@@ -1004,7 +994,6 @@
       if (pending) {
         pending = false;
         draw();
-        if (performance.now() < animateUntil) schedule();
       }
       var geometry = getGrid() && measureMasonry(getGrid());
       if (geometry) showNearbyCards(geometry);
