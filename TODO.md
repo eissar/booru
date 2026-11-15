@@ -39,7 +39,7 @@ Writes are log-first: handlers and Eagle import append events, then run incremen
 - [ ] Optional: CI/pre-commit check that nothing outside `replay` calls the store write procs or writes to the DB directly.
 - [x] Normalize tags in the web handlers. Eagle import lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_update_metadata` (`src/server/handlers.odin`) normalizes with `lowercase_and_dash_whitespace` and rejects anything else outside `is_allowed_tag_char`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
-- [x] Remove `core:log`; use `fmt.eprint*` instead.
+- [x] Remove `core:log` from non-test runtime paths; use `fmt.eprint*` instead (remaining `core:log` usage is gated behind `when ODIN_TEST` or lives in test files).
 
 
 
@@ -80,8 +80,15 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 # Media Decode TODO
 
 - [ ] Open question: should the UI trigger `refresh thumbnail` also re-probe metadata?
-- [x] Check dimensions before decoding and skip oversized thumbnail inputs with a documented pixel-count limit and clear log (`8192 * 8192` in `src/media/decode.odin`, `src/thumbnail/generate.odin`).
+- [ ] Cache derived card media renderer state on disk under `thumbnails/max/{oid}.webp` (full-resolution resting still cover) and `thumbnails/interactive/{oid}/...` (multi-asset/interactive renderer outputs like 3D carousels).
+- [ ] Make startup thumbnail/artifact scan async as a background job (don't gate server startup on `generate_missing_thumbnails`; run on a worker thread with an in-memory job queue surfaced in `#jobs-panel`, not a `store.sqlite` table).
+- [ ] Add a post-ingest job hook in `handle_upload` (`src/server/handlers.odin`) to enqueue artifact generation for newly uploaded items.
+- [ ] Unify missing-artifact registration per media handler (`matches`, `expected_paths`/`missing`, `generate`) across `64/`, `128/`, `max/`, and `interactive/` in one pass so a single source decode is shared.
+- [ ] Generate full-res `thumbnails/max/{oid}.webp` covers for video (`ffmpeg.first_frame` + `libwebp` without rescale) and use them as the resting `<img>`/`poster` cover so scroll stays on the image decoder.
+- [x] Check dimensions before decoding and skip oversized image thumbnail inputs with a documented pixel-count limit and clear log (`8192 * 8192` in `src/media/media.odin`, `src/thumbnail/generate.odin`; `decode_rgba` and `decode_yuv_dav1d` enforce the limit pre-decode, while video and JXL currently decode via `ffmpeg.first_frame` before checking `max_pixels`).
+- [ ] Enforce `max_pixels` before decoding pixels for video and JXL (`ffmpeg.first_frame` in `src/media/media.odin`).
 - [ ] Non-bounded thumbnail generation unimplemented (images over `8192 * 8192` pixels are skipped).
+- [ ] Fast path for AVIF dimension probing: `media.probe_dimensions` (`src/media/media.odin`) currently calls `decode_yuv_dav1d` (~569 us/op in `bench/probe/probe_test.odin` vs 0.2–3.7 us/op for header-only image probes). Parse the `ispe` box (`u32be` width/height) via `ipco`/`ipma` in `src/media/avif.odin` (accounting for `irot`/`imir` transforms if present, or fall back to the AV1 sequence header OBU) without decoding pixels.
 - [ ] 1-byte thumbnail failure sentinel: when `media.decode_frame` in `src/thumbnail/generate.odin` fails deterministically (`.Unsupported`, `.Too_Large`, or corrupt `.Failed` data), write a 1-byte failure-reason enum to `thumbnails/{64,128}/{oid}.webp` instead of leaving the file missing. This lets `exclude_existing_thumbnails` skip permanently failed items via its `getdents` scan and `/mipmap` pick the embedded fallback (`NOT_FOUND_*` vs `UNSUPPORTED_FILETYPE_*`) by checking `len(bytes) == 1` on its existing file read, with no extra syscalls or DB columns. However, because `getdents` only sees filenames and not sizes, startup cannot distinguish 1-byte sentinels from real WebPs without `stat`, so `.Too_Large`/`.Unsupported` items won't auto-regenerate when support is later added unless sentinels are purged. Writing sentinels on transient I/O or missing-source `.Failed` errors would also suppress retries (breaking `generate_missing_fixture_thumbnails`), and direct readers of `thumbnails/{64,128}/*.webp` will see non-WebP 1-byte files.
 
 
@@ -103,7 +110,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 # Gallery Pagination TODO
 
 - Infinite scroll: the load-more button fires on `intersect once root:.main-content` (click remains as fallback), with `hx-sync="#photo-grid:drop"`; default page size is 100.
-- [ ] Verify infinite scroll in a browser: sentinel position after masonry packing, no duplicate pages on fast scroll, and a short first page that doesn't fill the viewport still chains loads.
+- [x] Verify infinite scroll in a browser: sentinel position after masonry packing, no duplicate pages on fast scroll, and a short first page that doesn't fill the viewport still chains loads.
 
 - Open question: choose a reasonable default for fresh loads after loading more. Load-more URLs currently omit offset; should refresh start with one page, restore the displayed count, or restore a position? Decide the URL semantics and default before implementing accumulated-offset restoration.
 
@@ -117,7 +124,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 - [-] Replace JS default theme detection (`static/gallery.js`, `window.matchMedia("(prefers-color-scheme: dark)")`) and the `html:not([data-theme]) { visibility: hidden; }` render-blocking hack (`static/gallery.css`) with CSS `color-scheme: light dark` and `light-dark()` (or `@media (prefers-color-scheme: dark)`), keeping JS only for explicit `localStorage` user overrides. (Current impl has better browser support.)
 - [x] Replace the Inspector tag-edit input toggle (`src/template/inspector.odin`, `data-hx-on-click` toggling `.hidden` and calling `.focus()`) with a native `popover` and `autofocus` on the `<input>`.
-- [x] Replace the custom drag-and-drop upload handlers (`src/template/gallery_page.odin`, `data-hx-on-dragover`/`dragleave`/`drop` on `#upload-form`) by letting `<input type="file">` act as the native drop target.
+- [ ] Replace the custom drag-and-drop upload handlers (`src/template/gallery_page.odin`, `data-hx-on-dragover`/`dragleave`/`drop` on `#upload-form`, plus `window` `dragover`/`drop` in `static/gallery.js`) by letting `<input type="file">` act as the native drop target (if URL/HTML image drops are no longer needed).
 - [x] Replace JS Inspector open/close class toggling (`src/template/gallery_page.odin`, `data-hx-on::after-swap` / `booruToggleInspector`) with CSS `:has()` + `:empty` (e.g. `#gallery-main:has(#inspector-content:not(:empty))`) or `popover` (keeping JS only if `localStorage` persistence across reloads is still desired).
 - [ ] Consider retaining inspector in DOM.
 - [x] Remove dead `body.light-mode` and `body.dark-mode` CSS rules and duplicate variable blocks in `static/gallery.css` (lines 48, 67, 86–120, 336–341, 364–418); theming uses `html[data-theme='light'|'dark']`.
