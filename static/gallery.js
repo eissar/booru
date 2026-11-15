@@ -330,6 +330,18 @@
     }
   }
 
+  function createPreviewCanvas(source, w, h) {
+    const canvas = document.createElement("canvas");
+    canvas.className = "gallery-card-preview";
+    canvas.setAttribute("aria-hidden", "true");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(source, 0, 0, w, h, 0, 0, w, h);
+    return canvas;
+  }
+
   function attachPreview(card, previewCanvas) {
     const cardEl = card.querySelector(".gallery-card");
     const media = card.querySelector(".gallery-card-media");
@@ -343,17 +355,10 @@
     const stale = cardEl.querySelector(":scope > .gallery-card-preview");
     if (stale) stale.remove();
 
-    let canvas = previewCanvas;
-    if (canvas.isConnected) {
-      canvas = document.createElement("canvas");
-      canvas.className = "gallery-card-preview";
-      canvas.setAttribute("aria-hidden", "true");
-      canvas.width = previewCanvas.width;
-      canvas.height = previewCanvas.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.drawImage(previewCanvas, 0, 0);
-    }
+    const canvas = previewCanvas.isConnected
+      ? createPreviewCanvas(previewCanvas, previewCanvas.width, previewCanvas.height)
+      : previewCanvas;
+    if (!canvas) return;
     const origW = Number(media.getAttribute("width")) || 0;
     const origH = Number(media.getAttribute("height")) || 0;
     const aspectRatio =
@@ -373,9 +378,7 @@
 
     const grid = getGrid();
     const cards = grid ? collectCards(grid) : [];
-    const ids = [];
-    const cardsByIndex = [];
-    const batchIndexById = new Map();
+    const cardsById = new Map();
 
     for (const card of cards) {
       const id = card.dataset.imageId;
@@ -385,32 +388,25 @@
         attachPreview(card, cached);
         continue;
       }
-      if (inFlightIds.has(id)) continue;
-      if (!card.querySelector(".gallery-card-media")) continue;
-      let idx = batchIndexById.get(id);
-      if (idx === undefined) {
-        idx = ids.length;
-        batchIndexById.set(id, idx);
-        ids.push(id);
-        cardsByIndex.push([card]);
-      } else {
-        cardsByIndex[idx].push(card);
-      }
+      if (inFlightIds.has(id) || !card.querySelector(".gallery-card-media")) continue;
+      const group = cardsById.get(id);
+      if (group) group.push(card);
+      else cardsById.set(id, [card]);
     }
 
-    if (!ids.length) return;
+    if (!cardsById.size) return;
+    const ids = [...cardsById.keys()];
     for (const id of ids) inFlightIds.add(id);
     const current = {
       ids,
-      cardsByIndex,
+      cardsById,
       abort: new AbortController(),
       decoder: null,
     };
     activeBatches.add(current);
     loadBatch(current)
       .catch((error) => {
-        if (current.abort.signal.aborted) return;
-        failPreview(error);
+        if (!current.abort.signal.aborted) failPreview(error);
       })
       .finally(() => {
         current.decoder?.close();
@@ -422,13 +418,12 @@
   async function loadBatch(current) {
     // Same URL as the <link rel="preload"> in the page head, so the first
     // batch reuses that request. Keep the request mode and cache defaults.
-    const { ids, cardsByIndex } = current;
+    const { ids, cardsById } = current;
     const response = await fetch(endpoint + "?ids=" + ids.join(","), {
       priority: "high",
       signal: current.abort.signal,
     });
-    if (!response.ok || !response.body)
-      throw Error(`Mipmap HTTP ${response.status}`);
+    if (!response.ok || !response.body) throw Error(`Mipmap HTTP ${response.status}`);
     if (current.abort.signal.aborted) return;
     const decoder = (current.decoder = new ImageDecoder({
       data: response.body,
@@ -445,48 +440,27 @@
     let count = 0;
     for (let i = 0; ; i++) {
       if (streamError) throw streamError;
-      if (decoder.complete && i >= decoder.tracks.selectedTrack.frameCount)
-        break;
+      if (decoder.complete && i >= decoder.tracks.selectedTrack.frameCount) break;
       let image;
       try {
-        ({ image } = await decoder.decode({
-          frameIndex: i,
-          completeFramesOnly: true,
-        }));
+        ({ image } = await decoder.decode({ frameIndex: i, completeFramesOnly: true }));
       } catch (error) {
-        if (
-          error instanceof RangeError &&
-          decoder.complete &&
-          i >= decoder.tracks.selectedTrack.frameCount
-        )
-          break;
+        if (error instanceof RangeError && decoder.complete && i >= decoder.tracks.selectedTrack.frameCount) break;
         throw error;
       }
       try {
         if (current.abort.signal.aborted) return;
         if (i >= ids.length) throw Error("Too many frames in response");
         const id = ids[i];
-        const cards = cardsByIndex[i];
+        const cards = cardsById.get(id);
         const media = cards[0]?.querySelector(".gallery-card-media");
-        const originalW = Number(media?.getAttribute("width")) || 1;
-        const originalH = Number(media?.getAttribute("height")) || 1;
+        const origW = Number(media?.getAttribute("width")) || 1;
+        const origH = Number(media?.getAttribute("height")) || 1;
         const edge = image.displayWidth;
-        const contentW =
-          originalW >= originalH
-            ? edge
-            : Math.max(1, Math.floor((edge * originalW) / originalH + 0.5));
-        const contentH =
-          originalH >= originalW
-            ? edge
-            : Math.max(1, Math.floor((edge * originalH) / originalW + 0.5));
-        const previewCanvas = document.createElement("canvas");
-        previewCanvas.className = "gallery-card-preview";
-        previewCanvas.setAttribute("aria-hidden", "true");
-        previewCanvas.width = contentW;
-        previewCanvas.height = contentH;
-        const ctx = previewCanvas.getContext("2d");
-        if (!ctx) throw Error("2D canvas context unavailable");
-        ctx.drawImage(image, 0, 0, contentW, contentH, 0, 0, contentW, contentH);
+        const contentW = origW >= origH ? edge : Math.max(1, Math.floor((edge * origW) / origH + 0.5));
+        const contentH = origH >= origW ? edge : Math.max(1, Math.floor((edge * origH) / origW + 0.5));
+        const previewCanvas = createPreviewCanvas(image, contentW, contentH);
+        if (!previewCanvas) throw Error("2D canvas context unavailable");
         previewsById.set(id, previewCanvas);
         for (const card of cards) {
           if (card.isConnected) attachPreview(card, previewCanvas);
@@ -498,8 +472,7 @@
     }
     await completed;
     if (streamError) throw streamError;
-    if (count !== ids.length)
-      throw Error(`Expected ${ids.length} frames, received ${count}`);
+    if (count !== ids.length) throw Error(`Expected ${ids.length} frames, received ${count}`);
   }
 
   // Read-only diagnostics for benchmarks and tests. No observers or work unless called.
@@ -555,40 +528,31 @@
     if (card) removeCardPreview(card);
   }, true);
 
-  document.addEventListener("DOMContentLoaded", async function () {
-    var requestedView = new URLSearchParams(window.location.search).get("view");
-    if (
-      requestedView === "masonry" ||
-      requestedView === "grid" ||
-      requestedView === "list"
-    ) {
-      var selected = document.getElementById("gallery-view-" + requestedView);
+  document.addEventListener("DOMContentLoaded", async () => {
+    const requestedView = new URLSearchParams(location.search).get("view");
+    if (requestedView === "masonry" || requestedView === "grid" || requestedView === "list") {
+      const selected = document.getElementById("gallery-view-" + requestedView);
       if (selected instanceof HTMLInputElement) selected.checked = true;
     }
 
-    var viewInputs = document.querySelectorAll('input[name="gallery-view"]');
-    for (var i = 0; i < viewInputs.length; i++) {
-      viewInputs[i].addEventListener("change", function (event) {
-        var input = event.target;
-        if (!(input instanceof HTMLInputElement) || !input.checked) return;
-        var nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set("view", input.value);
-        window.history.replaceState(null, "", nextUrl);
+    for (const input of document.querySelectorAll('input[name="gallery-view"]')) {
+      input.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || !target.checked) return;
+        const nextUrl = new URL(location.href);
+        nextUrl.searchParams.set("view", target.value);
+        history.replaceState(null, "", nextUrl);
         scheduleMasonrySync();
       });
     }
 
     scheduleMasonrySync();
 
-    var toggle = document.getElementById("dark-mode-toggle");
-    if (toggle) {
-      toggle.addEventListener("click", function () {
-        var currentTheme = document.documentElement.getAttribute("data-theme");
-        var newTheme = currentTheme === "dark" ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", newTheme);
-        localStorage.setItem("theme", newTheme);
-      });
-    }
+    document.getElementById("dark-mode-toggle")?.addEventListener("click", () => {
+      const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      localStorage.setItem("theme", next);
+    });
 
     try {
       if (!globalThis.isSecureContext)
@@ -610,89 +574,69 @@
 
   // Scrolling only updates nearby packed cards in masonry view.
   function onScroll(event) {
-    if (packedColumns.length === 0 || event.target !== document) return;
+    if (!packedColumns.length || event.target !== document) return;
     if (!cachedLayout || !cachedLayout.grid.isConnected) {
-      var grid = getGrid();
+      const grid = getGrid();
       if (!grid) return;
       cachedLayout = measureMasonry(grid);
     }
-    if (!cachedLayout || !cachedLayout.width) return;
+    if (!cachedLayout || !cachedLayout.width || nearbyQueued) return;
 
-    if (!nearbyQueued) {
-      nearbyQueued = true;
-      requestAnimationFrame(function () {
-        nearbyQueued = false;
-        if (packedColumns.length && cachedLayout && cachedLayout.width &&
-            cachedLayout.grid.isConnected) {
-          var scrollTop = document.documentElement.scrollTop;
-          showNearbyCards({
-            scrollTop: scrollTop,
-            visibleTop: scrollTop - cachedLayout.gridTop,
-            height: cachedLayout.height,
-            width: cachedLayout.width,
-            gap: cachedLayout.gap,
-          });
-        }
+    nearbyQueued = true;
+    requestAnimationFrame(() => {
+      nearbyQueued = false;
+      if (!packedColumns.length || !cachedLayout?.width || !cachedLayout.grid.isConnected) return;
+      const scrollTop = document.documentElement.scrollTop;
+      showNearbyCards({
+        scrollTop,
+        visibleTop: scrollTop - cachedLayout.gridTop,
+        height: cachedLayout.height,
+        width: cachedLayout.width,
+        gap: cachedLayout.gap,
       });
-    }
+    });
   }
 
   document.addEventListener("scroll", onScroll, true);
-})();
 
-(function () {
-  var savedTheme = localStorage.getItem("theme");
-  var isDarkMode = savedTheme
+  const savedTheme = localStorage.getItem("theme");
+  const isDarkMode = savedTheme
     ? savedTheme === "dark"
     : window.matchMedia("(prefers-color-scheme: dark)").matches;
-  document.documentElement.setAttribute(
-    "data-theme",
-    isDarkMode ? "dark" : "light",
-  );
-})();
+  document.documentElement.setAttribute("data-theme", isDarkMode ? "dark" : "light");
 
-(function () {
   // booruShowLocalToast appends a client-side toast to #toasts-log, cloned
   // from #toast-template. level is a booru-toast-[level] modifier
   // ("success", "error"); omit it for the default style.
   globalThis.booruShowLocalToast = function (message, level) {
-    var template = document.getElementById("toast-template");
-    var log = document.getElementById("toasts-log");
+    const template = document.getElementById("toast-template");
+    const log = document.getElementById("toasts-log");
     if (!(template instanceof HTMLTemplateElement) || !log) return;
-    var fragment = template.content.cloneNode(true);
-    var toast = fragment.querySelector(".booru-toast");
+    const fragment = template.content.cloneNode(true);
+    const toast = fragment.querySelector(".booru-toast");
     if (level) toast.classList.add("booru-toast-" + level);
     fragment.querySelector(".toast-message").textContent = message;
-    fragment.querySelector(".booru-toast-dismiss").addEventListener("click", function () {
-      toast.remove();
-    });
+    fragment.querySelector(".booru-toast-dismiss").addEventListener("click", () => toast.remove());
     log.appendChild(fragment);
   };
-})();
 
-document.addEventListener("click", function (event) {
-  var details = document.querySelectorAll("details");
-  details.forEach(function (detail) {
-    if (!detail.contains(event.target)) {
-      detail.open = false;
+  document.addEventListener("click", (event) => {
+    for (const detail of document.querySelectorAll("details")) {
+      if (!detail.contains(event.target)) detail.open = false;
     }
   });
-});
 
-(function () {
-  var dragTimer;
-  window.addEventListener("dragover", function (event) {
-    if (!event.dataTransfer || !event.dataTransfer.types.length) return;
+  let dragTimer;
+  window.addEventListener("dragover", (event) => {
+    if (!event.dataTransfer?.types.length) return;
     event.preventDefault();
     document.documentElement.classList.add("is-dragging");
-    var uploadDetails = document.getElementById("upload-button")?.closest("details");
+    const uploadDetails = document.getElementById("upload-button")?.closest("details");
     if (uploadDetails) uploadDetails.open = true;
     clearTimeout(dragTimer);
-    dragTimer = setTimeout(function () {
-      document.documentElement.classList.remove("is-dragging");
-    }, 150);
+    dragTimer = setTimeout(() => document.documentElement.classList.remove("is-dragging"), 150);
   });
-  window.addEventListener("drop", function (event) {
+  window.addEventListener("drop", (event) => {
     event.preventDefault();
     clearTimeout(dragTimer);
     document.documentElement.classList.remove("is-dragging");
