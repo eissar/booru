@@ -24,7 +24,6 @@ import "../template"
 import "../thumbnail"
 import "../thumbnail/webpx"
 import "../util"
-import ffmpeg "../vendor/ffmpeg"
 import "../vendor/sqlite"
 
 import elog "../event_log"
@@ -607,14 +606,9 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	ev.name = strings.clone(leaf, req.alloc)
 	ev.ext = media.extension(format)
 	ev.content_type = media.mime(format)
-	if w, h, ok := media.probe_dimensions(data, format); ok {
+	if w, h, ok := media.probe_dimensions(data, format, path); ok {
 		ev.width = int(w)
 		ev.height = int(h)
-	} else if ff, ff_ok := ffmpeg.first_frame(path); ff_ok {
-		// Video: probe_dimensions reads image headers only, so decode the first frame.
-		defer ffmpeg.free_decoded_frame(&ff)
-		ev.width = int(ff.width)
-		ev.height = int(ff.height)
 	}
 
 	ev.added_at = time.to_unix_nanoseconds(time.now()) / 1_000_000

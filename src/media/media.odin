@@ -132,9 +132,21 @@ decode_yuv_dav1d :: proc(
 }
 
 
-// probe_dimensions reads image dimensions from headers without decoding pixels.
-// Returns ok = false for unsupported/video formats or malformed headers.
-probe_dimensions :: proc(data: []u8, format: Format) -> (width, height: c.int, ok: bool) {
+// probe_dimensions reads image or video stream dimensions from headers without decoding pixels.
+// Video formats require a non-empty `path`. Returns ok = false for unsupported formats or malformed headers.
+probe_dimensions :: proc(
+	data: []u8,
+	format: Format,
+	path := "",
+) -> (
+	width, height: c.int,
+	ok: bool,
+) {
+	#partial switch format {
+	case .MP4, .MOV, .M4V, .ThreeGP, .WebM, .MKV, .AVI, .OGV, .MPG, .MPV, .WMV, .FLV:
+		if path == "" {return 0, 0, false}
+		return ffmpeg.probe_dimensions(path)
+	}
 	if len(data) == 0 || len(data) > int(max(c.int)) {return 0, 0, false}
 	p, n := raw_data(data), len(data)
 	#partial switch format {

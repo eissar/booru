@@ -18,6 +18,24 @@ free_decoded_frame :: proc(ff: ^Decoded_Frame) {
 	ff^ = {}
 }
 
+// Reads video stream dimensions from container/stream headers without decoding frames.
+probe_dimensions :: proc(path: string) -> (width, height: c.int, ok: bool) {
+	when ODIN_TEST {av_log_set_level(AV_LOG_QUIET)}
+	cpath := strings.clone_to_cstring(path, context.temp_allocator)
+
+	fmt_ctx: ^AVFormatContext
+	if avformat_open_input(&fmt_ctx, cpath, nil, nil) < 0 {return}
+	defer avformat_close_input(&fmt_ctx)
+	if avformat_find_stream_info(fmt_ctx, nil) < 0 {return}
+
+	idx := av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nil, 0)
+	if idx < 0 {return}
+
+	par := fmt_ctx.streams[idx].codecpar
+	if par == nil || par.width <= 0 || par.height <= 0 {return}
+	return par.width, par.height, true
+}
+
 // Decodes the first video frame of `path` without seeking.
 first_frame :: proc(path: string) -> (ff: Decoded_Frame, ok: bool) {
 	when ODIN_TEST {av_log_set_level(AV_LOG_QUIET)}

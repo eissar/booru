@@ -40,7 +40,23 @@ AVStream :: struct {
 	id:       c.int,
 	codecpar: ^AVCodecParameters,
 }
-AVCodecParameters :: struct {}
+AVCodecParameters :: struct {
+	codec_type:            c.int,
+	codec_id:              c.int,
+	codec_tag:             u32,
+	extradata:             [^]u8,
+	extradata_size:        c.int,
+	coded_side_data:       rawptr,
+	nb_coded_side_data:    c.int,
+	format:                c.int,
+	bit_rate:              i64,
+	bits_per_coded_sample: c.int,
+	bits_per_raw_sample:   c.int,
+	profile:               c.int,
+	level:                 c.int,
+	width:                 c.int,
+	height:                c.int,
+}
 AVPacket :: struct {
 	buf:          ^AVBufferRef,
 	pts:          i64,

@@ -6,6 +6,7 @@ import "core:os"
 import "core:testing"
 
 import "../library"
+import "../media"
 import "../store"
 import libwebp "../vendor/libwebp"
 import "../vendor/sqlite"
@@ -80,4 +81,22 @@ video_first_frame_thumbnail_fixture :: proc(t: ^testing.T) {
 	// Regeneration replaces the existing thumbnails.
 	n, failed = force_generate_image_thumbnails(state, images[0], {.x64, .x128})
 	testing.expect(t, n == 2 && failed == 0, "regenerate both resolutions for video")
+}
+
+@(test)
+video_probe_dimensions_fixture :: proc(t: ^testing.T) {
+	path := "test/fixture/media/thumbnail.mp4"
+	w, h, ok := media.probe_dimensions(nil, .MP4, path)
+	testing.expect(t, ok, "probe_dimensions succeeds for mp4")
+
+	frame, err := media.decode_frame(path)
+	testing.expect(t, err == .None, "decode_frame succeeds for mp4")
+	defer media.free_decoded(&frame)
+
+	yuv, is_yuv := frame.(media.Decoded_YUV)
+	testing.expect(t, is_yuv, "mp4 decodes to Decoded_YUV")
+	testing.expect(t, w == yuv.width && h == yuv.height, "probed dimensions match decoded frame")
+
+	_, _, no_path_ok := media.probe_dimensions(nil, .MP4)
+	testing.expect(t, !no_path_ok, "probe_dimensions without path fails for video")
 }
