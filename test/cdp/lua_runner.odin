@@ -46,7 +46,10 @@ push_json :: proc(L: ^lua.State, v: json.Value) {
 }
 
 lua_str :: proc(L: ^lua.State, idx: c.int) -> string {
-	return string(lua.L_checkstring(L, idx))
+	lua.L_checktype(L, idx, c.int(lua.TSTRING))
+	n: c.size_t
+	s := lua.tolstring(L, idx, &n)
+	return string(([^]u8)(s)[:n])
 }
 
 get_host :: proc(L: ^lua.State) -> ^Host {
