@@ -78,10 +78,7 @@ write_filter_chip :: proc(
 	b: ^strings.Builder,
 	key, value, display, gallery_url, fragment_url: string,
 ) {
-	wr(
-		b,
-		"<span class=\"filter-chip text-xs font-medium px-2 py-1 rounded backdrop-blur-sm tag-badge\"",
-	)
+	wr(b, "<span class=\"filter-chip text-xs font-medium px-2 py-1 rounded tag-badge\"")
 	attr(b, "data-filter-key", key)
 	wr(b, "><input type=\"hidden\"")
 	attr(b, "name", key)
