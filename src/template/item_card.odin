@@ -97,12 +97,15 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 
 	// 14 + 1 for / ; 20 bytes for each digit
 	aspect_ratio_buf: [55]u8
-	aspect_ratio := fmt.bprintf(
-		aspect_ratio_buf[:],
-		"aspect-ratio: %d/%d",
-		min(image.width, 2 * image.height),
-		min(image.height, 2 * image.width),
-	)
+	aspect_ratio := "aspect-ratio: 1/1"
+	if image.width > 0 && image.height > 0 {
+		aspect_ratio = fmt.bprintf(
+			aspect_ratio_buf[:],
+			"aspect-ratio: %d/%d",
+			min(image.width, 2 * image.height),
+			min(image.height, 2 * image.width),
+		)
+	}
 
 
 	wr(&b, "<article class=\"masonry-item group\"")

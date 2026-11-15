@@ -18,8 +18,10 @@ write_card_media :: proc(
 			b,
 			" preload=\"none\" muted loop playsinline onpointerenter=\"this.play()\" onpointerleave=\"this.pause()\"",
 		)
-		ia(b, "width", image.width)
-		ia(b, "height", image.height)
+		if image.width > 0 && image.height > 0 {
+			ia(b, "width", image.width)
+			ia(b, "height", image.height)
+		}
 		attr(b, "style", aspect_ratio)
 		wr(b, " class=\"gallery-card-media order-1\"></video>")
 	case:
@@ -30,8 +32,10 @@ write_card_media :: proc(
 			b,
 			render_order >= 0 && render_order < 6 ? " fetchpriority=\"high\"" : " fetchpriority=\"low\"",
 		)
-		ia(b, "width", image.width)
-		ia(b, "height", image.height)
+		if image.width > 0 && image.height > 0 {
+			ia(b, "width", image.width)
+			ia(b, "height", image.height)
+		}
 		attr(b, "style", aspect_ratio)
 		wr(b, " class=\"gallery-card-media order-1\"/>")
 	}

@@ -225,3 +225,17 @@ html_gallery_page :: proc(t: ^testing.T) {
 		render_gallery_page("Synthetic library", fixture_gallery_filter(), images[:2], true),
 	)
 }
+
+@(test)
+item_card_zero_dimensions_fallback :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	context.allocator = alloc
+	images := load_images("test/fixture/library/events/2026-01.ndjson")
+	images[0].width = 0
+	images[0].height = 0
+	html := render_item_card(images[0], 0)
+	testing.expect(t, strings.contains(html, "style=\"aspect-ratio: 1/1\""))
+	testing.expect(t, !strings.contains(html, "width=\"0\""))
+	testing.expect(t, !strings.contains(html, "height=\"0\""))
+}
