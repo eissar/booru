@@ -17,6 +17,8 @@
   var anchorCard = null, anchorOffset = 0;
   var nearbyQueued = false;
   var cachedLayout = null;
+  var scrollSettleTimer = null;
+  var promoteRaf = 0;
   var canonicalCards = null;
   // Container resize (e.g. inspector opening) can change column packing.
   var contentSize = new ResizeObserver(function () {
@@ -164,7 +166,14 @@
       if (!geometry) {
         col.el.appendChild(cards[i]);
         col.last++;
-      } else if (cards[i].parentNode !== parking) parking.appendChild(cards[i]);
+      } else {
+        var media = cards[i].querySelector(".gallery-card-media");
+        if (media instanceof HTMLImageElement && !isMediaLoaded(media) && media.hasAttribute("src")) {
+          media.dataset.src = media.getAttribute("src");
+          media.removeAttribute("src");
+        }
+        if (cards[i].parentNode !== parking) parking.appendChild(cards[i]);
+      }
       col.cards.push(cards[i]);
       col.ratios.push(ratio);
       if (geometry) {
@@ -197,6 +206,7 @@
     if (anchored) {
       document.documentElement.scrollTop = geometry.scrollTop + geometry.visibleTop - visibleTop;
     }
+    schedulePromote();
   }
 
   /**
@@ -268,7 +278,14 @@
       }
       // Move only the cards leaving or entering the column's range.
       for (var i = col.first; i <= col.last; i++) {
-        if (i < a || i > b) parking.appendChild(col.cards[i]);
+        if (i < a || i > b) {
+          var outMedia = col.cards[i].querySelector(".gallery-card-media");
+          if (outMedia instanceof HTMLImageElement && !isMediaLoaded(outMedia) && outMedia.hasAttribute("src")) {
+            outMedia.dataset.src = outMedia.getAttribute("src");
+            outMedia.removeAttribute("src");
+          }
+          parking.appendChild(col.cards[i]);
+        }
       }
       if (col.first > col.last || b < col.first || a > col.last) {
         col.el.append.apply(col.el, col.cards.slice(a, b + 1));
@@ -572,9 +589,36 @@
   document.addEventListener("htmx:afterSettle", scheduleMasonrySync);
   window.addEventListener("resize", scheduleMasonrySync);
 
+  function schedulePromote() {
+    if (promoteRaf) return;
+    function step() {
+      promoteRaf = 0;
+      var budget = 2;
+      for (var c = 0; c < packedColumns.length && budget > 0; c++) {
+        var col = packedColumns[c];
+        for (var i = col.first; i <= col.last && budget > 0; i++) {
+          var media = col.cards[i]?.querySelector(".gallery-card-media");
+          if (media instanceof HTMLImageElement && media.dataset.src) {
+            media.setAttribute("src", media.dataset.src);
+            delete media.dataset.src;
+            budget--;
+          }
+        }
+      }
+      if (budget === 0) promoteRaf = requestAnimationFrame(step);
+    }
+    promoteRaf = requestAnimationFrame(step);
+  }
+
   // Scrolling only updates nearby packed cards in masonry view.
   function onScroll(event) {
     if (!packedColumns.length || event.target !== document) return;
+    if (promoteRaf) {
+      cancelAnimationFrame(promoteRaf);
+      promoteRaf = 0;
+    }
+    clearTimeout(scrollSettleTimer);
+    scrollSettleTimer = setTimeout(schedulePromote, 120);
     if (!cachedLayout || !cachedLayout.grid.isConnected) {
       const grid = getGrid();
       if (!grid) return;

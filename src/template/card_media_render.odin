@@ -25,7 +25,7 @@ write_card_media :: proc(
 	case:
 		wr(b, "<img")
 		attrf(b, "src", "/image/%s", image.oid)
-		wr(b, " loading=\"lazy\"")
+		wr(b, " loading=\"lazy\" decoding=\"async\"")
 		wr(
 			b,
 			render_order >= 0 && render_order < 6 ? " fetchpriority=\"high\"" : " fetchpriority=\"low\"",
