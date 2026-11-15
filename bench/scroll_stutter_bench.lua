@@ -31,28 +31,6 @@ local function build_fixture_html()
 <link rel="stylesheet" href="/static/tailwind.css">
 <link rel="stylesheet" href="/static/gallery.css">
 <style>html,body{margin:0;width:1920px;height:1080px;overflow:hidden} .layout{width:1920px;height:1080px}</style>
-<script>
-window.ImageDecoder = class {
-  static async isTypeSupported() { return true; }
-  constructor() {
-    this.complete = true;
-    this.completed = Promise.resolve();
-    this.tracks = { ready: Promise.resolve(), selectedTrack: { frameCount: ]] .. N .. [[ } };
-  }
-  async decode({ frameIndex } = {}) {
-    if (frameIndex >= ]] .. N .. [[) throw new RangeError('end');
-    const image = document.createElement('canvas');
-    image.width = image.height = 512;
-    image.displayWidth = image.displayHeight = 512;
-    image.close = () => {};
-    const c = image.getContext('2d');
-    c.fillStyle = (frameIndex % 5 === 4) ? '#3b82f6' : '#ef4444';
-    c.fillRect(0, 0, 512, 512);
-    return { image };
-  }
-  close() {}
-};
-</script>
 <script src="/static/gallery.js"></script>
 </head><body>
 <input type="radio" name="gallery-view" id="gallery-view-masonry" value="masonry" checked>
@@ -75,7 +53,8 @@ describe("scroll-stutter-bench", function()
         ["/static/gallery.js"]   = { content_type = "text/javascript", body = read_file("static/gallery.js"),   prefix = false },
         ["/static/gallery.css"]  = { content_type = "text/css",        body = read_file("static/gallery.css"),  prefix = false },
         ["/static/tailwind.css"] = { content_type = "text/css",        body = read_file("static/tailwind.css"), prefix = false },
-        ["/mipmap/"]             = { content_type = "text/plain",      body = "test",                             prefix = true },
+        ["/mipmap/"]             = { content_type = "image/webp",      body = read_file("bench/fixtures/noisy.webp"), prefix = true },
+        ["/image/"]              = { content_type = "image/jpeg",      body = read_file("bench/fixtures/noisy.jpg"),  prefix = true },
         ["/gallery"]             = { content_type = "text/html",       body = build_fixture_html(),               prefix = false },
       })
       b = cdp.open(srv:url())
@@ -247,7 +226,7 @@ describe("scroll-stutter-bench", function()
       })().catch(reject);
     })]])
 
-    print(string.format("STUTTER BENCH (1000 mixed cards, 1920x1080, 512px textures, scrollHeight=%dpx):", report.scrollHeight))
+    print(string.format("STUTTER BENCH (1000 mixed cards, 1920x1080, 64px WebP mipmap + 600x800 JPEG, scrollHeight=%dpx):", report.scrollHeight))
     for _, p in ipairs(report.passes) do
       print(string.format(
         "  pass=%2d target=%6dpx/s actual=%6dpx/s fps=%5.1f p50=%4.1fms p95=%4.1fms max=%5.1fms jitter=%4.1fms dropped=%d blanks=%d [%s]",
