@@ -16,6 +16,7 @@
   var parking = null;
   var anchorCard = null, anchorOffset = 0;
   var nearbyQueued = false;
+  var cachedLayout = null;
   var cardLayouts = new WeakMap();
   // Resize can change packing or just the visible range.
   var portSize = new ResizeObserver(function () {
@@ -103,6 +104,7 @@
 
     var geometry = null;
     if (columns > 0) geometry = measureMasonry(grid);
+    else cachedLayout = measurePort(grid);
 
     var key = buildSyncKey(view, columns, cards, geometry);
     if (key === lastSyncKey && packedColumnsMatch(grid, columns)) {
@@ -274,27 +276,51 @@
    * @property {number} gap - Metadata slot and inter-card gap in pixels.
    */
 
+  function measurePort(grid) {
+    var port = grid.closest(".main-content");
+    if (!port) return null;
+    var portRect = port.getBoundingClientRect();
+    var gridRect = grid.getBoundingClientRect();
+    var scrollTop = port.scrollTop;
+    var visibleTop = portRect.top + port.clientTop - gridRect.top;
+    return {
+      grid: grid,
+      port: port,
+      gridTop: scrollTop - visibleTop,
+      scrollTop: scrollTop,
+      visibleTop: visibleTop,
+      height: port.clientHeight,
+      width: 0,
+      slotHeight: 0,
+      gap: 0,
+    };
+  }
+
   // Reads what showNearbyCards needs. Callers measure before writing to the
   // DOM, so the browser never lays out collapsed columns and clamps scrollTop.
   /** @returns {Geometry|null} */
   function measureMasonry(grid) {
-    var port = grid.closest(".main-content");
-    if (!port) return null;
+    var layout = measurePort(grid);
+    if (!layout) {
+      cachedLayout = null;
+      return null;
+    }
     var slot = grid.querySelector(":scope > .masonry-item .gallery-card-slot, :scope > .masonry-column .gallery-card-slot");
-    if (!slot) return null;
+    if (!slot) {
+      cachedLayout = layout;
+      return null;
+    }
     var style = getComputedStyle(grid);
     var height = slot.getBoundingClientRect().height;
-    if (!height) return null;
-    return {
-      port: port,
-      scrollTop: port.scrollTop,
-      visibleTop: port.getBoundingClientRect().top + port.clientTop -
-        grid.getBoundingClientRect().top,
-      height: port.clientHeight,
-      width: parseFloat(style.gridTemplateColumns),
-      slotHeight: height,
-      gap: height + parseFloat(style.rowGap),
-    };
+    if (!height) {
+      cachedLayout = layout;
+      return null;
+    }
+    layout.width = parseFloat(style.gridTemplateColumns);
+    layout.slotHeight = height;
+    layout.gap = height + parseFloat(style.rowGap);
+    cachedLayout = layout;
+    return layout;
   }
 
   // Renders the cards within one viewport of the visible area. A card's height
@@ -433,19 +459,6 @@
       clipLeft: Math.max(0, portLeft),
       clipRight: Math.min(w, portLeft + scrollport.clientWidth),
     };
-  }
-
-  function scrollPreview() {
-    if (!uniforms) return;
-    const grid = getGrid();
-    const scrollport = grid?.closest(".main-content");
-    if (!grid || !scrollport) return;
-    const visibleTop = scrollport.getBoundingClientRect().top +
-      scrollport.clientTop - grid.getBoundingClientRect().top;
-    const h = scrollport.clientHeight;
-    if (stripTop === null || stripHeight !== h * 7 ||
-        visibleTop < stripTop + h || visibleTop + h > stripTop + stripHeight - h)
-      schedule();
   }
 
   function shader(type, source) {
@@ -681,6 +694,7 @@
   function schedule() {
     if (pending || !uniforms || rendererState === "failed") return;
     pending = true;
+    if (nearbyQueued) return;
     requestAnimationFrame(() => {
       if (pending) draw();
     });
@@ -932,8 +946,6 @@
     schedule();
   }, true);
 
-  document.addEventListener("scroll", scrollPreview, true);
-
   document.addEventListener("DOMContentLoaded", async function () {
     var requestedView = new URLSearchParams(window.location.search).get("view");
     if (
@@ -1001,19 +1013,57 @@
   // Triggers. Each one is dumb: it only requests a sync.
   document.addEventListener("htmx:afterSettle", scheduleMasonrySync);
 
-  // Scrolling only changes which packed cards are near the viewport.
-  document.addEventListener("scroll", function (event) {
-    var grid = getGrid();
-    if (nearbyQueued || !packedColumns.length || !grid ||
-        event.target !== grid.closest(".main-content")) return;
-    nearbyQueued = true;
-    requestAnimationFrame(function () {
-      nearbyQueued = false;
-      if (pending) draw();
-      var geometry = getGrid() && measureMasonry(getGrid());
-      if (geometry) showNearbyCards(geometry);
-    });
-  }, true);
+  // Scrolling only rebases the preview strip and updates nearby packed cards.
+  function onScroll(event) {
+    if (!cachedLayout || !cachedLayout.grid.isConnected) {
+      var grid = getGrid();
+      var port = grid && grid.closest(".main-content");
+      if (!grid || event.target !== port) return;
+      cachedLayout = packedColumns.length ? measureMasonry(grid) : measurePort(grid);
+    } else if (event.target !== cachedLayout.port) {
+      return;
+    }
+    if (!cachedLayout) return;
+
+    var needsPreview = false;
+    if (uniforms && rendererState !== "failed") {
+      var h = cachedLayout.height;
+      var visibleTop = cachedLayout.port.scrollTop - cachedLayout.gridTop;
+      if (stripTop === null || stripHeight !== h * 7 ||
+          visibleTop < stripTop + h || visibleTop + h > stripTop + stripHeight - h) {
+        needsPreview = true;
+      }
+    }
+
+    var needsNearby = packedColumns.length > 0;
+    if (needsNearby) {
+      if (needsPreview) pending = true;
+      if (!nearbyQueued) {
+        nearbyQueued = true;
+        requestAnimationFrame(function () {
+          nearbyQueued = false;
+          if (pending) draw();
+          if (packedColumns.length && cachedLayout && cachedLayout.width &&
+              cachedLayout.grid.isConnected) {
+            var scrollTop = cachedLayout.port.scrollTop;
+            showNearbyCards({
+              port: cachedLayout.port,
+              scrollTop: scrollTop,
+              visibleTop: scrollTop - cachedLayout.gridTop,
+              height: cachedLayout.height,
+              width: cachedLayout.width,
+              slotHeight: cachedLayout.slotHeight,
+              gap: cachedLayout.gap,
+            });
+          }
+        });
+      }
+    } else if (needsPreview) {
+      schedule();
+    }
+  }
+
+  document.addEventListener("scroll", onScroll, true);
 })();
 
 (function () {
