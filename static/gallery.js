@@ -884,9 +884,11 @@
           gl.UNSIGNED_BYTE,
           image,
         );
-        const error = gl.getError();
-        if (error !== gl.NO_ERROR)
-          throw Error(`WebGL error 0x${error.toString(16)}`);
+        if (diagnosticsEnabled) {
+          const error = gl.getError();
+          if (error !== gl.NO_ERROR)
+            throw Error(`WebGL error 0x${error.toString(16)}`);
+        }
         thumbnailsByURL.set(urls[i], { texture, layer, width, height });
         count++;
         if (i + 1 >= decoder.tracks.selectedTrack.frameCount) schedule();
@@ -898,6 +900,11 @@
     if (streamError) throw streamError;
     if (count !== ids.length)
       throw Error(`Expected ${ids.length} frames, received ${count}`);
+    const error = gl.getError();
+    if (error !== gl.NO_ERROR) {
+      for (const url of urls) thumbnailsByURL.delete(url);
+      throw Error(`WebGL error 0x${error.toString(16)}`);
+    }
     previewLog("batch-complete", { frames: count });
   }
 
