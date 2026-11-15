@@ -311,27 +311,11 @@
   const previewCanvasByCard = new WeakMap();
   const inFlightIds = new Set();
   const activeBatches = new Set();
-  let batchQueued = false,
-    pendingReplace = false;
   let previewState = "starting",
     previewError = null;
-  let previewLogSequence = 0;
-
-  function previewLog(event, details = {}) {
-    const record = {
-      seq: ++previewLogSequence,
-      ms: Math.round(performance.now()),
-      event,
-      state: previewState,
-      cached: previewsById.size,
-      ...details,
-    };
-    console.info("[booru-preview] " + JSON.stringify(record));
-  }
 
   function releaseBatches() {
     for (const current of activeBatches) {
-      previewLog("batch-release");
       current.abort.abort();
       current.decoder?.close();
       for (const id of current.ids) inFlightIds.delete(id);
@@ -340,10 +324,6 @@
   }
 
   function failPreview(error) {
-    previewLog("failure", {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : null,
-    });
     previewState = "failed";
     previewError = error instanceof Error ? error.message : String(error);
     releaseBatches();
@@ -401,64 +381,54 @@
 
   function requestBatch(replace = false) {
     if (previewState !== "active") return;
-    if (replace) pendingReplace = true;
-    if (batchQueued) return;
-    batchQueued = true;
-    requestAnimationFrame(() => {
-      batchQueued = false;
-      const shouldReplace = pendingReplace;
-      pendingReplace = false;
-      if (previewState !== "active") return;
-      if (shouldReplace) releaseBatches();
+    if (replace) releaseBatches();
 
-      const grid = getGrid();
-      const cards = grid ? collectCards(grid) : [];
-      const ids = [];
-      const cardsByIndex = [];
-      const batchIndexById = new Map();
+    const grid = getGrid();
+    const cards = grid ? collectCards(grid) : [];
+    const ids = [];
+    const cardsByIndex = [];
+    const batchIndexById = new Map();
 
-      for (const card of cards) {
-        const id = card.dataset.imageId;
-        if (!id) continue;
-        const cached = previewsById.get(id);
-        if (cached) {
-          attachPreview(card, cached);
-          continue;
-        }
-        if (inFlightIds.has(id)) continue;
-        if (!card.querySelector(".gallery-card-media")) continue;
-        let idx = batchIndexById.get(id);
-        if (idx === undefined) {
-          idx = ids.length;
-          batchIndexById.set(id, idx);
-          ids.push(id);
-          cardsByIndex.push([card]);
-        } else {
-          cardsByIndex[idx].push(card);
-        }
+    for (const card of cards) {
+      const id = card.dataset.imageId;
+      if (!id) continue;
+      const cached = previewsById.get(id);
+      if (cached) {
+        attachPreview(card, cached);
+        continue;
       }
+      if (inFlightIds.has(id)) continue;
+      if (!card.querySelector(".gallery-card-media")) continue;
+      let idx = batchIndexById.get(id);
+      if (idx === undefined) {
+        idx = ids.length;
+        batchIndexById.set(id, idx);
+        ids.push(id);
+        cardsByIndex.push([card]);
+      } else {
+        cardsByIndex[idx].push(card);
+      }
+    }
 
-      if (!ids.length) return;
-      for (const id of ids) inFlightIds.add(id);
-      const current = {
-        ids,
-        cardsByIndex,
-        abort: new AbortController(),
-        decoder: null,
-      };
-      activeBatches.add(current);
-      previewLog("batch-start", { count: ids.length });
-      loadBatch(current)
-        .catch((error) => {
-          if (current.abort.signal.aborted) return;
-          failPreview(error);
-        })
-        .finally(() => {
-          current.decoder?.close();
-          for (const id of current.ids) inFlightIds.delete(id);
-          activeBatches.delete(current);
-        });
-    });
+    if (!ids.length) return;
+    for (const id of ids) inFlightIds.add(id);
+    const current = {
+      ids,
+      cardsByIndex,
+      abort: new AbortController(),
+      decoder: null,
+    };
+    activeBatches.add(current);
+    loadBatch(current)
+      .catch((error) => {
+        if (current.abort.signal.aborted) return;
+        failPreview(error);
+      })
+      .finally(() => {
+        current.decoder?.close();
+        for (const id of current.ids) inFlightIds.delete(id);
+        activeBatches.delete(current);
+      });
   }
 
   async function loadBatch(current) {
@@ -542,7 +512,6 @@
     if (streamError) throw streamError;
     if (count !== ids.length)
       throw Error(`Expected ${ids.length} frames, received ${count}`);
-    previewLog("batch-complete", { frames: count });
   }
 
   // Read-only diagnostics for benchmarks and tests. No observers or work unless called.
@@ -634,13 +603,6 @@
     }
 
     try {
-      previewLog("startup", {
-        userAgent: navigator.userAgent,
-        secureContext: globalThis.isSecureContext,
-        imageDecoder: !!globalThis.ImageDecoder,
-        viewport: [innerWidth, innerHeight],
-        visibility: document.visibilityState,
-      });
       if (!globalThis.isSecureContext)
         throw Error("ImageDecoder requires HTTPS or localhost; this page is not a secure context");
       if (!globalThis.ImageDecoder)
