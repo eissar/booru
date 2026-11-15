@@ -143,10 +143,7 @@ render_gallery_page :: proc(
 	wr(&b, "<main id=\"gallery-main\" class=\"gallery-main main-scroll\">")
 	wr(&b, render_gallery_content(filter, images, has_more))
 	write_inspector_shell(&b)
-	wr(
-		&b,
-		"</main><canvas id=\"thumbnail-background\" aria-hidden=\"true\"></canvas><div id=\"toasts-log\"></div>",
-	)
+	wr(&b, "</main><div id=\"toasts-log\"></div>")
 	write_toast_template(&b)
 	wr(&b, "</body></html>")
 

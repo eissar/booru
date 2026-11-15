@@ -724,7 +724,8 @@ html[data-theme='dark'] input::placeholder {
     height: 100%;
 }
 
-#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-media {
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-media,
+#filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-preview {
     width: 100%;
     height: clamp(8rem, 16vw, 12rem);
     object-fit: cover;
@@ -746,6 +747,11 @@ html[data-theme='dark'] input::placeholder {
     object-fit: cover;
 }
 
+#filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-preview {
+    width: 12rem;
+    height: 8rem;
+}
+
 #filter-bar:has(#gallery-view-grid:checked) ~ #photo-grid .gallery-card-slot,
 #filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-slot {
     height: auto;
@@ -763,6 +769,10 @@ html[data-theme='dark'] input::placeholder {
 @media (width < 640px) {
     #filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-media {
         flex-basis: 7rem;
+        width: 7rem;
+    }
+
+    #filter-bar:has(#gallery-view-list:checked) ~ #photo-grid .gallery-card-preview {
         width: 7rem;
     }
 }
@@ -977,45 +987,24 @@ html[data-theme='dark'] input::placeholder {
     object-fit: cover;
 }
 
-#photo-grid {
+.gallery-card {
     position: relative;
     isolation: isolate;
 }
 
-/* Clip the rolling strip to real content without extending scrollHeight. */
-.gallery-preview-surface {
+.gallery-card-preview {
     position: absolute;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    z-index: -1;
-}
-
-#thumbnail-background {
-    position: absolute;
-    left: 0;
     top: 0;
+    left: 0;
+    z-index: -1;
     width: 100%;
-    height: 0;
+    height: auto;
+    display: block;
+    object-fit: cover;
     pointer-events: none;
 }
 
-/* The canvas sits behind the cards; the <img> paints over its preview as the
-   original streams in, so the card surfaces and image placeholder are clear. */
-.gallery-previews-active #gallery-main {
-    position: relative;
-    z-index: 1;
-}
-
-.gallery-previews-active .gallery-card {
-    background-color: transparent;
-}
-
-.gallery-previews-active .gallery-card-meta {
-    background-color: var(--bg-surface);
-}
-
-.gallery-previews-active .gallery-card-media {
+.gallery-card:has(> .gallery-card-preview) .gallery-card-media {
     background-color: transparent;
 }
 

@@ -5,16 +5,18 @@ local function build_fixture_html()
   for i = 1, 40 do
     cards[#cards + 1] = string.format(
       "<article class=masonry-item data-render-order-id='%d' data-image-id='%d'>" ..
-      "<div class=gallery-card><img class=gallery-card-media src='/thumb/%d' width=100 height=180></div></article>",
-      i, i, i
+      "<div class=gallery-card><div class=gallery-card-slot><div class=gallery-card-meta><span>item-%d</span></div></div>" ..
+      "<img class=gallery-card-media src='/thumb/%d' width=100 height=180 style='aspect-ratio:100/180'></div></article>",
+      i, i, i, i
     )
   end
   return [[<!doctype html><html><head><style>
 ]] .. read_file("static/gallery.css") .. [[
 *, *::before, *::after { box-sizing: border-box; }
 html,body { margin:0; height:100%; } .main-content { height:600px; width:800px; overflow:auto; }
-#photo-grid { display:block; width:100%; } .masonry-item { height:200px; }
-.gallery-card { height:200px; overflow:hidden; } .gallery-card-media { width:100px; height:180px; }
+.gallery-card { display:flex; flex-direction:column; overflow:hidden; }
+.gallery-card-media { order:1; }
+.gallery-card-slot { order:2; }
 </style><script>
 window.ImageDecoder = class {
   static async isTypeSupported() { return true; }
@@ -37,10 +39,15 @@ window.ImageDecoder = class {
   close() {}
 };
 </script><script src='/static/gallery.js'></script></head><body>
-<input type=radio name=gallery-view value=grid checked>
-<main id=gallery-main><section class=main-content><div id=photo-grid>]] ..
+<main id=gallery-main><div class=gallery-content><div id=gallery-layout><section class=main-content>
+<div id=filter-bar>
+  <input type=radio name=gallery-view id=gallery-view-masonry value=masonry>
+  <input type=radio name=gallery-view id=gallery-view-grid value=grid checked>
+  <input type=radio name=gallery-view id=gallery-view-list value=list>
+</div>
+<div id=photo-grid class=masonry-grid>]] ..
     table.concat(cards) ..
-  [[</div></section></main><canvas id=thumbnail-background></canvas></body></html>]]
+  [[</div></section></div></div></main></body></html>]]
 end
 
 describe("gallery-scroll-bench", function()
@@ -66,7 +73,7 @@ describe("gallery-scroll-bench", function()
     if srv then srv:close() end
   end)
 
-  it("initializes active preview surface within 10s and maintains scroll coverage", function()
+  it("initializes per-card previews within 10s and maintains scroll coverage", function()
     b:navigate(nav_path)
 
     local state = b:wait_for([[(() => {
@@ -88,7 +95,7 @@ describe("gallery-scroll-bench", function()
       if (!port) return reject(new Error('gallery scrollport missing'));
 
       let samples = 0, badSamples = 0, worstBlanks = 0, firstBlank = null;
-      let peakSpeed = 0, minAhead = Infinity, minBehind = Infinity;
+      let peakSpeed = 0;
       let lastT = performance.now(), lastY = port.scrollTop;
       const stepPx = Math.max(80, Math.floor(port.clientHeight * 0.45));
 
@@ -100,9 +107,7 @@ describe("gallery-scroll-bench", function()
           const snap = window.booruPreviewSnapshot();
           if (!snap.active) throw new Error('renderer reports active=false: ' + JSON.stringify({
             state: snap.state, error: snap.error,
-            hasClass: document.documentElement.classList.contains('gallery-previews-active'),
           }));
-          if (!snap.canvas?.isConnected) throw new Error('preview canvas disconnected');
 
           const dt = Math.max(1, now - lastT);
           const dy = Math.abs(port.scrollTop - lastY);
@@ -117,9 +122,6 @@ describe("gallery-scroll-bench", function()
             right: pr.left + port.clientLeft + port.clientWidth,
             bottom: pr.top + port.clientTop + port.clientHeight,
           };
-          const sr = snap.canvas.getBoundingClientRect();
-          minAhead = Math.min(minAhead, sr.bottom - portClient.bottom);
-          minBehind = Math.min(minBehind, portClient.top - sr.top);
 
           if (dy > 0) {
             samples++;
@@ -136,17 +138,12 @@ describe("gallery-scroll-bench", function()
               };
               if (r.right <= r.left || r.bottom <= r.top) continue;
               const entry = byImg.get(img);
-              const originalReady = img.complete && img.naturalWidth > 0;
-              const p = entry && entry.painted ? {
-                left: sr.left + entry.painted.left,
-                top: sr.top + entry.painted.top,
-                right: sr.left + entry.painted.right,
-                bottom: sr.top + entry.painted.bottom,
-              } : null;
-              const previewReady = p && covers(r, p);
+              const originalReady = img.tagName === 'IMG' && img.complete && img.naturalWidth > 0;
+              const p = entry?.canvas?.isConnected ? entry.canvas.getBoundingClientRect() : null;
+              const previewReady = p && p.width > 0 && p.height > 0 && covers(r, p);
               if (!originalReady && !previewReady) {
                 blanks++;
-                if (!firstBlank) firstBlank = { r: { l: r.left, t: r.top, r: r.right, b: r.bottom }, pr: { t: pr.top, b: pr.bottom }, painted: p, ready: entry?.ready };
+                if (!firstBlank) firstBlank = { r: { l: r.left, t: r.top, r: r.right, b: r.bottom }, p: p ? { l: p.left, t: p.top, r: p.right, b: p.bottom } : null, ready: entry?.ready };
               }
             }
             if (blanks > 0) { badSamples++; worstBlanks = Math.max(worstBlanks, blanks); }
@@ -158,8 +155,6 @@ describe("gallery-scroll-bench", function()
               badSamples,
               worstBlanks,
               peakSpeed: Math.round(peakSpeed),
-              minAhead: Number.isFinite(minAhead) ? Math.round(minAhead) : 0,
-              minBehind: Number.isFinite(minBehind) ? Math.round(minBehind) : 0,
               firstBlank,
             });
           }
@@ -173,16 +168,15 @@ describe("gallery-scroll-bench", function()
     })]])
 
     print(string.format(
-      "BENCH: samples=%d bad=%d worst=%d peakSpeed=%dpx/s minAhead=%dpx minBehind=%dpx",
-      stats.samples, stats.badSamples, stats.worstBlanks,
-      stats.peakSpeed, stats.minAhead, stats.minBehind
+      "BENCH: samples=%d bad=%d worst=%d peakSpeed=%dpx/s",
+      stats.samples, stats.badSamples, stats.worstBlanks, stats.peakSpeed
     ))
     if stats.firstBlank then
       local b0 = stats.firstBlank
-      local p = b0.painted
-      print(string.format("firstBlank: r=(%.1f,%.1f,%.1f,%.1f) painted=(%.1f,%.1f,%.1f,%.1f) ready=%s",
+      local p = b0.p
+      print(string.format("firstBlank: r=(%.1f,%.1f,%.1f,%.1f) canvas=(%.1f,%.1f,%.1f,%.1f) ready=%s",
         b0.r.l, b0.r.t, b0.r.r, b0.r.b,
-        p and p.left or -1, p and p.top or -1, p and p.right or -1, p and p.bottom or -1,
+        p and p.l or -1, p and p.t or -1, p and p.r or -1, p and p.b or -1,
         tostring(b0.ready)))
     end
     assert(stats.samples > 0, "no scroll samples recorded")

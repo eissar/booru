@@ -31,7 +31,7 @@ local gallery_html = [[<!doctype html><html><head>
 <div class="layout" style="height:100%"><section class="main-content"><div id="photo-grid" class="masonry-grid">]] ..
   table.concat(cards) ..
 [[<div id="pagination-controls"></div></div></section><aside id="inspector"></aside></div>
-<canvas id="thumbnail-background"></canvas><script src="/static/gallery.js"></script></body></html>]]
+<script src="/static/gallery.js"></script></body></html>]]
 
 local harness_html = string.format([==[<!doctype html><html><body style="margin:0">
 <iframe style="border:0;width:1280px;height:900px"></iframe>

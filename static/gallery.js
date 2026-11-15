@@ -17,11 +17,10 @@
   var anchorCard = null, anchorOffset = 0;
   var nearbyQueued = false;
   var cachedLayout = null;
-  var cardLayouts = new WeakMap();
+  var canonicalCards = null;
   // Resize can change packing or just the visible range.
   var portSize = new ResizeObserver(function () {
     syncMasonry();
-    draw();
   });
   var observedPort = null;
 
@@ -62,7 +61,22 @@
     cards.sort(function (a, b) {
       return cardOrder(a) - cardOrder(b);
     });
+    canonicalCards = cards;
     return cards;
+  }
+
+  function getCanonicalCards(grid) {
+    if (!grid) return [];
+    if (canonicalCards && canonicalCards.length) {
+      var valid = true;
+      for (var i = 0; i < canonicalCards.length; i++) {
+        if (!canonicalCards[i].isConnected) { valid = false; break; }
+      }
+      if (valid && grid.getElementsByClassName("masonry-item").length === canonicalCards.length) {
+        return canonicalCards;
+      }
+    }
+    return collectCards(grid);
   }
 
   function columnCount(grid) {
@@ -104,16 +118,11 @@
 
     var geometry = null;
     if (columns > 0) geometry = measureMasonry(grid);
-    else cachedLayout = measurePort(grid);
+    else cachedLayout = null;
 
     var key = buildSyncKey(view, columns, cards, geometry);
     if (key === lastSyncKey && packedColumnsMatch(grid, columns)) {
-      if (geometry) {
-        showAroundAnchor(geometry);
-        recordMasonryLayouts(grid, geometry);
-      } else if (columns === 0) {
-        recordFlatLayouts(grid, cards);
-      }
+      if (geometry) showAroundAnchor(geometry);
       return;
     }
     lastSyncKey = key;
@@ -126,7 +135,6 @@
       for (var i = 0; i < cards.length; i++) insertBeforePagination(grid, cards[i]);
       for (var i = 0; i < packed.length; i++) packed[i].remove();
       if (parking) parking.remove();
-      recordFlatLayouts(grid, cards);
       return;
     }
 
@@ -166,82 +174,7 @@
       }
     }
     for (var i = 0; i < packed.length; i++) packed[i].remove();
-    if (geometry) {
-      showAroundAnchor(geometry);
-      recordMasonryLayouts(grid, geometry);
-    }
-  }
-
-  function sampleCardStyle(grid) {
-    var cardEl = grid.querySelector(":scope > .masonry-column .gallery-card, :scope > .masonry-item .gallery-card");
-    var imgEl = cardEl ? cardEl.querySelector(".gallery-card-media") : null;
-    return {
-      radius: cardEl ? parseFloat(getComputedStyle(cardEl).borderTopLeftRadius) || 0 : 0,
-      objectFit: imgEl ? getComputedStyle(imgEl).objectFit : "",
-    };
-  }
-
-  function recordMasonryLayouts(grid, geometry) {
-    if (!packedColumns.length || !geometry) return;
-    var gridRect = grid.getBoundingClientRect();
-    var style = sampleCardStyle(grid);
-    for (var c = 0; c < packedColumns.length; c++) {
-      var col = packedColumns[c];
-      var colLeft = col.el.getBoundingClientRect().left - gridRect.left;
-      var y = 0;
-      for (var i = 0; i < col.cards.length; i++) {
-        var imgH = geometry.width * col.ratios[i];
-        cardLayouts.set(col.cards[i], {
-          left: colLeft,
-          top: y,
-          width: geometry.width,
-          height: imgH,
-          cardLeft: colLeft,
-          cardTop: y,
-          cardWidth: geometry.width,
-          cardHeight: imgH + geometry.slotHeight,
-          radius: style.radius,
-          objectFit: style.objectFit,
-        });
-        y += imgH + geometry.gap;
-      }
-    }
-  }
-
-  function recordFlatLayouts(grid, cards) {
-    if (!cards.length) return;
-    var gridRect = grid.getBoundingClientRect();
-    var style = sampleCardStyle(grid);
-    for (var i = 0; i < cards.length; i++) {
-      var card = cards[i];
-      var cardEl = card.querySelector(".gallery-card");
-      var imgEl = card.querySelector(".gallery-card-media");
-      if (!cardEl || !imgEl) continue;
-      var ir = imgEl.getBoundingClientRect();
-      var cr = cardEl.getBoundingClientRect();
-      cardLayouts.set(card, {
-        left: ir.left - gridRect.left,
-        top: ir.top - gridRect.top,
-        width: ir.width,
-        height: ir.height,
-        cardLeft: cr.left - gridRect.left,
-        cardTop: cr.top - gridRect.top,
-        cardWidth: cr.width,
-        cardHeight: cr.height,
-        radius: style.radius,
-        objectFit: style.objectFit,
-      });
-    }
-  }
-
-  function ensureCardLayouts(grid, cards) {
-    if (!cards.length || cardLayouts.has(cards[0])) return;
-    if (packedColumns.length > 0) {
-      var geometry = measureMasonry(grid);
-      if (geometry) recordMasonryLayouts(grid, geometry);
-    } else {
-      recordFlatLayouts(grid, cards);
-    }
+    if (geometry) showAroundAnchor(geometry);
   }
 
   // Renders around the anchor's predicted top, then scrolls it back to its
@@ -370,394 +303,168 @@
     requestAnimationFrame(function () {
       syncQueued = false;
       syncMasonry();
-      draw();
     });
   }
 
-  // One current mipmap batch. No image-ID cache or cross-batch reuse.
-  let canvas, gl, program, uniforms, batch;
-  const thumbnailsByURL = new Map();
-  const PAGE_LAYERS = 64;
-  const MAX_PAGES = 8;
-  const ringPages = [];
-  let ringCursor = 0;
-  let pending = false,
-    batchQueued = false,
-    hasPainted = false;
   const endpoint = "/mipmap/64";
-  let maxViewport = null, maxRenderbuffer = 0;
-  let previewSurface, stripTop = null, stripHeight = 0;
-  let diagnosticsEnabled = false;
-  const paintedPreviews = new Map();
-  let rendererState = "starting", rendererError = null;
-
+  const previewsById = new Map();
+  const previewCanvasByCard = new WeakMap();
+  const inFlightIds = new Set();
+  const activeBatches = new Set();
+  let batchQueued = false,
+    pendingReplace = false;
+  let previewState = "starting",
+    previewError = null;
   let previewLogSequence = 0;
-  let lastBacking = null;
+
   function previewLog(event, details = {}) {
     const record = {
       seq: ++previewLogSequence,
       ms: Math.round(performance.now()),
       event,
-      state: rendererState,
-      contextLost: gl ? gl.isContextLost() : null,
-      backing: canvas ? [canvas.width, canvas.height] : null,
-      dpr: devicePixelRatio || 1,
-      images: batch?.images.length || 0,
-      textures: ringPages.filter(Boolean).length,
+      state: previewState,
+      cached: previewsById.size,
       ...details,
     };
-    console.info("[booru-webgl] " + JSON.stringify(record));
+    console.info("[booru-preview] " + JSON.stringify(record));
+  }
+
+  function releaseBatches() {
+    for (const current of activeBatches) {
+      previewLog("batch-release");
+      current.abort.abort();
+      current.decoder?.close();
+      for (const id of current.ids) inFlightIds.delete(id);
+    }
+    activeBatches.clear();
   }
 
   function failPreview(error) {
     previewLog("failure", {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : null,
-      lastBacking,
     });
-    rendererState = "failed";
-    rendererError = error instanceof Error ? error.message : String(error);
-    document.documentElement.classList.remove("gallery-previews-active");
-    console.error("[booru-webgl] Mipmap preview:", error);
+    previewState = "failed";
+    previewError = error instanceof Error ? error.message : String(error);
+    releaseBatches();
+    console.error("[booru-preview] Mipmap preview:", error);
   }
 
-  // The strip lives in content coordinates. Scrolling moves its existing pixels
-  // with the cards; JS only rebases when less than one viewport of buffer remains.
-  function positionPreviewStrip() {
-    const grid = getGrid();
-    const scrollport = grid?.closest(".main-content");
-    if (!grid || !scrollport) return null;
-    if (!previewSurface || previewSurface.parentElement !== grid) {
-      previewSurface?.remove();
-      previewSurface = document.createElement("div");
-      previewSurface.className = "gallery-preview-surface";
-      previewSurface.appendChild(canvas);
-      grid.appendChild(previewSurface);
-      stripTop = null;
+  function isMediaLoaded(media) {
+    return media instanceof HTMLImageElement && media.complete && media.naturalWidth > 0;
+  }
+
+  function removeCardPreview(card) {
+    const existing = previewCanvasByCard.get(card);
+    if (existing) {
+      existing.remove();
+      previewCanvasByCard.delete(card);
     }
-    const gridRect = grid.getBoundingClientRect();
-    const portRect = scrollport.getBoundingClientRect();
-    const h = scrollport.clientHeight;
-    const visibleTop = portRect.top + scrollport.clientTop - gridRect.top;
-    const nextHeight = h * 7;
-    if (stripTop === null || stripHeight !== nextHeight ||
-        visibleTop < stripTop + h || visibleTop + h > stripTop + stripHeight - h) {
-      stripTop = visibleTop - h * 3;
-      canvas.style.top = `${stripTop}px`;
-      if (stripHeight !== nextHeight) {
-        stripHeight = nextHeight;
-        canvas.style.height = `${stripHeight}px`;
-      }
-    }
-    const portLeft = portRect.left + scrollport.clientLeft - gridRect.left;
-    const w = grid.clientWidth;
-    return {
-      grid,
-      stripTop,
-      width: w,
-      height: stripHeight,
-      clipLeft: Math.max(0, portLeft),
-      clipRight: Math.min(w, portLeft + scrollport.clientWidth),
-    };
   }
 
-  function shader(type, source) {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
-      throw Error(gl.getShaderInfoLog(shader));
-    return shader;
-  }
-
-  function init() {
-    gl = canvas.getContext("webgl2", {
-      alpha: true, premultipliedAlpha: true, antialias: false, depth: false,
-    });
-    if (!gl) throw Error("WebGL2 unavailable");
-    maxViewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
-    maxRenderbuffer = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE);
-    const rendererInfo = gl.getExtension("WEBGL_debug_renderer_info");
-    previewLog("context-created", {
-      attributes: gl.getContextAttributes(),
-      version: gl.getParameter(gl.VERSION),
-      renderer: gl.getParameter(rendererInfo ? rendererInfo.UNMASKED_RENDERER_WEBGL : gl.RENDERER),
-      vendor: gl.getParameter(rendererInfo ? rendererInfo.UNMASKED_VENDOR_WEBGL : gl.VENDOR),
-      maxViewport: Array.from(maxViewport || []),
-      maxRenderbuffer,
-      maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
-      maxArrayLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS),
-    });
-    const vs = shader(
-      gl.VERTEX_SHADER,
-      `#version 300 es
-    uniform vec2 screen;
-    uniform vec4 rect;
-    out vec2 uv;
-    out vec2 position;
-    void main() {
-      vec2 p = vec2(gl_VertexID & 1, (gl_VertexID >> 1) & 1);
-      uv = p;
-      position = rect.xy + p * rect.zw;
-      gl_Position = vec4(position.x / screen.x * 2. - 1., 1. - position.y / screen.y * 2., 0, 1);
-    }`,
-    );
-    const fs = shader(
-      gl.FRAGMENT_SHADER,
-      `#version 300 es
-    precision highp float;
-    uniform highp sampler2DArray tex;
-    uniform int layer;
-    uniform vec4 source;
-    uniform vec4 clipRect;
-    uniform vec4 cardRect;
-    uniform float radius;
-    in vec2 uv;
-    in vec2 position;
-    out vec4 color;
-    void main() {
-      if (any(lessThan(position, clipRect.xy)) || any(greaterThan(position, clipRect.zw))) discard;
-      vec2 halfSize = cardRect.zw * .5;
-      vec2 q = abs(position - cardRect.xy - halfSize) - halfSize + radius;
-      float distance = length(max(q, 0.)) + min(max(q.x, q.y), 0.) - radius;
-      float coverage = 1. - smoothstep(-.5, .5, distance);
-      color = texture(tex, vec3(source.xy + uv * source.zw, float(layer)));
-      color.a *= coverage;
-      color.rgb *= color.a;
-    }`,
-    );
-    program = gl.createProgram();
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-      throw Error(gl.getProgramInfoLog(program));
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    gl.useProgram(program);
-    gl.bindVertexArray(gl.createVertexArray());
-    gl.uniform1i(gl.getUniformLocation(program, "tex"), 0);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    return Object.fromEntries(
-      [
-        "screen",
-        "rect",
-        "source",
-        "clipRect",
-        "cardRect",
-        "radius",
-        "layer",
-      ].map((name) => [name, gl.getUniformLocation(program, name)]),
-    );
-  }
-
-  function draw() {
-    pending = false;
-    if (!uniforms || rendererState === "failed") return;
-    if (gl.isContextLost()) {
-      failPreview(Error("WebGL context lost; reload the page to retry"));
+  function attachPreview(card, previewCanvas) {
+    const cardEl = card.querySelector(".gallery-card");
+    const media = card.querySelector(".gallery-card-media");
+    if (!cardEl || !media) return;
+    if (isMediaLoaded(media)) {
+      removeCardPreview(card);
       return;
     }
-    if (diagnosticsEnabled) paintedPreviews.clear();
-    const cards = batch ? batch.cards : [];
-    const images = batch ? batch.images : [];
-    const strip = positionPreviewStrip();
-    if (!strip || !strip.width || !strip.height) return;
-    ensureCardLayouts(strip.grid, cards);
-    const w = strip.width,
-      h = strip.height;
-    // Seven viewport heights can exceed the GPU's maximum backing-store size.
-    // Preserve the CSS coverage and lower resolution rather than truncate it.
-    if (!maxViewport || !maxRenderbuffer) {
-      failPreview(Error("WebGL drawing limits unavailable; context may be lost"));
-      return;
+    const existing = previewCanvasByCard.get(card);
+    if (existing && existing.parentElement === cardEl && existing.isConnected) return;
+    const stale = cardEl.querySelector(":scope > .gallery-card-preview");
+    if (stale) stale.remove();
+
+    let canvas = previewCanvas;
+    if (canvas.isConnected) {
+      canvas = document.createElement("canvas");
+      canvas.className = "gallery-card-preview";
+      canvas.setAttribute("aria-hidden", "true");
+      canvas.width = previewCanvas.width;
+      canvas.height = previewCanvas.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(previewCanvas, 0, 0);
     }
-    // Low-resolution previews do not need display-resolution backing pixels.
-    const previewScale = 0.5;
-    const dpr = Math.min(previewScale,
-      maxViewport[0] / w, maxViewport[1] / h,
-      maxRenderbuffer / w, maxRenderbuffer / h);
-    const width = Math.max(1, Math.floor(w * dpr)),
-      height = Math.max(1, Math.floor(h * dpr));
-    if (canvas.width !== width || canvas.height !== height) {
-      lastBacking = {
-        css: [w, h], requestedDpr: previewScale, effectiveDpr: dpr,
-        pixels: [width, height], rgbaMiB: +(width * height * 4 / 1048576).toFixed(2),
-        maxViewport: Array.from(maxViewport), maxRenderbuffer,
-      };
-      previewLog("backing-resize", lastBacking);
-      canvas.width = width;
-      canvas.height = height;
-      hasPainted = false;
-      if (gl.isContextLost()) {
-        failPreview(Error("WebGL context lost during canvas resize"));
-        return;
-      }
+    const origW = Number(media.getAttribute("width")) || 0;
+    const origH = Number(media.getAttribute("height")) || 0;
+    const aspectRatio =
+      media.style.aspectRatio || (origW > 0 && origH > 0 ? origW + "/" + origH : "");
+    if (aspectRatio) {
+      canvas.style.aspectRatio = aspectRatio;
+    } else {
+      canvas.style.removeProperty("aspect-ratio");
     }
-    const sTop = strip.stripTop;
-    const clipLeft = strip.clipLeft;
-    const clipRight = strip.clipRight;
-    const srcs = batch ? batch.srcs : [];
-    const widths = batch ? batch.widths : [];
-    const heights = batch ? batch.heights : [];
-    let lastTexture = null,
-      drew = false;
-    for (let i = 0; i < images.length; i++) {
-      const img = images[i],
-        thumb = thumbnailsByURL.get(srcs[i]);
-      if (!thumb || !img.isConnected ||
-          (img.complete && img.naturalWidth > 0)) continue;
-      const box = cardLayouts.get(cards[i]);
-      if (!box || !box.width || !box.height ||
-          box.top + box.height <= sTop || box.top >= sTop + h)
-        continue;
-      const rLeft = box.left;
-      const rTop = box.top - sTop;
-      const cLeft = box.cardLeft;
-      const cTop = box.cardTop - sTop;
-      const left = Math.max(clipLeft, cLeft);
-      const top = Math.max(0, cTop);
-      const right = Math.min(clipRight, cLeft + box.cardWidth);
-      const bottom = Math.min(h, cTop + box.cardHeight);
-      if (right <= left || bottom <= top) continue;
-      if (!drew) {
-        gl.viewport(0, 0, width, height);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.useProgram(program);
-        gl.uniform2f(uniforms.screen, w, h);
-        drew = true;
-      }
-      // The decoded animation canvas is square; each thumbnail's content starts
-      // at (0,0). Match WebPPictureRescale's rounded aspect-preserving dimensions.
-      const originalW = widths[i];
-      const originalH = heights[i];
-      const edge = thumb.width;
-      const contentW =
-        originalW >= originalH
-          ? edge
-          : Math.max(1, Math.floor((edge * originalW) / originalH + 0.5));
-      const contentH =
-        originalH >= originalW
-          ? edge
-          : Math.max(1, Math.floor((edge * originalH) / originalW + 0.5));
-      let sx = 0,
-        sy = 0,
-        sw = contentW,
-        sh = contentH;
-      if (box.objectFit === "cover") {
-        const ratio = box.width / box.height,
-          originalRatio = originalW / originalH;
-        if (ratio > originalRatio) {
-          sh *= originalRatio / ratio;
-          sy = (contentH - sh) / 2;
-        } else {
-          sw *= ratio / originalRatio;
-          sx = (contentW - sw) / 2;
-        }
-      }
-      // Clamp to texel centers so filtering doesn't pull in the padded canvas.
-      gl.uniform4f(
-        uniforms.source,
-        (sx + 0.5) / thumb.width,
-        (sy + 0.5) / thumb.height,
-        Math.max(0, sw - 1) / thumb.width,
-        Math.max(0, sh - 1) / thumb.height,
-      );
-      gl.uniform4f(uniforms.rect, rLeft, rTop, box.width, box.height);
-      gl.uniform4f(uniforms.clipRect, left, top, right, bottom);
-      gl.uniform4f(uniforms.cardRect, cLeft, cTop, box.cardWidth, box.cardHeight);
-      gl.uniform1f(uniforms.radius, box.radius);
-      if (thumb.texture !== lastTexture) {
-        gl.bindTexture(gl.TEXTURE_2D_ARRAY, thumb.texture);
-        lastTexture = thumb.texture;
-      }
-      gl.uniform1i(uniforms.layer, thumb.layer);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      if (diagnosticsEnabled) paintedPreviews.set(img, {
-        left: Math.max(rLeft, left),
-        top: Math.max(rTop, top),
-        right: Math.min(rLeft + box.width, right),
-        bottom: Math.min(rTop + box.height, bottom),
-      });
-    }
-    if (!drew && hasPainted) {
-      gl.viewport(0, 0, width, height);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-    }
-    hasPainted = drew;
-    if (rendererState === "starting") rendererState = "active";
+    cardEl.appendChild(canvas);
+    previewCanvasByCard.set(card, canvas);
   }
 
-  function schedule() {
-    if (pending || !uniforms || rendererState === "failed") return;
-    pending = true;
-    if (nearbyQueued) return;
-    requestAnimationFrame(() => {
-      if (pending) draw();
-    });
-  }
-
-  function releaseBatch() {
-    if (!batch) return;
-    previewLog("batch-release");
-    batch.abort.abort();
-    batch.decoder?.close();
-    for (const url of batch.requestedUrls) {
-      if (!thumbnailsByURL.get(url)) thumbnailsByURL.delete(url);
-    }
-    batch = null;
-  }
-
-  function requestBatch() {
-    if (batchQueued || !uniforms || rendererState === "failed") return;
+  function requestBatch(replace = false) {
+    if (previewState !== "active") return;
+    if (replace) pendingReplace = true;
+    if (batchQueued) return;
     batchQueued = true;
     requestAnimationFrame(() => {
       batchQueued = false;
-      if (rendererState === "failed") return;
-      releaseBatch();
+      const shouldReplace = pendingReplace;
+      pendingReplace = false;
+      if (previewState !== "active") return;
+      if (shouldReplace) releaseBatches();
+
       const grid = getGrid();
       const cards = grid ? collectCards(grid) : [];
-      const images = cards.map((card) => card.querySelector(".gallery-card-media"));
-      const current = (batch = {
-        cards,
-        images,
-        srcs: images.map((img) => img.src),
-        widths: images.map((img) => Number(img.getAttribute("width")) || 1),
-        heights: images.map((img) => Number(img.getAttribute("height")) || 1),
-        requestedUrls: [],
+      const ids = [];
+      const cardsByIndex = [];
+      const batchIndexById = new Map();
+
+      for (const card of cards) {
+        const id = card.dataset.imageId;
+        if (!id) continue;
+        const cached = previewsById.get(id);
+        if (cached) {
+          attachPreview(card, cached);
+          continue;
+        }
+        if (inFlightIds.has(id)) continue;
+        if (!card.querySelector(".gallery-card-media")) continue;
+        let idx = batchIndexById.get(id);
+        if (idx === undefined) {
+          idx = ids.length;
+          batchIndexById.set(id, idx);
+          ids.push(id);
+          cardsByIndex.push([card]);
+        } else {
+          cardsByIndex[idx].push(card);
+        }
+      }
+
+      if (!ids.length) return;
+      for (const id of ids) inFlightIds.add(id);
+      const current = {
+        ids,
+        cardsByIndex,
         abort: new AbortController(),
         decoder: null,
-      });
-      previewLog("batch-start");
-      draw();
-      // Capture request order before masonry or another response changes the DOM.
-      const ids = [], urls = [];
-      for (const card of cards) {
-        const url = card.querySelector(".gallery-card-media").src;
-        if (thumbnailsByURL.has(url)) continue;
-        thumbnailsByURL.set(url, null);
-        ids.push(card.dataset.imageId);
-        urls.push(url);
-      }
-      current.requestedUrls = urls;
-      if (!ids.length) return;
-      loadBatch(current, ids, urls)
+      };
+      activeBatches.add(current);
+      previewLog("batch-start", { count: ids.length });
+      loadBatch(current)
         .catch((error) => {
-          for (const url of urls)
-            if (!thumbnailsByURL.get(url)) thumbnailsByURL.delete(url);
           if (current.abort.signal.aborted) return;
           failPreview(error);
         })
-        .finally(() => current.decoder?.close());
+        .finally(() => {
+          current.decoder?.close();
+          for (const id of current.ids) inFlightIds.delete(id);
+          activeBatches.delete(current);
+        });
     });
   }
 
-  async function loadBatch(current, ids, urls) {
+  async function loadBatch(current) {
     // Same URL as the <link rel="preload"> in the page head, so the first
     // batch reuses that request. Keep the request mode and cache defaults.
+    const { ids, cardsByIndex } = current;
     const response = await fetch(endpoint + "?ids=" + ids.join(","), {
       priority: "high",
       signal: current.abort.signal,
@@ -777,9 +484,7 @@
     await decoder.tracks.ready;
     if (current.abort.signal.aborted) return;
     if (!decoder.tracks.selectedTrack) throw Error("No image track");
-    let count = 0,
-      width,
-      height;
+    let count = 0;
     for (let i = 0; ; i++) {
       if (streamError) throw streamError;
       if (decoder.complete && i >= decoder.tracks.selectedTrack.frameCount)
@@ -802,96 +507,33 @@
       try {
         if (current.abort.signal.aborted) return;
         if (i >= ids.length) throw Error("Too many frames in response");
-        if (!i) {
-          width = image.displayWidth;
-          height = image.displayHeight;
+        const id = ids[i];
+        const cards = cardsByIndex[i];
+        const media = cards[0]?.querySelector(".gallery-card-media");
+        const originalW = Number(media?.getAttribute("width")) || 1;
+        const originalH = Number(media?.getAttribute("height")) || 1;
+        const edge = image.displayWidth;
+        const contentW =
+          originalW >= originalH
+            ? edge
+            : Math.max(1, Math.floor((edge * originalW) / originalH + 0.5));
+        const contentH =
+          originalH >= originalW
+            ? edge
+            : Math.max(1, Math.floor((edge * originalH) / originalW + 0.5));
+        const previewCanvas = document.createElement("canvas");
+        previewCanvas.className = "gallery-card-preview";
+        previewCanvas.setAttribute("aria-hidden", "true");
+        previewCanvas.width = contentW;
+        previewCanvas.height = contentH;
+        const ctx = previewCanvas.getContext("2d");
+        if (!ctx) throw Error("2D canvas context unavailable");
+        ctx.drawImage(image, 0, 0, contentW, contentH, 0, 0, contentW, contentH);
+        previewsById.set(id, previewCanvas);
+        for (const card of cards) {
+          if (card.isConnected) attachPreview(card, previewCanvas);
         }
-        if (image.displayWidth !== width || image.displayHeight !== height)
-          throw Error("Unequal frame sizes");
-        const slot = ringCursor++ % (MAX_PAGES * PAGE_LAYERS);
-        const pageIdx = Math.floor(slot / PAGE_LAYERS);
-        const layer = slot % PAGE_LAYERS;
-        let page = ringPages[pageIdx];
-        if (page && (page.width !== width || page.height !== height)) {
-          for (const oldUrl of page.urls) if (oldUrl) thumbnailsByURL.delete(oldUrl);
-          gl.deleteTexture(page.texture);
-          page = ringPages[pageIdx] = null;
-        }
-        if (!page) {
-          const texture = gl.createTexture();
-          if (!texture) throw Error("Texture allocation failed");
-          previewLog("texture-allocate", {
-            index: pageIdx, width, height, layers: PAGE_LAYERS,
-            rgbaMiB: +(width * height * PAGE_LAYERS * 4 / 1048576).toFixed(2),
-          });
-          gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
-          // LINEAR uses only level zero; generating unused mip levels adds no value here.
-          gl.texStorage3D(
-            gl.TEXTURE_2D_ARRAY,
-            1,
-            gl.RGBA8,
-            width,
-            height,
-            PAGE_LAYERS,
-          );
-          const allocationError = gl.getError();
-          if (allocationError !== gl.NO_ERROR) {
-            previewLog("texture-allocation-error", { code: `0x${allocationError.toString(16)}` });
-            throw Error(`WebGL texture allocation failed: 0x${allocationError.toString(16)}`);
-          }
-          gl.texParameteri(
-            gl.TEXTURE_2D_ARRAY,
-            gl.TEXTURE_MIN_FILTER,
-            gl.LINEAR,
-          );
-          gl.texParameteri(
-            gl.TEXTURE_2D_ARRAY,
-            gl.TEXTURE_MAG_FILTER,
-            gl.LINEAR,
-          );
-          gl.texParameteri(
-            gl.TEXTURE_2D_ARRAY,
-            gl.TEXTURE_WRAP_S,
-            gl.CLAMP_TO_EDGE,
-          );
-          gl.texParameteri(
-            gl.TEXTURE_2D_ARRAY,
-            gl.TEXTURE_WRAP_T,
-            gl.CLAMP_TO_EDGE,
-          );
-          page = ringPages[pageIdx] = {
-            texture,
-            width,
-            height,
-            urls: new Array(PAGE_LAYERS).fill(null),
-          };
-        } else if (page.urls[layer]) {
-          thumbnailsByURL.delete(page.urls[layer]);
-        }
-        const texture = page.texture;
-        page.urls[layer] = urls[i];
-        gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
-        gl.texSubImage3D(
-          gl.TEXTURE_2D_ARRAY,
-          0,
-          0,
-          0,
-          layer,
-          width,
-          height,
-          1,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
-          image,
-        );
-        if (diagnosticsEnabled) {
-          const error = gl.getError();
-          if (error !== gl.NO_ERROR)
-            throw Error(`WebGL error 0x${error.toString(16)}`);
-        }
-        thumbnailsByURL.set(urls[i], { texture, layer, width, height });
         count++;
-        if (i + 1 >= decoder.tracks.selectedTrack.frameCount) schedule();
       } finally {
         image.close();
       }
@@ -900,57 +542,46 @@
     if (streamError) throw streamError;
     if (count !== ids.length)
       throw Error(`Expected ${ids.length} frames, received ${count}`);
-    const error = gl.getError();
-    if (error !== gl.NO_ERROR) {
-      for (const url of urls) thumbnailsByURL.delete(url);
-      throw Error(`WebGL error 0x${error.toString(16)}`);
-    }
     previewLog("batch-complete", { frames: count });
   }
 
-  // Read-only diagnostics for benchmark.html. No observers or work unless called.
+  // Read-only diagnostics for benchmarks and tests. No observers or work unless called.
   globalThis.booruPreviewSnapshot = () => {
-    if (!diagnosticsEnabled) {
-      diagnosticsEnabled = true;
-      schedule(); // Populate draw records even when the gallery is idle.
-    }
-    if (gl?.isContextLost() && rendererState !== "failed") {
-      rendererState = "failed";
-      rendererError = "WebGL context lost";
-    }
+    const grid = getGrid();
+    const cards = getCanonicalCards(grid);
     return {
-      state: rendererState,
-      error: rendererError,
-      active: rendererState === "active" && !!uniforms && !gl.isContextLost() &&
-        document.documentElement.classList.contains("gallery-previews-active"),
-      canvas: canvas?.isConnected ? canvas : null,
-      images: batch ? batch.images.map((image, i) => ({
-        image, ready: !!thumbnailsByURL.get(image.src), painted: paintedPreviews.get(image) || null,
-      })) : [],
+      state: previewState,
+      error: previewError,
+      active: previewState === "active",
+      images: cards.map((card) => {
+        const image = card.querySelector(".gallery-card-media");
+        const id = card.dataset.imageId;
+        const canvas = previewCanvasByCard.get(card) || null;
+        return {
+          image,
+          ready: !!(id && previewsById.has(id)),
+          canvas: canvas && canvas.isConnected ? canvas : null,
+        };
+      }),
     };
   };
 
-  // Only gallery responses replace the batch. Inspector requests, scrolling,
-  // and view changes must not start another download.
+  // Only gallery responses request mipmap previews.
   document.addEventListener("htmx:afterSwap", (event) => {
+    canonicalCards = null;
     const url = event.detail.xhr?.responseURL;
     if (!url) return;
     const path = new URL(url, location.href).pathname;
-    if (path === "/fragment/items" || path === "/fragment/gallery-content")
-      requestBatch();
+    if (path === "/fragment/items") requestBatch(false);
+    else if (path === "/fragment/gallery-content") requestBatch(true);
   });
 
   document.addEventListener("load", (event) => {
-    if (!hasPainted) return;
     const img = event.target;
     if (!(img instanceof HTMLImageElement) ||
         !img.classList.contains("gallery-card-media")) return;
     const card = img.closest(".masonry-item");
-    const box = card && cardLayouts.get(card);
-    if (box && stripTop !== null &&
-        (box.top + box.height <= stripTop || box.top >= stripTop + stripHeight))
-      return;
-    schedule();
+    if (card) removeCardPreview(card);
   }, true);
 
   document.addEventListener("DOMContentLoaded", async function () {
@@ -988,20 +619,13 @@
       });
     }
 
-    canvas = document.getElementById("thumbnail-background");
     try {
-      if (!canvas) throw Error("Missing #thumbnail-background canvas");
       previewLog("startup", {
-        userAgent: navigator.userAgent, secureContext: globalThis.isSecureContext,
+        userAgent: navigator.userAgent,
+        secureContext: globalThis.isSecureContext,
         imageDecoder: !!globalThis.ImageDecoder,
-        viewport: [innerWidth, innerHeight], visibility: document.visibilityState,
-      });
-      canvas.addEventListener("webglcontextcreationerror", event => {
-        previewLog("context-creation-error", { message: event.statusMessage });
-      });
-      canvas.addEventListener("webglcontextlost", event => {
-        previewLog("context-lost", { message: event.statusMessage, lastBacking });
-        failPreview(Error("WebGL context lost; reload the page to retry"));
+        viewport: [innerWidth, innerHeight],
+        visibility: document.visibilityState,
       });
       if (!globalThis.isSecureContext)
         throw Error("ImageDecoder requires HTTPS or localhost; this page is not a secure context");
@@ -1009,9 +633,8 @@
         throw Error("ImageDecoder is unavailable in this browser; use a supported Chromium browser");
       if (!(await ImageDecoder.isTypeSupported("image/webp")))
         throw Error("This browser's ImageDecoder does not support image/webp");
-      uniforms = init();
-      document.documentElement.classList.add("gallery-previews-active");
-      requestBatch();
+      previewState = "active";
+      requestBatch(true);
     } catch (error) {
       failPreview(error);
     }
@@ -1020,53 +643,37 @@
   // Triggers. Each one is dumb: it only requests a sync.
   document.addEventListener("htmx:afterSettle", scheduleMasonrySync);
 
-  // Scrolling only rebases the preview strip and updates nearby packed cards.
+  // Scrolling only updates nearby packed cards in masonry view.
   function onScroll(event) {
+    if (packedColumns.length === 0) return;
     if (!cachedLayout || !cachedLayout.grid.isConnected) {
       var grid = getGrid();
       var port = grid && grid.closest(".main-content");
       if (!grid || event.target !== port) return;
-      cachedLayout = packedColumns.length ? measureMasonry(grid) : measurePort(grid);
+      cachedLayout = measureMasonry(grid);
     } else if (event.target !== cachedLayout.port) {
       return;
     }
-    if (!cachedLayout) return;
+    if (!cachedLayout || !cachedLayout.width) return;
 
-    var needsPreview = false;
-    if (uniforms && rendererState !== "failed") {
-      var h = cachedLayout.height;
-      var visibleTop = cachedLayout.port.scrollTop - cachedLayout.gridTop;
-      if (stripTop === null || stripHeight !== h * 7 ||
-          visibleTop < stripTop + h || visibleTop + h > stripTop + stripHeight - h) {
-        needsPreview = true;
-      }
-    }
-
-    var needsNearby = packedColumns.length > 0;
-    if (needsNearby) {
-      if (needsPreview) pending = true;
-      if (!nearbyQueued) {
-        nearbyQueued = true;
-        requestAnimationFrame(function () {
-          nearbyQueued = false;
-          if (pending) draw();
-          if (packedColumns.length && cachedLayout && cachedLayout.width &&
-              cachedLayout.grid.isConnected) {
-            var scrollTop = cachedLayout.port.scrollTop;
-            showNearbyCards({
-              port: cachedLayout.port,
-              scrollTop: scrollTop,
-              visibleTop: scrollTop - cachedLayout.gridTop,
-              height: cachedLayout.height,
-              width: cachedLayout.width,
-              slotHeight: cachedLayout.slotHeight,
-              gap: cachedLayout.gap,
-            });
-          }
-        });
-      }
-    } else if (needsPreview) {
-      schedule();
+    if (!nearbyQueued) {
+      nearbyQueued = true;
+      requestAnimationFrame(function () {
+        nearbyQueued = false;
+        if (packedColumns.length && cachedLayout && cachedLayout.width &&
+            cachedLayout.grid.isConnected) {
+          var scrollTop = cachedLayout.port.scrollTop;
+          showNearbyCards({
+            port: cachedLayout.port,
+            scrollTop: scrollTop,
+            visibleTop: scrollTop - cachedLayout.gridTop,
+            height: cachedLayout.height,
+            width: cachedLayout.width,
+            slotHeight: cachedLayout.slotHeight,
+            gap: cachedLayout.gap,
+          });
+        }
+      });
     }
   }
 

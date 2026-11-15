@@ -38,7 +38,7 @@ local function build_fixture_html()
 <div class="layout"><section class="main-content"><div id="photo-grid" class="masonry-grid">]] ..
     table.concat(cards) ..
   [[<div id="pagination-controls"></div></div></section><aside id="inspector"></aside></div>
-<canvas id="thumbnail-background"></canvas></body></html>]]
+</body></html>]]
 end
 
 describe("scroll-stutter-bench", function()
@@ -75,7 +75,7 @@ describe("scroll-stutter-bench", function()
       if (!s) return false;
       if (s.state === 'failed') throw new Error('Gallery preview failed: ' + (s.error || 'unknown'));
       const readyCount = s.images.filter(i => i.ready).length;
-      return (s.state === 'active' && s.active && s.images.length > 0 && readyCount >= Math.min(s.images.length, 512)) ? true : false;
+      return (s.state === 'active' && s.active && s.images.length > 0 && readyCount === s.images.length) ? true : false;
     })()]], 30000)
 
     local report = b:eval([[new Promise((resolve, reject) => {
@@ -93,7 +93,7 @@ describe("scroll-stutter-bench", function()
       const covers = (a, b) =>
         b && b.left <= a.left + 1 && b.top <= a.top + 1 && b.right >= a.right - 1 && b.bottom >= a.bottom - 1;
 
-      const countBlanks = (snap, portClient, sr) => {
+      const countBlanks = (snap, portClient) => {
         const byImg = new Map(snap.images.map(i => [i.image, i]));
         let blanks = 0;
         for (const el of document.querySelectorAll('.gallery-card-media')) {
@@ -109,13 +109,8 @@ describe("scroll-stutter-bench", function()
           if (r.right <= r.left || r.bottom <= r.top) continue;
           const entry = byImg.get(el);
           const originalReady = el.tagName === 'IMG' && el.complete && el.naturalWidth > 0;
-          const p = entry && entry.painted ? {
-            left: sr.left + entry.painted.left,
-            top: sr.top + entry.painted.top,
-            right: sr.left + entry.painted.right,
-            bottom: sr.top + entry.painted.bottom,
-          } : null;
-          if (!originalReady && !(p && covers(r, p))) blanks++;
+          const p = entry?.canvas?.isConnected ? entry.canvas.getBoundingClientRect() : null;
+          if (!originalReady && !(p && p.width > 0 && p.height > 0 && covers(r, p))) blanks++;
         }
         return blanks;
       };
@@ -160,8 +155,7 @@ describe("scroll-stutter-bench", function()
             right: pr.left + port.clientLeft + port.clientWidth,
             bottom: pr.top + port.clientTop + port.clientHeight,
           };
-          const sr = snap.canvas.getBoundingClientRect();
-          totalBlanks += countBlanks(snap, portClient, sr);
+          totalBlanks += countBlanks(snap, portClient);
 
           const delta = (targetSpeed * Math.min(dt, 100)) / 1000;
           if (dir === 1) {
