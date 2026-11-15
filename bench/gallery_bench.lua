@@ -13,7 +13,6 @@ local function build_fixture_html()
   return [[<!doctype html><html><head><style>
 ]] .. read_file("static/gallery.css") .. [[
 *, *::before, *::after { box-sizing: border-box; }
-html,body { margin:0; height:100%; } .main-content { height:600px; width:800px; overflow:auto; }
 .gallery-card { display:flex; flex-direction:column; overflow:hidden; }
 .gallery-card-media { order:1; }
 .gallery-card-slot { order:2; }
@@ -39,7 +38,7 @@ window.ImageDecoder = class {
   close() {}
 };
 </script><script src='/static/gallery.js'></script></head><body>
-<main id=gallery-main><div class=gallery-content><div id=gallery-layout><section class=main-content>
+<main id=gallery-main class=gallery-main><div class=gallery-content><div id=gallery-layout class=layout><section class=main-content>
 <div id=filter-bar>
   <input type=radio name=gallery-view id=gallery-view-masonry value=masonry>
   <input type=radio name=gallery-view id=gallery-view-grid value=grid checked>
@@ -91,13 +90,13 @@ describe("gallery-scroll-bench", function()
     })()]], 10000)
 
     local stats = b:eval([[new Promise((resolve, reject) => {
-      const port = document.querySelector('.main-content');
-      if (!port) return reject(new Error('gallery scrollport missing'));
+      const port = document.scrollingElement;
+      if (!port) return reject(new Error('root scrollport missing'));
 
       let samples = 0, badSamples = 0, worstBlanks = 0, firstBlank = null;
       let peakSpeed = 0;
       let lastT = performance.now(), lastY = port.scrollTop;
-      const stepPx = Math.max(80, Math.floor(port.clientHeight * 0.45));
+      const stepPx = Math.max(80, Math.floor(window.innerHeight * 0.45));
 
       const covers = (a, b) =>
         b && b.left <= a.left + 1 && b.top <= a.top + 1 && b.right >= a.right - 1 && b.bottom >= a.bottom - 1;
@@ -115,12 +114,11 @@ describe("gallery-scroll-bench", function()
           if (speed > peakSpeed) peakSpeed = speed;
           lastT = now; lastY = port.scrollTop;
 
-          const pr = port.getBoundingClientRect();
           const portClient = {
-            left: pr.left + port.clientLeft,
-            top: pr.top + port.clientTop,
-            right: pr.left + port.clientLeft + port.clientWidth,
-            bottom: pr.top + port.clientTop + port.clientHeight,
+            left: 0,
+            top: 0,
+            right: window.innerWidth,
+            bottom: window.innerHeight,
           };
 
           if (dy > 0) {
@@ -149,7 +147,7 @@ describe("gallery-scroll-bench", function()
             if (blanks > 0) { badSamples++; worstBlanks = Math.max(worstBlanks, blanks); }
           }
 
-          if (port.scrollTop + port.clientHeight >= port.scrollHeight - 2) {
+          if (port.scrollTop + window.innerHeight >= port.scrollHeight - 2) {
             return resolve({
               samples,
               badSamples,
@@ -158,7 +156,7 @@ describe("gallery-scroll-bench", function()
               firstBlank,
             });
           }
-          port.scrollTop = Math.min(port.scrollHeight, port.scrollTop + stepPx);
+          port.scrollTop = Math.min(port.scrollHeight - window.innerHeight, port.scrollTop + stepPx);
           requestAnimationFrame(() => setTimeout(() => requestAnimationFrame(tick), 0));
         } catch (e) {
           reject(e);

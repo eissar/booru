@@ -24,13 +24,13 @@ end
 local gallery_html = [[<!doctype html><html><head>
 <link rel="stylesheet" href="/static/tailwind.css">
 <link rel="stylesheet" href="/static/gallery.css">
-<style>html,body{margin:0;height:100%} #inspector{width:0} #inspector.open{width:240px}</style>
+<style>html,body{margin:0} .gallery-main:has(#inspector-content:not(:empty)) .gallery-content{margin-right:240px}</style>
 </head><body>
 <input type="radio" name="gallery-view" id="gallery-view-masonry" value="masonry" checked>
 <input type="radio" name="gallery-view" id="gallery-view-grid" value="grid">
-<div class="layout" style="height:100%"><section class="main-content"><div id="photo-grid" class="masonry-grid">]] ..
+<main id="gallery-main" class="gallery-main"><div class="gallery-content"><div class="layout"><section class="main-content"><div id="photo-grid" class="masonry-grid">]] ..
   table.concat(cards) ..
-[[<div id="pagination-controls"></div></div></section><aside id="inspector"></aside></div>
+[[<div id="pagination-controls"></div></div></section></div></div><aside id="inspector" class="inspector"><div id="inspector-content"></div></aside></main>
 <script src="/static/gallery.js"></script></body></html>]]
 
 local harness_html = string.format([==[<!doctype html><html><body style="margin:0">
@@ -47,7 +47,8 @@ const assert = (ok, msg) => { if (!ok) throw Error(msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const frame = () => new Promise((r) => f.contentWindow.requestAnimationFrame(() => f.contentWindow.requestAnimationFrame(() => setTimeout(r, 20))));
 const doc = () => f.contentDocument;
-const port = () => doc().querySelector('.main-content');
+const port = () => doc().scrollingElement;
+const portHeight = () => f.contentWindow.innerHeight;
 const grid = () => doc().getElementById('photo-grid');
 const cards = () => grid().querySelectorAll('.masonry-item');
 const rendered = () => [...cards()].filter((el) => el.getClientRects().length);
@@ -61,8 +62,8 @@ async function load(width = 1280, h = 900) {
 }
 async function resize(width, h = 900) { f.style.width = width + 'px'; f.style.height = h + 'px'; await sleep(200); await frame(); }
 function viewport() {
-  const p = port(), top = p.getBoundingClientRect().top + p.clientTop - grid().getBoundingClientRect().top;
-  return [top, top + p.clientHeight];
+  const top = -grid().getBoundingClientRect().top;
+  return [top, top + portHeight()];
 }
 function boxes() {
   const g = grid().getBoundingClientRect(), out = new Map();
@@ -78,7 +79,7 @@ function assertCovered(layout, label) {
 }
 async function sweep(ids, label) {
   const layout = new Map(), steps = [];
-  for (let y = 0; ; y += port().clientHeight / 2) {
+  for (let y = 0; ; y += portHeight() / 2) {
     port().scrollTop = y;
     await frame();
     const here = boxes();
@@ -89,7 +90,7 @@ async function sweep(ids, label) {
       layout.set(id, box);
     }
     steps.push([viewport(), here]);
-    if (port().scrollTop + port().clientHeight >= port().scrollHeight - 1) break;
+    if (port().scrollTop + portHeight() >= port().scrollHeight - 1) break;
   }
   assert(layout.size === ids.length, label + ': saw ' + layout.size + ' of ' + ids.length + ' cards');
   for (const [[lo, hi], here] of steps)
@@ -161,7 +162,7 @@ window.runVirtualChecks = async () => {
     }],
     ['container narrows without a window resize', async () => {
       await load();
-      doc().getElementById('inspector').classList.add('open'); await frame();
+      doc().getElementById('inspector-content').textContent = 'open'; await frame();
       await sweep(ids(N), 'inspector open');
     }],
     ['taller viewport renders newly visible cards without scrolling', async () => {

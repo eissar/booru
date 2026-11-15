@@ -62,14 +62,13 @@ window.ImageDecoder = class {
 ]]
   return [[<!doctype html><html><head><style>
 ]] .. read_file("static/gallery.css") .. [[
-html,body { margin:0; height:100%; } .main-content { height:400px; width:600px; overflow:auto; padding:0; }
 .gallery-card { display:flex; flex-direction:column; overflow:hidden; }
 .gallery-card-media { order:1; }
 .gallery-card-slot { order:2; }
 </style><script>
 ]] .. decoder_script .. [[
 </script><script src='/static/gallery.js'></script></head><body>
-<main id=gallery-main><div class=gallery-content><div id=gallery-layout><section class=main-content>
+<main id=gallery-main class=gallery-main><div class=gallery-content><div id=gallery-layout class=layout><section class=main-content>
 <div id=filter-bar>
   <input type=radio name=gallery-view id=gallery-view-masonry value=masonry checked>
   <input type=radio name=gallery-view id=gallery-view-grid value=grid>

@@ -53,7 +53,7 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 
 	template.wr(
 		&b,
-		"<main class=\"main-content\" style=\"height: 100vh\"><form id=\"dev-preview-controls\" hx-get=\"/dev/preview\" hx-trigger=\"change\" hx-target=\"#dev-preview-cases\" hx-select=\"#dev-preview-cases\" hx-swap=\"outerHTML\" hx-push-url=\"true\"><label>image <select name=\"image\">",
+		"<main class=\"main-content\"><form id=\"dev-preview-controls\" hx-get=\"/dev/preview\" hx-trigger=\"change\" hx-target=\"#dev-preview-cases\" hx-select=\"#dev-preview-cases\" hx-swap=\"outerHTML\" hx-push-url=\"true\"><label>image <select name=\"image\">",
 	)
 	for image, i in images {
 		template.wr(&b, "<option")

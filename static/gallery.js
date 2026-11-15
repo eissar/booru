@@ -18,11 +18,11 @@
   var nearbyQueued = false;
   var cachedLayout = null;
   var canonicalCards = null;
-  // Resize can change packing or just the visible range.
-  var portSize = new ResizeObserver(function () {
+  // Container resize (e.g. inspector opening) can change column packing.
+  var contentSize = new ResizeObserver(function () {
     syncMasonry();
   });
-  var observedPort = null;
+  var observedContent = null;
 
   function getGrid() {
     return document.getElementById("photo-grid");
@@ -109,11 +109,11 @@
     var view = getCurrentView();
     var columns = view === "masonry" ? columnCount(grid) : 0;
     var cards = collectCards(grid);
-    var port = grid.closest(".main-content");
-    if (port !== observedPort) {
-      portSize.disconnect();
-      if (port) portSize.observe(port);
-      observedPort = port;
+    var content = grid.closest(".main-content");
+    if (content !== observedContent) {
+      contentSize.disconnect();
+      if (content) contentSize.observe(content);
+      observedContent = content;
     }
 
     var geometry = null;
@@ -195,52 +195,29 @@
     }
     showNearbyCards(geometry);
     if (anchored) {
-      geometry.port.scrollTop = geometry.scrollTop + geometry.visibleTop - visibleTop;
+      document.documentElement.scrollTop = geometry.scrollTop + geometry.visibleTop - visibleTop;
     }
   }
 
   /**
    * @typedef {Object} Geometry
-   * @property {HTMLElement} port - Gallery scroll container.
-   * @property {number} scrollTop - Scroll offset in pixels.
+   * @property {number} scrollTop - Root scroll offset in pixels.
    * @property {number} visibleTop - Viewport top relative to the grid, in pixels.
-   * @property {number} height - Scrollport height in pixels.
+   * @property {number} height - Viewport height in pixels.
    * @property {number} width - Column width in pixels.
    * @property {number} gap - Metadata slot and inter-card gap in pixels.
    */
 
-  function getScrollPort(grid) {
-    var el = grid && grid.closest(".main-content");
-    if (el) {
-      var oy = getComputedStyle(el).overflowY;
-      if (oy === "auto" || oy === "scroll") return el;
-    }
-    return document.documentElement;
-  }
-
   function measurePort(grid) {
-    var port = getScrollPort(grid);
-    if (!port) return null;
-    var isRoot = port === document.documentElement;
-    var gridRect = grid.getBoundingClientRect();
-    var scrollTop = port.scrollTop;
-    var visibleTop;
-    if (isRoot) {
-      visibleTop = -gridRect.top;
-    } else {
-      var portRect = port.getBoundingClientRect();
-      visibleTop = portRect.top + port.clientTop - gridRect.top;
-    }
+    var scrollTop = document.documentElement.scrollTop;
+    var visibleTop = -grid.getBoundingClientRect().top;
     return {
       grid: grid,
-      port: port,
-      isRoot: isRoot,
       gridTop: scrollTop - visibleTop,
       scrollTop: scrollTop,
       visibleTop: visibleTop,
-      height: isRoot ? window.innerHeight : port.clientHeight,
+      height: window.innerHeight,
       width: 0,
-      slotHeight: 0,
       gap: 0,
     };
   }
@@ -250,10 +227,6 @@
   /** @returns {Geometry|null} */
   function measureMasonry(grid) {
     var layout = measurePort(grid);
-    if (!layout) {
-      cachedLayout = null;
-      return null;
-    }
     var slot = grid.querySelector(":scope > .masonry-item .gallery-card-slot, :scope > .masonry-column .gallery-card-slot");
     if (!slot) {
       cachedLayout = layout;
@@ -266,7 +239,6 @@
       return null;
     }
     layout.width = parseFloat(style.gridTemplateColumns);
-    layout.slotHeight = height;
     layout.gap = height + parseFloat(style.rowGap);
     cachedLayout = layout;
     return layout;
@@ -638,18 +610,11 @@
 
   // Scrolling only updates nearby packed cards in masonry view.
   function onScroll(event) {
-    if (packedColumns.length === 0) return;
+    if (packedColumns.length === 0 || event.target !== document) return;
     if (!cachedLayout || !cachedLayout.grid.isConnected) {
       var grid = getGrid();
       if (!grid) return;
-      var port = getScrollPort(grid);
-      var isRoot = port === document.documentElement;
-      if (isRoot ? (event.target !== document && event.target !== port) : event.target !== port) return;
       cachedLayout = measureMasonry(grid);
-    } else if (cachedLayout.isRoot
-        ? (event.target !== document && event.target !== cachedLayout.port)
-        : event.target !== cachedLayout.port) {
-      return;
     }
     if (!cachedLayout || !cachedLayout.width) return;
 
@@ -659,14 +624,12 @@
         nearbyQueued = false;
         if (packedColumns.length && cachedLayout && cachedLayout.width &&
             cachedLayout.grid.isConnected) {
-          var scrollTop = cachedLayout.port.scrollTop;
+          var scrollTop = document.documentElement.scrollTop;
           showNearbyCards({
-            port: cachedLayout.port,
             scrollTop: scrollTop,
             visibleTop: scrollTop - cachedLayout.gridTop,
             height: cachedLayout.height,
             width: cachedLayout.width,
-            slotHeight: cachedLayout.slotHeight,
             gap: cachedLayout.gap,
           });
         }
