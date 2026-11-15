@@ -875,7 +875,7 @@
           throw Error(`WebGL error 0x${error.toString(16)}`);
         thumbnailsByURL.set(urls[i], { texture, layer, width, height });
         count++;
-        schedule();
+        if (i + 1 >= decoder.tracks.selectedTrack.frameCount) schedule();
       } finally {
         image.close();
       }
