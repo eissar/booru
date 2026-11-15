@@ -30,7 +30,7 @@ local function build_fixture_html()
   return [[<!doctype html><html><head>
 <link rel="stylesheet" href="/static/tailwind.css">
 <link rel="stylesheet" href="/static/gallery.css">
-<style>html,body{margin:0;width:1920px;height:1080px;overflow:hidden} .layout{width:1920px;height:1080px}</style>
+<style>html,body{margin:0;width:1920px} .layout{width:1920px}</style>
 <script src="/static/gallery.js"></script>
 </head><body>
 <input type="radio" name="gallery-view" id="gallery-view-masonry" value="masonry" checked>
@@ -79,8 +79,8 @@ describe("scroll-stutter-bench", function()
     })()]], 30000)
 
     local report = b:eval([[new Promise((resolve, reject) => {
-      const port = document.querySelector('.main-content');
-      if (!port) return reject(new Error('gallery scrollport missing'));
+      const port = document.scrollingElement;
+      if (!port) return reject(new Error('root scrollport missing'));
 
       const MAX_FRAME_DT_MS = 20.0; // >20ms misses a 60Hz VSync (16.67ms)
       const MIN_FPS = 59.0;
@@ -117,7 +117,7 @@ describe("scroll-stutter-bench", function()
 
       const runPass = (passNum, targetSpeed) => new Promise((done) => {
         port.scrollTop = 0;
-        const maxScroll = Math.max(1, port.scrollHeight - port.clientHeight);
+        const maxScroll = Math.max(1, port.scrollHeight - window.innerHeight);
         let dir = 1;
         let pos = 0;
         let lastT = null;
@@ -148,12 +148,11 @@ describe("scroll-stutter-bench", function()
             if (dt > MAX_FRAME_DT_MS) dropped++;
           }
 
-          const pr = port.getBoundingClientRect();
           const portClient = {
-            left: pr.left + port.clientLeft,
-            top: pr.top + port.clientTop,
-            right: pr.left + port.clientLeft + port.clientWidth,
-            bottom: pr.top + port.clientTop + port.clientHeight,
+            left: 0,
+            top: 0,
+            right: window.innerWidth,
+            bottom: window.innerHeight,
           };
           totalBlanks += countBlanks(snap, portClient);
 

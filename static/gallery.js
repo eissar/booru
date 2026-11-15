@@ -209,20 +209,36 @@
    * @property {number} gap - Metadata slot and inter-card gap in pixels.
    */
 
+  function getScrollPort(grid) {
+    var el = grid && grid.closest(".main-content");
+    if (el) {
+      var oy = getComputedStyle(el).overflowY;
+      if (oy === "auto" || oy === "scroll") return el;
+    }
+    return document.documentElement;
+  }
+
   function measurePort(grid) {
-    var port = grid.closest(".main-content");
+    var port = getScrollPort(grid);
     if (!port) return null;
-    var portRect = port.getBoundingClientRect();
+    var isRoot = port === document.documentElement;
     var gridRect = grid.getBoundingClientRect();
     var scrollTop = port.scrollTop;
-    var visibleTop = portRect.top + port.clientTop - gridRect.top;
+    var visibleTop;
+    if (isRoot) {
+      visibleTop = -gridRect.top;
+    } else {
+      var portRect = port.getBoundingClientRect();
+      visibleTop = portRect.top + port.clientTop - gridRect.top;
+    }
     return {
       grid: grid,
       port: port,
+      isRoot: isRoot,
       gridTop: scrollTop - visibleTop,
       scrollTop: scrollTop,
       visibleTop: visibleTop,
-      height: port.clientHeight,
+      height: isRoot ? window.innerHeight : port.clientHeight,
       width: 0,
       slotHeight: 0,
       gap: 0,
@@ -618,16 +634,21 @@
 
   // Triggers. Each one is dumb: it only requests a sync.
   document.addEventListener("htmx:afterSettle", scheduleMasonrySync);
+  window.addEventListener("resize", scheduleMasonrySync);
 
   // Scrolling only updates nearby packed cards in masonry view.
   function onScroll(event) {
     if (packedColumns.length === 0) return;
     if (!cachedLayout || !cachedLayout.grid.isConnected) {
       var grid = getGrid();
-      var port = grid && grid.closest(".main-content");
-      if (!grid || event.target !== port) return;
+      if (!grid) return;
+      var port = getScrollPort(grid);
+      var isRoot = port === document.documentElement;
+      if (isRoot ? (event.target !== document && event.target !== port) : event.target !== port) return;
       cachedLayout = measureMasonry(grid);
-    } else if (event.target !== cachedLayout.port) {
+    } else if (cachedLayout.isRoot
+        ? (event.target !== document && event.target !== cachedLayout.port)
+        : event.target !== cachedLayout.port) {
       return;
     }
     if (!cachedLayout || !cachedLayout.width) return;
