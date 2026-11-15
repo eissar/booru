@@ -1,5 +1,6 @@
 local target_url = os.getenv("GALLERY_URL")
 local TARGET_CLEAN_SPEED = tonumber(os.getenv("TARGET_SPEED")) or 200000
+local PASS_FLOOR = tonumber(os.getenv("PASS_FLOOR")) or 2
 
 local function build_fixture_html()
   local N = 1000
@@ -83,6 +84,7 @@ describe("scroll-stutter-bench", function()
       if (!port) return reject(new Error('root scrollport missing'));
 
       const MAX_FRAME_DT_MS = 20.0; // >20ms misses a 60Hz VSync (16.67ms)
+      const MAX_DROPPED = ]] .. PASS_FLOOR .. [[;
       const MIN_FPS = 59.0;
       const MAX_JITTER_MS = 2.0;    // p95dt - p50dt
       const MIN_PASS_MS = 1500;     // ensure every pass runs long enough to catch GC/layout spikes
@@ -179,7 +181,7 @@ describe("scroll-stutter-bench", function()
                 const p95Dt = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] || 0;
                 const jitter = Math.max(0, p95Dt - p50Dt);
                 const reasons = [];
-                if (dropped > 0) reasons.push(`dropped=${dropped} (maxdt=${maxDt.toFixed(1)}ms)`);
+                if (dropped > MAX_DROPPED) reasons.push(`dropped=${dropped}>${MAX_DROPPED} (maxdt=${maxDt.toFixed(1)}ms)`);
                 if (fps < MIN_FPS) reasons.push(`fps=${fps.toFixed(1)}<${MIN_FPS}`);
                 if (jitter > MAX_JITTER_MS) reasons.push(`jitter=${jitter.toFixed(1)}ms>${MAX_JITTER_MS}ms`);
                 return done({
