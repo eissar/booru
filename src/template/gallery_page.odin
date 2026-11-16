@@ -29,8 +29,8 @@ Filter_Chip :: struct {
 
 // render_filter_bar renders the filter bar with the hidden limit input and
 // the removable filter chips.
-render_filter_bar :: proc(f: Gallery_Filter) -> string {
-	b := strings.builder_make()
+render_filter_bar :: proc(f: Gallery_Filter, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
 
 	limit_buf: [20]u8
 	limit := fmt.bprintf(limit_buf[:], "%d", f.limit)
@@ -55,8 +55,8 @@ render_filter_bar :: proc(f: Gallery_Filter) -> string {
 		if len("sort: ") + len(f.sort) <= len(label_buf) {
 			label = fmt.bprintf(label_buf[:], "sort: %s", f.sort)
 		} else {
-			label = fmt.aprintf("sort: %s", f.sort)
-			defer delete(label)
+			label = fmt.aprintf("sort: %s", f.sort, allocator = allocator)
+			defer delete(label, allocator)
 		}
 		write_filter_chip(&b, "sort", f.sort, label, f.gallery_url, f.fragment_url)
 	}
@@ -96,12 +96,13 @@ render_gallery_content :: proc(
 	filter: Gallery_Filter,
 	images: []library.Image,
 	has_more: bool,
+	allocator := context.allocator,
 ) -> string {
-	b := strings.builder_make()
+	b := strings.builder_make(allocator)
 	wr(&b, "<div class=\"gallery-content\">")
 	wr(&b, "<div id=\"gallery-layout\" class=\"layout\"><section class=\"main-content\">")
-	wr(&b, render_filter_bar(filter))
-	wr(&b, render_photo_grid(images, filter.offset, has_more))
+	wr(&b, render_filter_bar(filter, allocator))
+	wr(&b, render_photo_grid(images, filter.offset, has_more, allocator))
 	wr(&b, "</section></div></div>")
 	return strings.to_string(b)
 }
@@ -112,8 +113,9 @@ render_gallery_page :: proc(
 	filter: Gallery_Filter,
 	images: []library.Image,
 	has_more: bool,
+	allocator := context.allocator,
 ) -> string {
-	b := strings.builder_make()
+	b := strings.builder_make(allocator)
 
 	wr(
 		&b,
@@ -138,7 +140,7 @@ render_gallery_page :: proc(
 	wr(&b, " class=\"antialiased\" hx-ext=\"response-targets\">")
 	write_toolbar(&b, filter)
 	wr(&b, "<main id=\"gallery-main\" class=\"gallery-main\">")
-	wr(&b, render_gallery_content(filter, images, has_more))
+	wr(&b, render_gallery_content(filter, images, has_more, allocator))
 	write_inspector_shell(&b)
 	wr(&b, "</main><div id=\"toasts-log\"></div>")
 	write_toast_template(&b)

@@ -15,9 +15,8 @@ import "../vendor/sqlite"
 // image (index into the library), render_order. Variants are Lua `handle`
 // overrides of /dev/preview/* paths (see lua_handle.odin).
 handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
-	params := make(map[string]string)
-	if !parse_query_params(req.header.query, &params) {
+	params := make(map[string]string, req.alloc)
+	if !parse_query_params(req.header.query, &params, req.alloc) {
 		http.res_error("", res, .BadRequest)
 		return
 	}
@@ -33,7 +32,7 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 	order := -1
 	if v, ok := parse_int_param(params["render_order"]); ok {order = v}
 
-	b := strings.builder_make()
+	b := strings.builder_make(req.alloc)
 	template.wr(
 		&b,
 		"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Preview</title><script src=\"/static/htmx.min.js\"></script><script src=\"/static/htmx-response-targets.js\"></script><link href=\"/static/tailwind.css\" rel=\"stylesheet\"/><link href=\"/static/gallery.css\" rel=\"stylesheet\"/><script src=\"/static/gallery.js\"></script></head><body class=\"antialiased\" hx-ext=\"response-targets\">",
@@ -89,9 +88,10 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 			strings.concatenate(
 				{
 					"<div id=\"toasts-log\" style=\"position: static; width: auto\">",
-					template.render_toast("Library imported", .Success),
+					template.render_toast("Library imported", .Success, req.alloc),
 					"</div>",
 				},
+				req.alloc,
 			),
 		)
 		section(
@@ -100,24 +100,34 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 			strings.concatenate(
 				{
 					"<div class=\"masonry-grid\">",
-					template.render_item_card(image, order),
+					template.render_item_card(image, order, req.alloc),
 					"</div>",
 				},
+				req.alloc,
 			),
 		)
-		section(&b, "photo_grid", template.render_photo_grid(pair, index + len(pair), true))
+		section(
+			&b,
+			"photo_grid",
+			template.render_photo_grid(pair, index + len(pair), true, req.alloc),
+		)
 		section(
 			&b,
 			"inspector",
 			strings.concatenate(
 				{
 					"<aside class=\"inspector\" style=\"width: 24rem; height: auto; border-left-width: 1px\"><div class=\"inspector-body\">",
-					template.render_inspector(image),
+					template.render_inspector(image, allocator = req.alloc),
 					"</div></aside>",
 				},
+				req.alloc,
 			),
 		)
-		section(&b, "gallery_content", template.render_gallery_content(filter, pair, true))
+		section(
+			&b,
+			"gallery_content",
+			template.render_gallery_content(filter, pair, true, req.alloc),
+		)
 	}
 	template.wr(&b, "</div></main></body></html>")
 	http.res_html(strings.to_string(b), res)
@@ -126,9 +136,8 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 // handle_dev_preview_mtime serves /dev/preview/mtime: 204 when the page's
 // lua_mtime is current, HX-Refresh when handlers.lua has changed since.
 handle_dev_preview_mtime :: proc(res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
-	params := make(map[string]string)
-	parse_query_params(req.header.query, &params)
+	params := make(map[string]string, req.alloc)
+	parse_query_params(req.header.query, &params, req.alloc)
 	sent, _ := strconv.parse_i64(params["lua_mtime"])
 	if sent != lua_mtime() {res.headers["HX-Refresh"] = "true"}
 	http.res_text("", res, .NoContent)

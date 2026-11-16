@@ -10,8 +10,12 @@ Toast_Variant :: enum {
 }
 
 // render_toast renders a dismissible toast notification.
-render_toast :: proc(message: string, variant: Toast_Variant) -> string {
-	b := strings.builder_make()
+render_toast :: proc(
+	message: string,
+	variant: Toast_Variant,
+	allocator := context.allocator,
+) -> string {
+	b := strings.builder_make(allocator)
 	wr(&b, "<div class=\"booru-toast ")
 	switch variant {
 	case .Success:

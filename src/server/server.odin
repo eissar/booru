@@ -184,10 +184,9 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			handle_static(&res, req)
 		// 404 cases
 		case req_header.known_headers.hx_request:
-			context.allocator = req.alloc
 			res.headers["Vary"] = "Hx-Request"
 			res.headers["HX-Reswap"] = "beforeend"
-			http.res_html(template.render_toast("Not Found", .Error), &res, .NotFound)
+			http.res_html(template.render_toast("Not Found", .Error, req.alloc), &res, .NotFound)
 		case:
 			res.headers["Vary"] = "Hx-Request"
 			http.res_text("Not Found", &res, .NotFound)

@@ -33,8 +33,7 @@ import elog "../event_log"
 
 // handle_gallery serves "/" (alias) and "/gallery" -- the full page.
 handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
-	q, ok := parse_gallery_query(req.header.query)
+	q, ok := parse_gallery_query(req.header.query, req.alloc)
 	if !ok {
 		http.res_error("", res, .BadRequest); return
 	}
@@ -72,19 +71,18 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		offset             = q.offset + len(page),
 		gallery_url        = gallery_url,
 		fragment_url       = fragment_url,
-		extra_chips        = gallery_filter_chips(q),
+		extra_chips        = gallery_filter_chips(q, req.alloc),
 		thumbnails_pending = progress.current.total != nil && !progress.done,
 	}
-	http.res_html(template.render_gallery_page("Gallery", filter, page, has_more), res)
+	http.res_html(template.render_gallery_page("Gallery", filter, page, has_more, req.alloc), res)
 }
 
 // handle_fragment_gallery_content serves /fragment/gallery-content.
 handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
-	q, ok := parse_gallery_query(req.header.query)
+	q, ok := parse_gallery_query(req.header.query, req.alloc)
 	if !ok {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("invalid offset", .Error), res, .BadRequest)
+		http.res_html(template.render_toast("invalid offset", .Error, req.alloc), res, .BadRequest)
 		return
 	}
 
@@ -121,19 +119,18 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		offset       = q.offset + len(page),
 		gallery_url  = gallery_url,
 		fragment_url = fragment_url,
-		extra_chips  = gallery_filter_chips(q),
+		extra_chips  = gallery_filter_chips(q, req.alloc),
 	}
 	res.headers["Hx-Push-Url"] = gallery_url
-	http.res_html(template.render_gallery_content(filter, page, has_more), res)
+	http.res_html(template.render_gallery_content(filter, page, has_more, req.alloc), res)
 }
 
 // handle_fragment_items serves /fragment/items -- the load-more card grid.
 handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
-	q, ok := parse_gallery_query(req.header.query)
+	q, ok := parse_gallery_query(req.header.query, req.alloc)
 	if !ok {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("invalid offset", .Error), res, .BadRequest)
+		http.res_html(template.render_toast("invalid offset", .Error, req.alloc), res, .BadRequest)
 		return
 	}
 
@@ -164,30 +161,37 @@ handle_fragment_items :: proc(s: library.State, res: ^http.Response, req: http.R
 	gallery_url, _ := filter_urls(q)
 	res.headers["Hx-Push-Url"] = gallery_url
 
-	http.res_html(template.render_photo_grid(page, q.offset + len(page), has_more), res)
+	http.res_html(template.render_photo_grid(page, q.offset + len(page), has_more, req.alloc), res)
 }
 
 // handle_fragment_inspect serves /fragment/inspect/:id.
 handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
 	id_str := req.header.path[len("/fragment/inspect/"):]
 	id, ok := strconv.parse_int(id_str)
 	if !ok {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("Missing image id", .Error), res, .BadRequest)
+		http.res_html(
+			template.render_toast("Missing image id", .Error, req.alloc),
+			res,
+			.BadRequest,
+		)
 		return
 	}
-	params := make(map[string]string)
-	if !parse_query_params(req.header.query, &params) {
+	params := make(map[string]string, req.alloc)
+	if !parse_query_params(req.header.query, &params, req.alloc) {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast(ENCODING_ERR_MSG, .Error), res, .BadRequest)
+		http.res_html(template.render_toast(ENCODING_ERR_MSG, .Error, req.alloc), res, .BadRequest)
 		return
 	}
 	raw_order := params["order"]
 	order, valid_order := parse_int_param(raw_order)
 	if !valid_order {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("Invalid render order", .Error), res, .BadRequest)
+		http.res_html(
+			template.render_toast("Invalid render order", .Error, req.alloc),
+			res,
+			.BadRequest,
+		)
 		return
 	}
 	img, found, rc := store.read_image_by_id(s.data_store, id, req.alloc)
@@ -196,12 +200,12 @@ handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http
 		return
 	}
 	if found {
-		http.res_html(template.render_inspector(img, order), res)
+		http.res_html(template.render_inspector(img, order, req.alloc), res)
 		return
 	}
 	// not found
 	res.headers["HX-Reswap"] = "beforeend"
-	http.res_html(template.render_toast("Could not find image", .Error), res, .NotFound)
+	http.res_html(template.render_toast("Could not find image", .Error, req.alloc), res, .NotFound)
 }
 
 //endregion
@@ -209,9 +213,8 @@ handle_fragment_inspect :: proc(s: library.State, res: ^http.Response, req: http
 //region: binary handlers
 
 handle_static :: proc(res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
 	resp: string
-	rp := strings.split(req.header.path, "/")
+	rp := strings.split(req.header.path, "/", req.alloc)
 	leaf := rp[len(rp) - 1]
 
 	// TODO spread these conditions out more
@@ -225,7 +228,7 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 
 	// Preserve nested asset paths while rejecting traversal and unsafe segments.
 	relative := req.header.path[len("/static/"):]
-	for segment in strings.split(relative, "/") {
+	for segment in strings.split(relative, "/", req.alloc) {
 		if segment == "" ||
 		   strings.contains(segment, "..") ||
 		   strings.contains_any(segment, "\\\\\"'<>|&$`;:*? ") {
@@ -233,7 +236,7 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 			return
 		}
 	}
-	local_fp := strings.join({"./static/", relative}, "")
+	local_fp := strings.join({"./static/", relative}, "", req.alloc)
 	data, err := os.read_entire_file(local_fp, req.alloc)
 	if err != nil {
 		if err == os.General_Error.Not_Exist {
@@ -251,7 +254,6 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 
 // handle_image serves /image/:oid -- thumbnails first, then originals by library ID.
 handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
 	oid := req.header.path[len("/image/"):]
 
 	if !oid_path_safe(oid) {
@@ -464,17 +466,20 @@ handle_mipmap :: proc(
 // handle_ingest serves POST /ingest -- one multipart file into the library.
 // Responds with a toast fragment for #toasts-log.
 handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
-	context.allocator = req.alloc
 	if req.header.method != "POST" {
 		res.headers["Allow"] = "POST"
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("Method not allowed", .Error), res, .MethodNotAllowed)
+		http.res_html(
+			template.render_toast("Method not allowed", .Error, req.alloc),
+			res,
+			.MethodNotAllowed,
+		)
 		return
 	}
 
 	// Default response for malformed multipart input.
 	res.headers["HX-Reswap"] = "beforeend"
-	http.res_html(template.render_toast("Invalid upload", .Error), res, .BadRequest)
+	http.res_html(template.render_toast("Invalid upload", .Error, req.alloc), res, .BadRequest)
 
 	content_type := ""
 	for name, value in req.header.headers {
@@ -517,7 +522,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		if !strings.equal_fold(strings.trim_space(line[:colon]), "Content-Disposition") {
 			continue
 		}
-		disposition := strings.split(line[colon + 1:], ";")
+		disposition := strings.split(line[colon + 1:], ";", req.alloc)
 		if !strings.equal_fold(strings.trim_space(disposition[0]), "form-data") {
 			return
 		}
@@ -560,7 +565,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	if format == .Unknown {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
-			template.render_toast("Unsupported file type", .Error),
+			template.render_toast("Unsupported file type", .Error, req.alloc),
 			res,
 			.UnsupportedMediaType,
 		)
@@ -583,7 +588,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 		fmt.eprintfln("ingest: atomic write %s: %v", path, err)
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
-			template.render_toast("Could not create original", .Error),
+			template.render_toast("Could not create original", .Error, req.alloc),
 			res,
 			.InternalServerError,
 		)
@@ -620,7 +625,7 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
-			template.render_toast("Could not write original", .Error),
+			template.render_toast("Could not write original", .Error, req.alloc),
 			res,
 			.InternalServerError,
 		)
@@ -646,17 +651,15 @@ handle_ingest :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 
 	replay.initiate_replay(s, full_replay = false)
 
-	http.res_html(template.render_toast("Original saved", .Success), res, .Created)
+	http.res_html(template.render_toast("Original saved", .Success, req.alloc), res, .Created)
 }
 
 handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http.Req) {
-	context.allocator = req.alloc
-
-	id, order := parse_regen_thumbnail_query(req.header.query)
+	id, order := parse_regen_thumbnail_query(req.header.query, req.alloc)
 	if id < 0 || order < 0 {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
-			template.render_toast("bad id or order query parameter", .Error),
+			template.render_toast("bad id or order query parameter", .Error, req.alloc),
 			res,
 			.BadRequest,
 		)
@@ -671,7 +674,7 @@ handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http
 	if !found {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
-			template.render_toast("could not find image with that id", .Error),
+			template.render_toast("could not find image with that id", .Error, req.alloc),
 			res,
 			.NotFound,
 		)
@@ -683,14 +686,14 @@ handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http
 	if failed > 0 {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
-			template.render_toast("could not regenerate thumbnails", .Error),
+			template.render_toast("could not regenerate thumbnails", .Error, req.alloc),
 			res,
 			.InternalServerError,
 		)
 		return
 	}
 
-	http.res_html(template.render_item_card(item, order), res, .OK)
+	http.res_html(template.render_item_card(item, order, req.alloc), res, .OK)
 	return
 }
 
@@ -700,14 +703,14 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	parts, split_err := strings.split(body, "=", req.alloc)
 	if split_err != nil || len(parts) != 2 || parts[0] != "id" {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("bad id", .Error), res, .BadRequest)
+		http.res_html(template.render_toast("bad id", .Error, req.alloc), res, .BadRequest)
 		return
 	}
 	raw_id := parts[1]
 	id, ok := strconv.parse_int(raw_id)
 	if !ok || id < 1 {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("bad id", .Error), res, .BadRequest)
+		http.res_html(template.render_toast("bad id", .Error, req.alloc), res, .BadRequest)
 		return
 	}
 
@@ -718,7 +721,7 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	}
 	if !found {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("no match for ID", .Error), res, .NotFound)
+		http.res_html(template.render_toast("no match for ID", .Error, req.alloc), res, .NotFound)
 		return
 	}
 
@@ -726,7 +729,7 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 	if append_err != "" {
 		res.headers["HX-Reswap"] = "beforeend"
 		http.res_html(
-			template.render_toast("could not write delete event", .Error),
+			template.render_toast("could not write delete event", .Error, req.alloc),
 			res,
 			.InternalServerError,
 		)
@@ -757,30 +760,29 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 // handle_update_metadata serves POST /update-metadata (inspector name form).
 // Logs a "patch" event first, then applies it to the store.
 handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
-	context.allocator = req.alloc
-	params := make(map[string]string)
+	params := make(map[string]string, req.alloc)
 	if !parse_query_params(string(body), &params, req.alloc) {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast(ENCODING_ERR_MSG, .Error), res, .BadRequest)
+		http.res_html(template.render_toast(ENCODING_ERR_MSG, .Error, req.alloc), res, .BadRequest)
 		return
 	}
 	raw_id := params["id"]
 	id, id_ok := parse_int_param(raw_id[:])
 	if !id_ok || id < 1 {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("bad id", .Error), res, .BadRequest)
+		http.res_html(template.render_toast("bad id", .Error, req.alloc), res, .BadRequest)
 		return
 	}
 
 	// Tags are lowercased with whitespace runs as '-'; anything else outside
 	// is_allowed_tag_char is rejected rather than canonicalized.
-	tags := make([dynamic]string)
-	for raw in form_tags(params["tags"]) {
-		tag := library.lowercase_and_dash_whitespace(raw)
+	tags := make([dynamic]string, req.alloc)
+	for raw in form_tags(params["tags"], req.alloc) {
+		tag := library.lowercase_and_dash_whitespace(raw, req.alloc)
 		if tag == "" || strings.index_proc(tag, elog.is_allowed_tag_char, false) != -1 {
 			res.headers["HX-Reswap"] = "beforeend"
 			http.res_html(
-				template.render_toast(fmt.tprintf("invalid tag %q", raw), .Error),
+				template.render_toast(fmt.tprintf("invalid tag %q", raw), .Error, req.alloc),
 				res,
 				.BadRequest,
 			)
@@ -794,7 +796,11 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	_, name_present := params["name"]
 	if !utf8.valid_string(name) {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("name must be valid UTF-8", .Error), res, .BadRequest)
+		http.res_html(
+			template.render_toast("name must be valid UTF-8", .Error, req.alloc),
+			res,
+			.BadRequest,
+		)
 		return
 	}
 	comment := form_string(params, "comment", &ok)
@@ -805,7 +811,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		if value, present := params[key]; present && strings.trim_space(value) == "" {
 			res.headers["HX-Reswap"] = "beforeend"
 			http.res_html(
-				template.render_toast("oid and path must not be empty", .Error),
+				template.render_toast("oid and path must not be empty", .Error, req.alloc),
 				res,
 				.BadRequest,
 			)
@@ -820,7 +826,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	height := int(form_i64(params, "height", &ok))
 	if !ok {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("bad metadata", .Error), res, .BadRequest)
+		http.res_html(template.render_toast("bad metadata", .Error, req.alloc), res, .BadRequest)
 		return
 	}
 
@@ -831,13 +837,13 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	}
 	if !found {
 		res.headers["HX-Reswap"] = "beforeend"
-		http.res_html(template.render_toast("no match for ID", .Error), res, .NotFound)
+		http.res_html(template.render_toast("no match for ID", .Error, req.alloc), res, .NotFound)
 		return
 	}
 
 	// Serve is synchronous: no other writer can interleave this read/append/apply.
 	// Commutative changes emit a patch event; LWW replacements emit an overwrite event.
-	delta := make([dynamic]string)
+	delta := make([dynamic]string, req.alloc)
 	if _, present := params["tags"]; present {
 		for tag in current.tags {
 			if !slice.contains(tags[:], tag) {append(&delta, tag)}
@@ -894,7 +900,7 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		if err := elog.ev_append(s.event_log, batch[:]); err != "" {
 			res.headers["HX-Reswap"] = "beforeend"
 			http.res_html(
-				template.render_toast("could not write metadata event", .Error),
+				template.render_toast("could not write metadata event", .Error, req.alloc),
 				res,
 				.BadRequest,
 			)
@@ -912,11 +918,11 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	// POSTs without HX-Target) retain the existing full-inspector response.
 	for name, target in req.header.headers {
 		if strings.equal_fold(name, "HX-Target") && target != "" && target != "inspector-content" {
-			http.res_html(template.render_card_tags(img.tags), res)
+			http.res_html(template.render_card_tags(img.tags, req.alloc), res)
 			return
 		}
 	}
-	http.res_html(template.render_inspector(img, 0), res)
+	http.res_html(template.render_inspector(img, 0, req.alloc), res)
 }
 
 // form_string returns the decoded, trimmed value of a urlencoded form key ("" if absent).
@@ -933,9 +939,9 @@ form_i64 :: proc(params: map[string]string, key: string, ok: ^bool) -> i64 {
 }
 
 // form_tags splits an already percent-decoded, comma-separated tags value.
-form_tags :: proc(value: string) -> []string {
-	out := make([dynamic]string)
-	for part in strings.split(value, ",") {
+form_tags :: proc(value: string, alloc := context.allocator) -> []string {
+	out := make([dynamic]string, alloc)
+	for part in strings.split(value, ",", alloc) {
 		t := strings.trim_space(part)
 		if t != "" {append(&out, t)}
 	}

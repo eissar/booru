@@ -18,8 +18,12 @@ inspector_icon :: proc(b: ^strings.Builder, name, alt: string) {
 }
 
 // render_inspector renders the inspector details fragment for one image.
-render_inspector :: proc(image: library.Image, order: int = 0) -> string {
-	b := strings.builder_make()
+render_inspector :: proc(
+	image: library.Image,
+	order: int = 0,
+	allocator := context.allocator,
+) -> string {
+	b := strings.builder_make(allocator)
 
 	id_buf: [20]u8 // 64i
 	id := fmt.bprintf(id_buf[:], "%d", image.id)
@@ -134,7 +138,7 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	if len(image.tags) == 0 {
 		wr(&b, "<span class=\"text-muted\">No tags</span>")
 	} else {
-		write_tag_badges(&b, image.tags, "")
+		write_tag_badges(&b, image.tags, "", allocator)
 	}
 	wr(&b, "</div><div")
 	attrf(&b, "id", "image-tags-popover-%s", id)
@@ -143,7 +147,7 @@ render_inspector :: proc(image: library.Image, order: int = 0) -> string {
 	wr(&b, "><input")
 	attrf(&b, "id", "image-tags-%s", id)
 	wr(&b, " class=\"card-action-popover-input\" type=\"text\" name=\"tags\"")
-	attr(&b, "value", strings.join(image.tags, ", "))
+	attr(&b, "value", strings.join(image.tags, ", ", allocator))
 	wr(
 		&b,
 		" placeholder=\"tag1, tag2...\" autocomplete=\"off\" spellcheck=\"false\" autofocus/><div class=\"card-action-popover-row\"><button type=\"submit\" class=\"card-action-popover-save\">Save</button></div></div></li>",

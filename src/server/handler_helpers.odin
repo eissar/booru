@@ -98,11 +98,11 @@ parse_gallery_query :: proc(
 			}
 		}
 	}
-	tags_dyn: [dynamic]string
+	tags_dyn := make([dynamic]string, alloc)
 	seen := make(map[string]bool)
 	defer delete(seen)
 	if value, ok_param := params["tags"]; ok_param {
-		for raw_tag in strings.split(value, ",") {
+		for raw_tag in strings.split(value, ",", alloc) {
 			tag := strings.trim_space(raw_tag)
 			if tag == "" {continue}
 			if seen[tag] {continue}
@@ -185,11 +185,14 @@ filter_urls :: proc(q: Gallery_Query) -> (gallery_url, fragment_url: string) {
 }
 
 // Filter state lives in the filter bar, which existing htmx actions include.
-gallery_filter_chips :: proc(q: Gallery_Query) -> []template.Filter_Chip {
+gallery_filter_chips :: proc(
+	q: Gallery_Query,
+	alloc := context.allocator,
+) -> []template.Filter_Chip {
 	count := len(q.tags)
 	if q.search != "" {count += 1}
 	if count == 0 {return nil}
-	chips := make([]template.Filter_Chip, count)
+	chips := make([]template.Filter_Chip, count, alloc)
 	index := 0
 	if q.search != "" {
 		without_search := q

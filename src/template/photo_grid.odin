@@ -7,8 +7,13 @@ import "../library"
 
 // render_photo_grid renders the masonry grid with its load-more controls.
 // offset is the count displayed so far; has_more controls the control markup.
-render_photo_grid :: proc(images: []library.Image, offset: int, has_more: bool) -> string {
-	b := strings.builder_make()
+render_photo_grid :: proc(
+	images: []library.Image,
+	offset: int,
+	has_more: bool,
+	allocator := context.allocator,
+) -> string {
+	b := strings.builder_make(allocator)
 
 	offset_buf: [20]u8
 	offset_str := fmt.bprintf(offset_buf[:], "%d", offset)
@@ -21,7 +26,7 @@ render_photo_grid :: proc(images: []library.Image, offset: int, has_more: bool) 
 	// after masonry packing, regardless of arrival order.
 	first_order := offset - len(images)
 	for image, i in images {
-		wr(&b, render_item_card(image, first_order + i))
+		wr(&b, render_item_card(image, first_order + i, allocator))
 	}
 
 	wr(

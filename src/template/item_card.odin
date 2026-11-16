@@ -5,16 +5,16 @@ import "core:fmt"
 import "core:strings"
 
 // tag_href builds the full-page gallery link for a tag.
-tag_href :: proc(tag: string) -> string {
-	b := strings.builder_make()
+tag_href :: proc(tag: string, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
 	wr(&b, "/gallery?tags=")
 	escape_attr(&b, tag)
 	return strings.to_string(b)
 }
 
 // tag_fragment_href builds the gallery-content fragment link for a tag.
-tag_fragment_href :: proc(tag: string) -> string {
-	b := strings.builder_make()
+tag_fragment_href :: proc(tag: string, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
 	wr(&b, "/fragment/gallery-content?tags=")
 	escape_attr(&b, tag)
 	return strings.to_string(b)
@@ -22,7 +22,12 @@ tag_fragment_href :: proc(tag: string) -> string {
 
 // write_tag_badges writes the shared tag badge markup used by cards and the
 // inspector. `link_class` optionally adds a class to each anchor.
-write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string) {
+write_tag_badges :: proc(
+	b: ^strings.Builder,
+	tags: []string,
+	link_class: string,
+	allocator := context.allocator,
+) {
 	for tag in tags {
 		wr(b, "<span class=\"")
 		if link_class != "" {wr(b, "text-xs ")}
@@ -32,8 +37,8 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 			attr(b, "tabindex", "-1")
 			attr(b, "hx-trigger", "click consume")
 		}
-		attr(b, "href", tag_href(tag))
-		attr(b, "hx-get", tag_fragment_href(tag))
+		attr(b, "href", tag_href(tag, allocator))
+		attr(b, "hx-get", tag_fragment_href(tag, allocator))
 		wr(
 			b,
 			" hx-include=\"#filter-bar\" hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\">",
@@ -43,15 +48,19 @@ write_tag_badges :: proc(b: ^strings.Builder, tags: []string, link_class: string
 	}
 }
 
-render_card_tags :: proc(tags: []string) -> string {
-	b := strings.builder_make()
-	write_tag_badges(&b, tags, "image-card-tags")
+render_card_tags :: proc(tags: []string, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
+	write_tag_badges(&b, tags, "image-card-tags", allocator)
 	return strings.to_string(b)
 }
 
 // render_card_actions writes the metadata action bar:
 // a tag-edit popover and a download link.
-render_card_actions :: proc(b: ^strings.Builder, image: library.Image) {
+render_card_actions :: proc(
+	b: ^strings.Builder,
+	image: library.Image,
+	allocator := context.allocator,
+) {
 	id_buf: [20]u8
 	id := fmt.bprintf(id_buf[:], "%d", image.id)
 
@@ -76,7 +85,7 @@ render_card_actions :: proc(b: ^strings.Builder, image: library.Image) {
 	)
 	attr(b, "value", id)
 	wr(b, "/><input class=\"card-action-popover-input\" type=\"text\" name=\"tags\"")
-	attr(b, "value", strings.join(image.tags, ", "))
+	attr(b, "value", strings.join(image.tags, ", ", allocator))
 	wr(
 		b,
 		" placeholder=\"tag1, tag2...\" autocomplete=\"off\" spellcheck=\"false\"/><div class=\"card-action-popover-row\"><button type=\"submit\" class=\"card-action-popover-save\">Save</button></div></form></div>",
@@ -92,8 +101,12 @@ render_card_actions :: proc(b: ^strings.Builder, image: library.Image) {
 
 // render_item_card renders a single masonry image card. render_order is the
 // positional index in the listing; the first six load with high priority.
-render_item_card :: proc(image: library.Image, render_order: int) -> string {
-	b := strings.builder_make()
+render_item_card :: proc(
+	image: library.Image,
+	render_order: int,
+	allocator := context.allocator,
+) -> string {
+	b := strings.builder_make(allocator)
 
 	// 14 + 1 for / ; 20 bytes for each digit
 	aspect_ratio_buf: [55]u8
@@ -130,9 +143,9 @@ render_item_card :: proc(image: library.Image, render_order: int) -> string {
 		&b,
 		" class=\"flex flex-wrap gap-2 text-xs mt-2\" data-hx-on-click=\"event.stopPropagation()\">",
 	)
-	write_tag_badges(&b, image.tags, "image-card-tags")
+	write_tag_badges(&b, image.tags, "image-card-tags", allocator)
 	wr(&b, "</div>")
-	render_card_actions(&b, image)
+	render_card_actions(&b, image, allocator)
 	wr(&b, "</div></div>")
 	write_card_media(&b, image, render_order, aspect_ratio)
 	wr(&b, "</div></article>")
