@@ -98,13 +98,34 @@ parse_gallery_query :: proc(
 			}
 		}
 	}
+	if value, ok_param := params["remove"]; ok_param {
+		switch strings.trim_space(value) {
+		case "":
+		case "q":
+			q.search = ""
+		case "sort":
+			q.sort = "idDesc"
+		case:
+			return q, false
+		}
+	}
+	removed := make(map[string]bool, context.allocator)
+	defer delete(removed)
+	if value, ok_param := params["removeTags"]; ok_param {
+		for raw_tag in strings.split(value, ",", alloc) {
+			tag := strings.trim_space(raw_tag)
+			if tag == "" {continue}
+			removed[tag] = true
+		}
+	}
 	tags_dyn := make([dynamic]string, alloc)
-	seen := make(map[string]bool)
+	seen := make(map[string]bool, context.allocator)
 	defer delete(seen)
 	if value, ok_param := params["tags"]; ok_param {
 		for raw_tag in strings.split(value, ",", alloc) {
 			tag := strings.trim_space(raw_tag)
 			if tag == "" {continue}
+			if tag in removed {continue}
 			if seen[tag] {continue}
 			seen[tag] = true
 			append(&tags_dyn, tag)
@@ -145,7 +166,7 @@ parse_query_params :: proc(
 		value, ok = net.percent_decode(value, alloc)
 		if !ok {return false}
 		if key in params {
-			if combine_tags && key == "tags" {
+			if combine_tags && (key == "tags" || key == "removeTags") {
 				params[key] = fmt.aprintf("%s,%s", params[key], value, allocator = alloc)
 			}
 			continue
