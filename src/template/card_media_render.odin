@@ -26,7 +26,11 @@ write_card_media :: proc(
 		wr(b, " class=\"gallery-card-media order-1\"></video>")
 	case:
 		wr(b, "<img")
-		attrf(b, "src", "/image/%s", image.oid)
+		if image.content_type == "application/pdf" {
+			attr(b, "src", "/static/unsupported_filetype_128.webp")
+		} else {
+			attrf(b, "src", "/image/%s", image.oid)
+		}
 		wr(b, " loading=\"lazy\" decoding=\"async\"")
 		wr(
 			b,

@@ -148,6 +148,17 @@ html_item_card_video :: proc(t: ^testing.T) {
 }
 
 @(test)
+html_item_card_pdf :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	context.allocator = alloc
+	images := load_images("test/fixture/library/events/2026-01.ndjson")
+	images[0].content_type = "application/pdf"
+	images[0].width, images[0].height = 0, 0
+	expect_html_fixture(t, "item_card_pdf", render_item_card(images[0], -1))
+}
+
+@(test)
 html_photo_grid :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
@@ -186,6 +197,18 @@ html_inspector_video :: proc(t: ^testing.T) {
 	images[0].comment = "Notes & <details>"
 	images[0].content_type = "video/mp4"
 	expect_html_fixture(t, "inspector_video", render_inspector(images[0]))
+}
+
+@(test)
+html_inspector_pdf :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	context.allocator = alloc
+	images := load_images("test/fixture/library/events/2026-01.ndjson")
+	images[0].comment = "Notes & <details>"
+	images[0].content_type = "application/pdf"
+	images[0].width, images[0].height = 0, 0
+	expect_html_fixture(t, "inspector_pdf", render_inspector(images[0]))
 }
 
 @(test)

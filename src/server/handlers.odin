@@ -952,6 +952,8 @@ mime_from_leaf :: proc(name: string) -> http.Content_Type {
 		return .Javascript
 	case strings.has_suffix(name, ".svg"):
 		return .Svg
+	case strings.has_suffix(name, ".webp"):
+		return .Webp
 	case:
 		return .Octet_Stream
 	}

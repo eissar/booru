@@ -41,7 +41,11 @@ render_inspector :: proc(
 		)
 	} else {
 		wr(&b, "/><img")
-		attrf(&b, "src", "/image/%s", image.oid)
+		if image.content_type == "application/pdf" {
+			attr(&b, "src", "/static/unsupported_filetype_128.webp")
+		} else {
+			attrf(&b, "src", "/image/%s", image.oid)
+		}
 		attr(&b, "alt", image.name)
 		wr(&b, " class=\"aspect-square w-full rounded-lg object-cover\"/>")
 	}
