@@ -247,6 +247,11 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 	http.res_blob(data, res, mime_from_leaf(leaf))
 }
 
+// IMAGE_CSP applies only when an original is opened as a document (new tab,
+// direct visit); <img>/<video> loads ignore it. It is a backstop in case a
+// script-capable type (HTML, SVG) is ever accepted by ingest.
+IMAGE_CSP :: "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'"
+
 // handle_image serves /image/:oid -- the original file, located by library ID.
 handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 	oid := req.header.path[len("/image/"):]
@@ -287,6 +292,8 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		if err == nil {
 			http.res_blob(data, res)
 			if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
+			res.headers["X-Content-Type-Options"] = "nosniff"
+			res.headers["Content-Security-Policy"] = IMAGE_CSP
 			return
 		}
 	}
@@ -311,6 +318,8 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		if err != nil {continue}
 		http.res_blob(data, res)
 		if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
+		res.headers["X-Content-Type-Options"] = "nosniff"
+		res.headers["Content-Security-Policy"] = IMAGE_CSP
 		return
 	}
 	http.res_error("", res, .NotFound)
