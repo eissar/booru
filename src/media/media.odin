@@ -172,6 +172,8 @@ probe_dimensions :: proc(
 		}
 		width, height, ok = jxl_codestream_dimension(cs)
 		if !ok {return 0, 0, false}
+	case .PDF:
+		return 0, 0, false
 	case:
 		when ODIN_TEST {
 			log.debugf("media: probe_dimensions called on unsupported format: %v", format)
@@ -346,7 +348,7 @@ decode_frame :: proc(
 			},
 			.None
 	case .AVIF, .PNG, .JPEG, .GIF, .WebP:
-	case .Unknown:
+	case .Unknown, .PDF:
 		return nil, .Unsupported
 	}
 

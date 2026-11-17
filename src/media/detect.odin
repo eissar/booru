@@ -23,6 +23,7 @@ Format :: enum {
 	MP4,
 	WebM,
 	MKV,
+	PDF,
 }
 
 has_magic :: proc(data: []u8, offset: int, magic: []u8) -> bool {
@@ -107,6 +108,8 @@ detect_format :: proc(data: []u8) -> Format {
 		header := data[:min(len(data), 4096)]
 		if bytes.contains(header, transmute([]u8)string("webm")) {return .WebM}
 		return .MKV
+	case has_magic(data, 0, transmute([]u8)string("%PDF-")):
+		return .PDF
 	}
 	return .Unknown
 }
@@ -151,6 +154,8 @@ extension :: proc(format: Format) -> string {
 		return "webm"
 	case .MKV:
 		return "mkv"
+	case .PDF:
+		return "pdf"
 	}
 	return ""
 }
@@ -195,6 +200,8 @@ mime :: proc(format: Format) -> string {
 		return "video/webm"
 	case .MKV:
 		return "video/x-matroska"
+	case .PDF:
+		return "application/pdf"
 	}
 	return ""
 }
