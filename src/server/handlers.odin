@@ -247,7 +247,7 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 	http.res_blob(data, res, mime_from_leaf(leaf))
 }
 
-// handle_image serves /image/:oid -- thumbnails first, then originals by library ID.
+// handle_image serves /image/:oid -- the original file, located by library ID.
 handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 	oid := req.header.path[len("/image/"):]
 
@@ -256,18 +256,6 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		return
 	}
 
-	thumb_buf: [4096]u8
-	thumb_fp: string
-	if len(s.library_path) + len(oid) + len("/thumbnails/.webp") <= len(thumb_buf) {
-		thumb_fp = fmt.bprintf(thumb_buf[:], "%s/thumbnails/%s.webp", s.library_path, oid)
-	} else {
-		thumb_fp = fmt.aprintf("%s/thumbnails/%s.webp", s.library_path, oid, allocator = req.alloc)
-	}
-	data, err := os.read_entire_file(thumb_fp, req.alloc)
-	if err == nil {
-		http.res_blob(data, res, .Webp)
-		return
-	}
 	img, found, rc := store.read_image_by_oid(s.data_store, oid, req.alloc)
 	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
@@ -286,6 +274,8 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		dir = fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
 	}
 	path_buf: [4096]u8
+	data: []u8
+	err: os.Error
 	if img.ext != "" {
 		fp: string
 		if len(dir) + len(img.ext) + 22 <= len(path_buf) {

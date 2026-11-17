@@ -42,12 +42,6 @@ bench_handlers :: proc(t: ^testing.T) {
 		return
 	}
 	if !testing.expect(t, os.copy_directory_all(LIBRARY, FIXTURE) == nil, "copy fixture") {return}
-	// Force the original-file fallback in handle_image for item 3.
-	oid3 := "9c2efc8f0c7cde25eb24ee5a589b919731e6a125793c05de070910d6ac2a5f8c"
-	if !testing.expect(
-		t,
-		os.remove(fmt.tprintf("%s/thumbnails/%s.webp", LIBRARY, oid3)) == nil,
-	) {return}
 
 	state := library.State {
 		library_path = LIBRARY,
@@ -107,16 +101,7 @@ bench_handlers :: proc(t: ^testing.T) {
 			},
 		},
 		{
-			"image (thumbnail)",
-			"/image/4ef24abe584d4358473279073cc0a35150802774bb97f5fea35e24d661668ce6",
-			"",
-			.OK,
-			proc(s: ^library.State, res: ^http.Response, req: http.Req) {
-				server.handle_image(s^, res, req)
-			},
-		},
-		{
-			"image (original fallback)",
+			"image",
 			"/image/9c2efc8f0c7cde25eb24ee5a589b919731e6a125793c05de070910d6ac2a5f8c",
 			"",
 			.OK,

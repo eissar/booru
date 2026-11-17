@@ -92,8 +92,16 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 - [ ] 1-byte thumbnail failure sentinel: when `media.decode_frame` in `src/thumbnail/generate.odin` fails deterministically (`.Unsupported`, `.Too_Large`, or corrupt `.Failed` data), write a 1-byte failure-reason enum to `thumbnails/{64,128}/{oid}.webp` instead of leaving the file missing. This lets `exclude_existing_thumbnails` skip permanently failed items via its `getdents` scan and `/mipmap` pick the embedded fallback (`NOT_FOUND_*` vs `UNSUPPORTED_FILETYPE_*`) by checking `len(bytes) == 1` on its existing file read, with no extra syscalls or DB columns. However, because `getdents` only sees filenames and not sizes, startup cannot distinguish 1-byte sentinels from real WebPs without `stat`, so `.Too_Large`/`.Unsupported` items won't auto-regenerate when support is later added unless sentinels are purged. Writing sentinels on transient I/O or missing-source `.Failed` errors would also suppress retries (breaking `generate_missing_fixture_thumbnails`), and direct readers of `thumbnails/{64,128}/*.webp` will see non-WebP 1-byte files.
 
 
+# PDF Support TODO
+
+- [ ] Phase 1 placeholder: add `.PDF` to `media.Format` (`src/media/detect.odin`) with `%PDF-` magic, `"pdf"` extension, and `"application/pdf"` mime; add a `.PDF` case to `decode_frame` (`src/media/media.odin`) returning `.Unsupported`. Card/inspector template branch: for `content_type == "application/pdf"`, emit `src="/static/unsupported_filetype_128.webp"` instead of `/image/<oid>` (`src/template/card_media_render.odin`, `src/template/inspector.odin`) — no thumbnail write, no handler change; the files already live in `static/` and are served by `/static/`. Do NOT write to the legacy bare `thumbnails/<oid>.webp`: nothing produces it (generate writes only `thumbnails/{64,128}/`; the bare files are test-fixture legacy), and `handle_image` no longer probes it. `/mipmap/64` needs no change: it already serves `new_not_found_thumb` for missing files (`src/server/handlers.odin:416`). Decision: do NOT use `thumbnails/max/` in phase 1 — nothing serves it yet, so it would require a new route or an extra speculative stat in the `handle_image` hot path for every item; revisit in phase 2, where a real first-page render belongs in `thumbnails/max/{oid}.webp` alongside video covers.
+- [ ] When serving a PDF original via `handle_image` (`src/server/handlers.odin:250`), add `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox` headers; PDFs can execute script same-origin.
+- [ ] Fixture-first tests: hand-author `item_card_pdf` / `inspector_pdf` expected HTML fixtures mirroring the `*_video` variants (set `content_type = "application/pdf"`), plus media tests for `%PDF-` detection and an ingest round-trip (`images/<id>.pdf`, event `content_type=application/pdf`).
+- [ ] [deferred] Phase 2 real first-page render: vendor pdfium or mupdf under `src/vendor/` and add `decode_pdf_first_page` returning `Decoded_ARGB` (then `encode_thumbnail` works unchanged); set `width`/`height` from the PDF page size for card aspect ratio. 16 MiB `MAX_BODY_SIZE` is fine for now; revisit only if large PDFs become a need.
+
 # Thumbnail Preview TODO
 
+- [ ] Defer loading originals in gallery cards: loading originals is by design, but set the card `src` (`/image/<oid>`) only after the card has stayed in the viewport for a while (or after a longer settle delay), and show the `/mipmap/64` preview until then. Only touches `static/gallery.js` and the card template (`src/template/card_media_render.odin`, with fixture-first updates); no server change.
 - [ ] Explore server-driven adaptive thumbnail streaming: continuously sample TCP RTT and ACK-derived delivery rate to choose AV1/WebP and resolution for images not yet queued, without pausing transmission. Account for roughly one RTT of feedback lag and bound queued data so adaptation can take effect; use a framing format that supports independently encoded images instead of the precomputed WebP container.
 
 - [ ] Add explicit preview memory budgeting for canvas backing storage and mipmap textures, accounting for viewport size and batch image count.
@@ -260,3 +268,6 @@ other, static views - can retain scroll position.
 navigation is an easy win as far as utility and
 convenience : BUT - retaining layout and filters
 should be done very carefully. should be opt in?
+
+--
+viewer - masonry with no gap or metadata, w/ snapping - scroll snaps to image boundaries instead of smooth scroll.
