@@ -216,32 +216,18 @@ gallery_filter_chips :: proc(
 	chips := make([]template.Filter_Chip, count, alloc)
 	index := 0
 	if q.search != "" {
-		without_search := q
-		without_search.search = ""
-		gallery_url, fragment_url := filter_urls(without_search)
 		chips[index] = {
-			key          = "q",
-			value        = q.search,
-			display      = fmt.tprintf("search: %s", q.search),
-			gallery_url  = gallery_url,
-			fragment_url = fragment_url,
+			key     = "q",
+			value   = q.search,
+			display = fmt.tprintf("search: %s", q.search),
 		}
 		index += 1
 	}
-	for tag, i in q.tags {
-		remaining := make([]string, len(q.tags) - 1)
-		copy(remaining[:i], q.tags[:i])
-		copy(remaining[i:], q.tags[i + 1:])
-		without_tag := q
-		without_tag.tags = remaining
-		gallery_url, fragment_url := filter_urls(without_tag)
-		delete(remaining)
+	for tag in q.tags {
 		chips[index] = {
-			key          = "tags",
-			value        = tag,
-			display      = tag,
-			gallery_url  = gallery_url,
-			fragment_url = fragment_url,
+			key     = "tags",
+			value   = tag,
+			display = tag,
 		}
 		index += 1
 	}

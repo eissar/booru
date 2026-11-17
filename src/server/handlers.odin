@@ -62,15 +62,12 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		return
 	}
 
-	gallery_url, fragment_url := filter_urls(q)
 	filter := template.Gallery_Filter {
 		limit              = q.limit,
 		until_id           = q.until_id,
 		sort               = q.sort,
 		tags               = q.tags,
 		offset             = q.offset + len(page),
-		gallery_url        = gallery_url,
-		fragment_url       = fragment_url,
 		extra_chips        = gallery_filter_chips(q, req.alloc),
 		thumbnails_pending = progress.current.total != nil && !progress.done,
 	}
@@ -110,16 +107,14 @@ handle_fragment_gallery_content :: proc(s: library.State, res: ^http.Response, r
 		return
 	}
 
-	gallery_url, fragment_url := filter_urls(q)
+	gallery_url, _ := filter_urls(q)
 	filter := template.Gallery_Filter {
-		limit        = q.limit,
-		until_id     = q.until_id,
-		sort         = q.sort,
-		tags         = q.tags,
-		offset       = q.offset + len(page),
-		gallery_url  = gallery_url,
-		fragment_url = fragment_url,
-		extra_chips  = gallery_filter_chips(q, req.alloc),
+		limit       = q.limit,
+		until_id    = q.until_id,
+		sort        = q.sort,
+		tags        = q.tags,
+		offset      = q.offset + len(page),
+		extra_chips = gallery_filter_chips(q, req.alloc),
 	}
 	res.headers["Hx-Push-Url"] = gallery_url
 	http.res_html(template.render_gallery_content(filter, page, has_more, req.alloc), res)

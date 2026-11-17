@@ -75,10 +75,8 @@ handle_dev_preview :: proc(s: library.State, res: ^http.Response, req: http.Req)
 		image := images[index]
 		pair := images[index:min(index + 2, len(images))]
 		filter := template.Gallery_Filter {
-			limit        = len(pair),
-			offset       = index + len(pair),
-			gallery_url  = "/gallery",
-			fragment_url = "/fragment/gallery-content",
+			limit  = len(pair),
+			offset = index + len(pair),
 		}
 		// Toast styles are scoped to #toasts-log; render it in the page's one
 		// toasts log, made static so it sits in the flow.

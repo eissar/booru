@@ -2,6 +2,7 @@ package template
 
 import "../library"
 import "core:fmt"
+import "core:net"
 import "core:strings"
 
 // Filter state for the gallery content region.
@@ -11,8 +12,6 @@ Gallery_Filter :: struct {
 	sort:               string, // sort parameter name, e.g. "addedAtAsc"
 	tags:               []string,
 	offset:             int,
-	gallery_url:        string, // full remove-chip URL
-	fragment_url:       string, // fragment remove-chip URL
 	extra_chips:        []Filter_Chip, // additional chips (deleted, etc.)
 	// Thumbnail scan is running; the page shows a live progress indicator.
 	thumbnails_pending: bool,
@@ -20,11 +19,9 @@ Gallery_Filter :: struct {
 
 // A single removable filter chip beyond the sort chip.
 Filter_Chip :: struct {
-	key:          string,
-	value:        string,
-	display:      string,
-	gallery_url:  string,
-	fragment_url: string,
+	key:     string,
+	value:   string,
+	display: string,
 }
 
 // render_filter_bar renders the filter bar with the hidden limit input and
@@ -58,26 +55,26 @@ render_filter_bar :: proc(f: Gallery_Filter, allocator := context.allocator) -> 
 			label = fmt.aprintf("sort: %s", f.sort, allocator = allocator)
 			defer delete(label, allocator)
 		}
-		write_filter_chip(&b, "sort", f.sort, label, f.gallery_url, f.fragment_url)
+		write_filter_chip(&b, "sort", f.sort, label)
 	}
 	for chip in f.extra_chips {
-		write_filter_chip(
-			&b,
-			chip.key,
-			chip.value,
-			chip.display,
-			chip.gallery_url,
-			chip.fragment_url,
-		)
+		write_filter_chip(&b, chip.key, chip.value, chip.display)
 	}
 	wr(&b, "</div>")
 	return strings.to_string(b)
 }
 
-write_filter_chip :: proc(
-	b: ^strings.Builder,
-	key, value, display, gallery_url, fragment_url: string,
-) {
+write_filter_chip :: proc(b: ^strings.Builder, key, value, display: string) {
+	gallery_url, fragment_url: string
+	if key == "tags" {
+		encoded := net.percent_encode(value)
+		defer delete(encoded)
+		gallery_url = fmt.tprintf("/gallery?removeTags=%s", encoded)
+		fragment_url = fmt.tprintf("/fragment/gallery-content?removeTags=%s", encoded)
+	} else {
+		gallery_url = fmt.tprintf("/gallery?remove=%s", key)
+		fragment_url = fmt.tprintf("/fragment/gallery-content?remove=%s", key)
+	}
 	wr(b, "<span class=\"filter-chip text-xs font-medium px-2 py-1 rounded tag-badge\"")
 	attr(b, "data-filter-key", key)
 	wr(b, "><input type=\"hidden\"")
@@ -86,7 +83,10 @@ write_filter_chip :: proc(
 	wr(b, "/><a")
 	attr(b, "href", gallery_url)
 	attr(b, "hx-get", fragment_url)
-	wr(b, " hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\">")
+	wr(
+		b,
+		" hx-include=\"#filter-bar\" hx-target=\".gallery-content\" hx-target-error=\"#toasts-log\" hx-swap=\"outerHTML\">",
+	)
 	escape_text(b, display)
 	wr(b, "</a></span>")
 }
