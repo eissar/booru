@@ -14,6 +14,7 @@ import "importers"
 import "library"
 import "plugin"
 import "plugin/phash"
+import "progress"
 import "replay"
 import "server"
 import "store"
@@ -285,6 +286,7 @@ main :: proc() {
 
 	defer free_all(context.temp_allocator)
 
+	progress.update("startup", 0)
 	startup_wg: sync.Wait_Group
 	scan_thread: ^thread.Thread
 	if cfg.scan_thumbnail {
@@ -343,12 +345,14 @@ main :: proc() {
 			plugins:      []plugin.NativePlugin,
 			wg:           ^sync.Wait_Group,
 		}) {
+		defer progress.finish("startup")
 		sync.wait_group_wait(data.wg)
 		plugin.startup_threaded_run_plugins(
 			{library_path = data.library_path, plugins = data.plugins},
 		)
 	})
 	if plugin_thread == nil {
+		progress.finish("startup")
 		fmt.eprintln("plugins: could not create plugin thread")
 	}
 	defer {
