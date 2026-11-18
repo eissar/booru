@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:net"
 import "core:os"
 import "core:strings"
+import "core:sync"
 import "core:thread"
 import "core:time"
 
@@ -11,6 +12,8 @@ import "cli"
 import elog "event_log"
 import "importers"
 import "library"
+import "plugin"
+import "plugin/phash"
 import "replay"
 import "server"
 import "store"
@@ -247,6 +250,12 @@ main :: proc() {
 		break
 	}
 	defer store.Close(&state)
+	// TODO: don't allocate on stack if we use this elsewhere.
+	plugins := []plugin.NativePlugin{phash.PLUGIN}
+	if !plugin.register(&state, plugins) {
+		fmt.eprintln("plugin: schema registration failed")
+		os.exit(1)
+	}
 
 	fmt.eprintfln(
 		"Library initialized in %.2f ms: %s",
@@ -276,12 +285,24 @@ main :: proc() {
 
 	defer free_all(context.temp_allocator)
 
+	startup_wg: sync.Wait_Group
 	scan_thread: ^thread.Thread
 	if cfg.scan_thumbnail {
+		sync.wait_group_add(&startup_wg, 1)
 		scan_thread = thread.create_and_start_with_poly_data(struct {
+			library_path: string,
+			wg:           ^sync.Wait_Group,
+		}{library_path = cfg.library, wg = &startup_wg}, proc(data: struct {
 				library_path: string,
-			}{library_path = cfg.library}, thumbnail.startup_threaded_generate_missing_thumbnails)
+				wg:           ^sync.Wait_Group,
+			}) {
+			defer sync.wait_group_done(data.wg)
+			thumbnail.startup_threaded_generate_missing_thumbnails(
+				{library_path = data.library_path},
+			)
+		})
 		if scan_thread == nil {
+			sync.wait_group_done(&startup_wg)
 			fmt.eprintln("thumbnails: could not create scan thread")
 		}
 	}
@@ -312,6 +333,27 @@ main :: proc() {
 
 	defer net.close(sock)
 	if cfg.daemon {daemon_ready(ready_fd)}
+
+	plugin_thread := thread.create_and_start_with_poly_data(struct {
+		library_path: string,
+		plugins:      []plugin.NativePlugin,
+		wg:           ^sync.Wait_Group,
+	}{library_path = cfg.library, plugins = plugins, wg = &startup_wg}, proc(data: struct {
+			library_path: string,
+			plugins:      []plugin.NativePlugin,
+			wg:           ^sync.Wait_Group,
+		}) {
+		sync.wait_group_wait(data.wg)
+		plugin.startup_threaded_run_plugins(
+			{library_path = data.library_path, plugins = data.plugins},
+		)
+	})
+	if plugin_thread == nil {
+		fmt.eprintln("plugins: could not create plugin thread")
+	}
+	defer {
+		if plugin_thread != nil {thread.destroy(plugin_thread)}
+	}
 
 	server.Serve(&state, sock, accept) // this should take an allocator
 }
