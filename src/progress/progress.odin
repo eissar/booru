@@ -7,6 +7,7 @@ Progress :: struct {
 	phase:    string,
 	finished: u64,
 	total:    Maybe(u64),
+	done:     bool,
 }
 
 @(private = "file")
@@ -21,21 +22,32 @@ update :: proc(phase: string, finished: u64, total: Maybe(u64) = nil) {
 		phase    = phase,
 		finished = finished,
 		total    = total,
+		done     = false,
 	}
 }
 
 finish :: proc(phase: string) {
 	sync.mutex_lock(&mu)
 	defer sync.mutex_unlock(&mu)
-	delete_key(&items, phase)
-	if len(items) == 0 {
-		delete(items)
-		items = {}
+	if p, ok := &items[phase]; ok {
+		p.done = true
+		if total, has_total := p.total.?; has_total {
+			p.finished = total
+		}
 	}
 }
 
+has_active :: proc() -> bool {
+	sync.mutex_lock(&mu)
+	defer sync.mutex_unlock(&mu)
+	for _, p in items {
+		if !p.done {return true}
+	}
+	return false
+}
+
 // Dependent jobs should keep a parent phase active (e.g. "startup" around
-// "startup.thumbnails" / "startup.phash") so snapshot stays non-empty between steps.
+// "startup.thumbnails" / "startup.phash") so has_active stays true between steps.
 snapshot :: proc(alloc := context.allocator) -> []Progress {
 	sync.mutex_lock(&mu)
 	defer sync.mutex_unlock(&mu)

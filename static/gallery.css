@@ -1084,6 +1084,14 @@ html[data-theme='dark'] input::placeholder {
     border-radius: 9999px;
 }
 
+.thumbnail-progress progress.is-done::-webkit-progress-value {
+    background: var(--text-muted);
+}
+
+.thumbnail-progress progress.is-done::-moz-progress-bar {
+    background: var(--text-muted);
+}
+
 .thumbnail-progress-meta {
     display: flex;
     justify-content: space-between;

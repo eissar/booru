@@ -294,3 +294,5 @@ Amdahl's Law (the serial fraction dominates): If even 15% of total time is seria
 
 - [ ] Consider blocking write routes while startup phase is active (return 503 instead of failing on SQLITE_BUSY / event_log divergence).
 - [ ] Consider starting `scan_thread` after socket bind (so bind failure doesn't kill it mid-run).
+- [ ] Jobs/progress UI: make groups dismissable, improve rendering of hierarchical phases (e.g. `total == nil` sub-phases / `0` noise), or render as a tree/DAG.
+- [ ] Consider Multi-Index Hashing (MIH) for O(N) all-pairs PDQ duplicate detection at 100k+ items.

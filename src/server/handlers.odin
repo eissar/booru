@@ -69,7 +69,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		tags               = q.tags,
 		offset             = q.offset + len(page),
 		extra_chips        = gallery_filter_chips(q, req.alloc),
-		thumbnails_pending = len(progress.snapshot(req.alloc)) > 0,
+		thumbnails_pending = progress.has_active(),
 	}
 	http.res_html(template.render_gallery_page("Gallery", filter, page, has_more, req.alloc), res)
 }
@@ -967,16 +967,15 @@ handle_sse_progress :: proc(res: ^http.Response) {
 @(private = "file")
 progress_stream :: proc(conn: ^net.TCP_Socket, _: rawptr) -> io.Error {
 	for {
-		active := progress.snapshot(context.temp_allocator)
-		if len(active) == 0 {return http.sse_event(conn, "done", "<span>done</span>")}
-
+		entries := progress.snapshot(context.temp_allocator)
 		sb := strings.builder_make(context.temp_allocator)
-		for p in active {
+		for p in entries {
+			done_attr := " class=\"is-done\"" if p.done else ""
 			if total, ok := p.total.?; ok {
 				fmt.sbprintf(
 					&sb,
-					"<div class=\"thumbnail-progress-title\">%s</div><progress value=\"%d\" max=\"%d\"></progress><div class=\"thumbnail-progress-meta\"><span>%s</span><span>%d / %d</span></div>",
-					p.phase,
+					"<progress%s value=\"%d\" max=\"%d\"></progress><div class=\"thumbnail-progress-meta\"><span>%s</span><span>%d / %d</span></div>",
+					done_attr,
 					p.finished,
 					total,
 					p.phase,
@@ -986,14 +985,18 @@ progress_stream :: proc(conn: ^net.TCP_Socket, _: rawptr) -> io.Error {
 			} else {
 				fmt.sbprintf(
 					&sb,
-					"<div class=\"thumbnail-progress-title\">%s</div><div class=\"thumbnail-progress-meta\"><span>%s</span><span>%d</span></div>",
-					p.phase,
+					"<div class=\"thumbnail-progress-meta\"><span>%s</span><span>%d</span></div>",
 					p.phase,
 					p.finished,
 				)
 			}
 		}
-		if err := http.sse_event(conn, "progress", strings.to_string(sb)); err != nil {return err}
+		if len(entries) > 0 {
+			if err := http.sse_event(conn, "progress", strings.to_string(sb)); err != nil {
+				return err
+			}
+		}
+		if !progress.has_active() {return http.sse_event(conn, "done", "<span>done</span>")}
 		time.sleep(250 * time.Millisecond)
 		free_all(context.temp_allocator)
 	}
