@@ -105,6 +105,7 @@ foreign sqlite {
 	clear_bindings :: proc(stmt: ^Stmt) -> c.int ---
 
 	bind_int64 :: proc(stmt: ^Stmt, i: c.int, v: i64) -> c.int ---
+	bind_blob :: proc(stmt: ^Stmt, i: c.int, p: rawptr, n: c.int, destructor: rawptr) -> c.int ---
 	bind_text :: proc(stmt: ^Stmt, i: c.int, s: cstring, n: c.int, destructor: rawptr) -> c.int ---
 	bind_null :: proc(stmt: ^Stmt, i: c.int) -> c.int ---
 
