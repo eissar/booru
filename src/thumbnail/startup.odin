@@ -31,7 +31,7 @@ startup_threaded_generate_missing_thumbnails :: proc(data: struct {
 		data_store   = db,
 	}
 	start := time.now()
-	generated, failed := generate_missing_thumbnails(state, data.prog_callback)
+	generated, failed := generate_missing_thumbnails(state, data.prog_callback, all = true)
 	fmt.eprintfln(
 		"thumbnails: generated=%d, failed=%d in %.2f ms",
 		generated,

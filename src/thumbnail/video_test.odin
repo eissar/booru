@@ -47,7 +47,7 @@ video_first_frame_thumbnail_fixture :: proc(t: ^testing.T) {
 	)
 
 	// Startup scan generates both resolutions from the video's first frame.
-	n, failed := generate_missing_thumbnails(state)
+	n, failed := generate_missing_thumbnails(state, all = true)
 	testing.expect(t, n == 2 && failed == 0, "generate both resolutions for video")
 
 	edges := [?]int{64, 128}

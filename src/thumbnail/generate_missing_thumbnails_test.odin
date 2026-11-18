@@ -47,7 +47,7 @@ generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
 		) ==
 		sqlite.OK,
 	)
-	n, failed := generate_missing_thumbnails(state)
+	n, failed := generate_missing_thumbnails(state, all = true)
 	testing.expect(t, n == 2 && failed == 0, "generate both resolutions")
 	edges := [?]int{64, 128}
 	for edge in edges {
@@ -78,9 +78,17 @@ generate_missing_fixture_thumbnails :: proc(t: ^testing.T) {
 	}
 	// Removing the source makes any accidental attempt to regenerate fail.
 	os.remove(fmt.tprintf("%s/images/2.webp", root))
-	n, failed = generate_missing_thumbnails(state)
+	n, failed = generate_missing_thumbnails(state, all = true)
 	testing.expect(t, n == 0 && failed == 0, "existing thumbnails are skipped")
 	os.remove(fmt.tprintf("%s/thumbnails/64/%s.webp", root, oid))
-	n, failed = generate_missing_thumbnails(state)
+	n, failed = generate_missing_thumbnails(state, all = true)
 	testing.expect(t, n == 0 && failed == 1, "missing source is reported without aborting")
+
+	// Empty ids slice is a no-op; targeted ids only inspect those items.
+	n, failed = generate_missing_thumbnails(state, ids = []int{})
+	testing.expect(t, n == 0 && failed == 0, "empty ids slice is a no-op")
+	n, failed = generate_missing_thumbnails(state, ids = []int{999})
+	testing.expect(t, n == 0 && failed == 0, "unknown id is skipped")
+	n, failed = generate_missing_thumbnails(state, ids = []int{2})
+	testing.expect(t, n == 0 && failed == 1, "targeted id regenerates missing resolution")
 }

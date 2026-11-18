@@ -15,27 +15,65 @@ import "../vendor/sqlite"
 
 
 // Generate only missing resolutions; failures are logged and do not prevent startup.
+// Set all = true (with ids == nil) to scan all live items, or pass specific item IDs.
 generate_missing_thumbnails :: proc(
 	s: library.State,
 	prog_callback: progress.Callback = nil,
+	ids: []int = nil,
+	all: bool = false,
 ) -> (
 	generated, failed: int,
 ) {
+	if all {assert(ids == nil)}
+	if !all && len(ids) == 0 {return 0, 0}
+
 	if prog_callback != nil {prog_callback({phase = "thumbnail discovery"})}
 
-	images, rc := store.read_images(s.data_store, context.temp_allocator)
-	if rc != sqlite.OK {
-		when ODIN_TEST {
-			log.errorf("thumbnail: read items: sqlite rc=%d", rc)
-		} else {
-			fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
-		}
-		return
-	}
-
+	images: []library.Image
 	missing := make(map[string]bit_set[LOD_RESOLUTION])
 	defer delete(missing)
-	find_missing_thumbnails(s, images, &missing)
+
+	if !all {
+		selected := make([dynamic]library.Image, 0, len(ids), context.temp_allocator)
+		for id in ids {
+			img, found, rc := store.read_image_by_id(s.data_store, id, context.temp_allocator)
+			if rc != sqlite.OK {
+				when ODIN_TEST {
+					log.errorf("thumbnail: read item %d: sqlite rc=%d", id, rc)
+				} else {
+					fmt.eprintfln("thumbnail: read item %d: sqlite rc=%d", id, rc)
+				}
+				return
+			}
+			if !found {continue}
+			append(&selected, img)
+			need: bit_set[LOD_RESOLUTION]
+			for size in ([2]LOD_RESOLUTION{.x64, .x128}) {
+				p := fmt.tprintf(
+					"%s/thumbnails/%s/%s.webp",
+					s.library_path,
+					name_for_r[size],
+					img.oid,
+				)
+				if !os.exists(p) {need += {size}}
+			}
+			if need != {} {missing[img.oid] = need}
+		}
+		images = selected[:]
+	} else {
+		var_images, rc := store.read_images(s.data_store, context.temp_allocator)
+		if rc != sqlite.OK {
+			when ODIN_TEST {
+				log.errorf("thumbnail: read items: sqlite rc=%d", rc)
+			} else {
+				fmt.eprintfln("thumbnail: read items: sqlite rc=%d", rc)
+			}
+			return
+		}
+		images = var_images
+		find_missing_thumbnails(s, images, &missing)
+	}
+
 	when ODIN_TEST {
 		log.debug("thumbnails: generate missing start")
 	} else {

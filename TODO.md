@@ -272,3 +272,22 @@ should be done very carefully. should be opt in?
 
 --
 viewer - masonry with no gap or metadata, w/ snapping - scroll snaps to image boundaries instead of smooth scroll.
+
+## search
+is bm25 w/ fts ever worse than exact fts with skilled users who know exact keywords?
+
+shebang !semantic ?
+opt in for fuzzy seems bad.
+
+queries with quotes for exact phrases should be sorted by date by default "to be"
+
+- search ergonomics
+currently bad ergonomics - no chip grouping .
+every chip removal automatically initiates a new search.
+keywords can't be modified individually.
+no sort predicate ?
+
+should sort even be a chip?
+if sort is a chip, why shouldn't view be one? view:grid
+
+Amdahl's Law (the serial fraction dominates): If even 15% of total time is serialized (SQLite writer lock, transaction commits, queue mutex), infinite cores cap speedup at 1 / 0.15 ≈ 6.7×

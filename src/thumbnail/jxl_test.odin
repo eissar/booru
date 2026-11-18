@@ -45,7 +45,7 @@ jxl_thumbnail_fixture :: proc(t: ^testing.T) {
 		sqlite.OK,
 	)
 
-	n, failed := generate_missing_thumbnails(state)
+	n, failed := generate_missing_thumbnails(state, all = true)
 	testing.expect(t, n == 2 && failed == 0, "generate both resolutions for jxl")
 
 	edges := [?]int{64, 128}
