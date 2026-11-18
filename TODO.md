@@ -291,3 +291,5 @@ should sort even be a chip?
 if sort is a chip, why shouldn't view be one? view:grid
 
 Amdahl's Law (the serial fraction dominates): If even 15% of total time is serialized (SQLite writer lock, transaction commits, queue mutex), infinite cores cap speedup at 1 / 0.15 ≈ 6.7×
+
+- [ ] Consider blocking write routes while startup phase is active (return 503 instead of failing on SQLITE_BUSY / event_log divergence).

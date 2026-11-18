@@ -34,6 +34,8 @@ finish :: proc(phase: string) {
 	}
 }
 
+// Dependent jobs should keep a parent phase active (e.g. "startup" around
+// "startup.thumbnails" / "startup.phash") so snapshot stays non-empty between steps.
 snapshot :: proc(alloc := context.allocator) -> []Progress {
 	sync.mutex_lock(&mu)
 	defer sync.mutex_unlock(&mu)
