@@ -69,7 +69,7 @@ handle_gallery :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		tags               = q.tags,
 		offset             = q.offset + len(page),
 		extra_chips        = gallery_filter_chips(q, req.alloc),
-		thumbnails_pending = progress.current.total != nil && !progress.done,
+		thumbnails_pending = len(progress.snapshot(req.alloc)) > 0,
 	}
 	http.res_html(template.render_gallery_page("Gallery", filter, page, has_more, req.alloc), res)
 }
@@ -967,26 +967,33 @@ handle_sse_progress :: proc(res: ^http.Response) {
 @(private = "file")
 progress_stream :: proc(conn: ^net.TCP_Socket, _: rawptr) -> io.Error {
 	for {
-		p := progress.current
-		html: string
-		if total, ok := p.total.?; ok {
-			html = fmt.tprintf(
-				"<div class=\"thumbnail-progress-title\">Generating thumbnails</div><progress value=\"%d\" max=\"%d\"></progress><div class=\"thumbnail-progress-meta\"><span>%s</span><span>%d / %d</span></div>",
-				p.finished,
-				total,
-				p.phase,
-				p.finished,
-				total,
-			)
-		} else {
-			html = fmt.tprintf(
-				"<div class=\"thumbnail-progress-title\">Generating thumbnails</div><div class=\"thumbnail-progress-meta\"><span>%s</span><span>%d</span></div>",
-				p.phase,
-				p.finished,
-			)
+		active := progress.snapshot(context.temp_allocator)
+		if len(active) == 0 {return http.sse_event(conn, "done", "<span>done</span>")}
+
+		sb := strings.builder_make(context.temp_allocator)
+		for p in active {
+			if total, ok := p.total.?; ok {
+				fmt.sbprintf(
+					&sb,
+					"<div class=\"thumbnail-progress-title\">%s</div><progress value=\"%d\" max=\"%d\"></progress><div class=\"thumbnail-progress-meta\"><span>%s</span><span>%d / %d</span></div>",
+					p.phase,
+					p.finished,
+					total,
+					p.phase,
+					p.finished,
+					total,
+				)
+			} else {
+				fmt.sbprintf(
+					&sb,
+					"<div class=\"thumbnail-progress-title\">%s</div><div class=\"thumbnail-progress-meta\"><span>%s</span><span>%d</span></div>",
+					p.phase,
+					p.phase,
+					p.finished,
+				)
+			}
 		}
-		if err := http.sse_event(conn, "progress", html); err != nil {return err}
-		if progress.done {return http.sse_event(conn, "done", "<span>done</span>")}
+		if err := http.sse_event(conn, "progress", strings.to_string(sb)); err != nil {return err}
 		time.sleep(250 * time.Millisecond)
 		free_all(context.temp_allocator)
 	}

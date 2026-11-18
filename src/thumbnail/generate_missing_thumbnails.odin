@@ -18,7 +18,6 @@ import "../vendor/sqlite"
 // Set all = true (with ids == nil) to scan all live items, or pass specific item IDs.
 generate_missing_thumbnails :: proc(
 	s: library.State,
-	prog_callback: progress.Callback = nil,
 	ids: []int = nil,
 	all: bool = false,
 ) -> (
@@ -27,7 +26,7 @@ generate_missing_thumbnails :: proc(
 	if all {assert(ids == nil)}
 	if !all && len(ids) == 0 {return 0, 0}
 
-	if prog_callback != nil {prog_callback({phase = "thumbnail discovery"})}
+	progress.update("startup.thumbnails.discovery", 0)
 
 	images: []library.Image
 	missing := make(map[string]bit_set[LOD_RESOLUTION])
@@ -74,6 +73,8 @@ generate_missing_thumbnails :: proc(
 		find_missing_thumbnails(s, images, &missing)
 	}
 
+	progress.finish("startup.thumbnails.discovery")
+
 	when ODIN_TEST {
 		log.debug("thumbnails: generate missing start")
 	} else {
@@ -81,12 +82,11 @@ generate_missing_thumbnails :: proc(
 	}
 
 	finished, total: u64
-	if prog_callback != nil {
-		for img in images {
-			if sizes, exists := missing[img.oid]; exists && sizes != {} {total += 1}
-		}
-		prog_callback({phase = "thumbnail generation", total = total})
+	for img in images {
+		if sizes, exists := missing[img.oid]; exists && sizes != {} {total += 1}
 	}
+	progress.update("startup.thumbnails", 0, total)
+	defer progress.finish("startup.thumbnails")
 
 	for img in images {
 		sizes, exists := missing[img.oid]
@@ -94,10 +94,8 @@ generate_missing_thumbnails :: proc(
 		n, f := generate_image_thumbnails(s, img, sizes)
 		generated += n
 		failed += f
-		if prog_callback != nil {
-			finished += 1
-			prog_callback({phase = "thumbnail generation", finished = finished, total = total})
-		}
+		finished += 1
+		progress.update("startup.thumbnails", finished, total)
 	}
 	return
 }

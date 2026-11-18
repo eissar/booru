@@ -5,12 +5,10 @@ import "core:strings"
 import "core:time"
 
 import "../library"
-import "../progress"
 import "../vendor/sqlite"
 
 startup_threaded_generate_missing_thumbnails :: proc(data: struct {
-		library_path:  string,
-		prog_callback: progress.Callback,
+		library_path: string,
 	}) {
 	defer free_all(context.temp_allocator)
 
@@ -31,7 +29,7 @@ startup_threaded_generate_missing_thumbnails :: proc(data: struct {
 		data_store   = db,
 	}
 	start := time.now()
-	generated, failed := generate_missing_thumbnails(state, data.prog_callback, all = true)
+	generated, failed := generate_missing_thumbnails(state, all = true)
 	fmt.eprintfln(
 		"thumbnails: generated=%d, failed=%d in %.2f ms",
 		generated,

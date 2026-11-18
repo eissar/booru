@@ -4,7 +4,6 @@ import "core:mem"
 import "core:testing"
 
 import "../library"
-import "../progress"
 import "../vendor/sqlite"
 
 open_test_items_db :: proc(t: ^testing.T) -> ^sqlite.DB {
@@ -89,14 +88,7 @@ test_run_commits_and_rolls_back :: proc(t: ^testing.T) {
 		data_store = db,
 	}
 
-	commit_proc :: proc(
-		st: ^library.State,
-		alloc: mem.Allocator,
-		prog_callback: progress.Callback = nil,
-	) -> (
-		processed: int,
-		ok: bool,
-	) {
+	commit_proc :: proc(st: ^library.State, alloc: mem.Allocator) -> (processed: int, ok: bool) {
 		rc := sqlite.exec(
 			st.data_store,
 			"INSERT INTO items (id, val) VALUES (1, 'committed')",
@@ -107,14 +99,7 @@ test_run_commits_and_rolls_back :: proc(t: ^testing.T) {
 		return 1, rc == sqlite.OK
 	}
 
-	rollback_proc :: proc(
-		st: ^library.State,
-		alloc: mem.Allocator,
-		prog_callback: progress.Callback = nil,
-	) -> (
-		processed: int,
-		ok: bool,
-	) {
+	rollback_proc :: proc(st: ^library.State, alloc: mem.Allocator) -> (processed: int, ok: bool) {
 		_ = sqlite.exec(
 			st.data_store,
 			"INSERT INTO items (id, val) VALUES (2, 'rolled_back')",

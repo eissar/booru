@@ -49,7 +49,6 @@ replay :: proc(
 	s: ^library.State,
 	streams: []string,
 	backing_alloc: mem.Allocator,
-	prog_callback: progress.Callback = nil,
 	full_replay := true,
 ) -> Error {
 	// Own all temporary reduction state and decoded strings until replay ends.
@@ -77,7 +76,9 @@ replay :: proc(
 	tx := sqlite.Tx {
 		db = db,
 	}
-	if prog_callback != nil {prog_callback({phase = "replay events"})}
+	progress.update("replay.events", 0)
+	defer progress.finish("replay.events")
+	defer progress.finish("replay.files")
 
 	record: elog.Record
 	record.fields = make([dynamic]elog.Field, 0, 16, alloc)
@@ -234,9 +235,7 @@ replay :: proc(
 					}
 				}
 				finished += 1
-				if prog_callback != nil {
-					prog_callback({phase = "replay events", finished = finished})
-				}
+				progress.update("replay.events", finished)
 				continue // Incremental replay applies tags directly.
 			}
 			for tag in tags {
@@ -251,9 +250,9 @@ replay :: proc(
 			}
 			if state_dirty {lru.set(&patch_states, item.id, state)}
 			finished += 1
-			if prog_callback != nil {prog_callback({phase = "replay events", finished = finished})}
+			progress.update("replay.events", finished)
 		}
-		if prog_callback != nil {prog_callback({phase = "replay files", finished = u64(i + 1)})}
+		progress.update("replay.files", u64(i + 1))
 	}
 	// Flush remaining hot items in LRU cache to swap backing
 	for id, node in patch_states.entries {
@@ -531,16 +530,13 @@ replay_flat_string :: proc(token: elog.Token, alloc: mem.Allocator) -> string {
 	return value
 }
 
-initiate_replay :: proc(
-	s: ^library.State,
-	prog_callback: progress.Callback = nil,
-	full_replay := true,
-) -> Error {
+initiate_replay :: proc(s: ^library.State, full_replay := true) -> Error {
 	upper: elog.Cursor
 	if !full_replay {
 		upper = s.event_log.cursor^ // capture by value
 	}
-	if prog_callback != nil {prog_callback({phase = "replay files"})}
+	progress.update("replay.files", 0)
+	defer progress.finish("replay.files")
 	alloc := context.temp_allocator
 	events_dir := fmt.tprintf("%s/events", s.library_path)
 	dir_fi, stat_err := os.stat(events_dir, alloc)
@@ -607,7 +603,7 @@ initiate_replay :: proc(
 	tx := sqlite.Tx {
 		db = db,
 	}
-	if err := replay(s, streams, alloc, prog_callback, full_replay); err != nil {
+	if err := replay(s, streams, alloc, full_replay); err != nil {
 		if err == .SCHEMA_MISMATCH {return err}
 		fmt.panicf("replay: %v", err)
 	}

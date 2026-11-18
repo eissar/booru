@@ -7,7 +7,6 @@ import "core:mem"
 import "core:strings"
 
 import "../library"
-import "../progress"
 import "../vendor/sqlite"
 
 ColumnSpec :: struct {
@@ -19,14 +18,7 @@ ColumnSpec :: struct {
 NativePlugin :: struct {
 	name:    string,
 	columns: []ColumnSpec,
-	run:     proc(
-		s: ^library.State,
-		alloc: mem.Allocator,
-		prog_callback: progress.Callback = nil,
-	) -> (
-		processed: int,
-		ok: bool,
-	),
+	run:     proc(s: ^library.State, alloc: mem.Allocator) -> (processed: int, ok: bool),
 }
 
 // register ensures declared plugin columns exist on items.
@@ -81,35 +73,28 @@ register :: proc(s: ^library.State, plugins: []NativePlugin) -> bool {
 }
 
 // run executes each plugin's batch runner inside a caller-owned transaction.
-run :: proc(
-	s: ^library.State,
-	plugins: []NativePlugin,
-	alloc: mem.Allocator,
-	prog_callback: progress.Callback = nil,
-) -> bool {
+run :: proc(s: ^library.State, plugins: []NativePlugin, alloc: mem.Allocator) -> bool {
 	if s == nil || s.data_store == nil {return false}
 	all_ok := true
 	for p in plugins {
 		if p.run == nil {continue}
 		Payload :: struct {
-			p:             NativePlugin,
-			s:             ^library.State,
-			alloc:         mem.Allocator,
-			prog_callback: progress.Callback,
-			processed:     int,
-			ok:            bool,
+			p:         NativePlugin,
+			s:         ^library.State,
+			alloc:     mem.Allocator,
+			processed: int,
+			ok:        bool,
 		}
 		payload := Payload {
-			p             = p,
-			s             = s,
-			alloc         = alloc,
-			prog_callback = prog_callback,
+			p     = p,
+			s     = s,
+			alloc = alloc,
 		}
 		rc := sqlite.with_transaction(
 			s.data_store,
 			&payload,
 			proc(_: ^sqlite.Tx, ctx: ^Payload) -> c.int {
-				ctx.processed, ctx.ok = ctx.p.run(ctx.s, ctx.alloc, ctx.prog_callback)
+				ctx.processed, ctx.ok = ctx.p.run(ctx.s, ctx.alloc)
 				return sqlite.OK if ctx.ok else sqlite.ERROR
 			},
 		)

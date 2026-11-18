@@ -11,7 +11,6 @@ import "cli"
 import elog "event_log"
 import "importers"
 import "library"
-import "progress"
 import "replay"
 import "server"
 import "store"
@@ -277,21 +276,11 @@ main :: proc() {
 
 	defer free_all(context.temp_allocator)
 
-	cb: progress.Callback : proc(prg: progress.Progress) {
-		fmt.println(prg)
-		progress.current = prg
-		if total, ok := prg.total.?; ok && prg.finished == total {progress.done = true}
-	}
-
 	scan_thread: ^thread.Thread
 	if cfg.scan_thumbnail {
 		scan_thread = thread.create_and_start_with_poly_data(struct {
-				library_path:  string,
-				prog_callback: progress.Callback,
-			} {
-				library_path = cfg.library,
-				prog_callback = cb,
-			}, thumbnail.startup_threaded_generate_missing_thumbnails)
+				library_path: string,
+			}{library_path = cfg.library}, thumbnail.startup_threaded_generate_missing_thumbnails)
 		if scan_thread == nil {
 			fmt.eprintln("thumbnails: could not create scan thread")
 		}
