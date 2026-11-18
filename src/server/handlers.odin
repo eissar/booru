@@ -10,12 +10,15 @@ import "core:os"
 import "core:slice"
 import "core:strconv"
 import "core:strings"
+import "core:sync"
+import "core:thread"
 import "core:time"
 import "core:unicode/utf8"
 
 import "../http"
 import "../library"
 import "../media"
+import "../plugin/phash"
 import "../progress"
 import "../replay"
 import pijul "../slop_pijul"
@@ -962,6 +965,73 @@ mime_from_leaf :: proc(name: string) -> http.Content_Type {
 // handle_sse_progress serves "/events/progress" -- scan progress as HTML fragments.
 handle_sse_progress :: proc(res: ^http.Response) {
 	http.res_event_stream(progress_stream, nil, res)
+}
+
+@(private = "file")
+duplicates_scan_active: bool
+
+// handle_check_duplicates triggers an async all-pairs PDQ duplicate scan over store.sqlite.
+handle_check_duplicates :: proc(s: ^library.State, res: ^http.Response, req: http.Req) {
+	if req.header.method != "POST" {
+		http.res_text("method not allowed", res, .MethodNotAllowed)
+		return
+	}
+	if _, ok := sync.atomic_compare_exchange_strong(&duplicates_scan_active, false, true); !ok {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("duplicate scan already running", .Error, req.alloc),
+			res,
+			.Conflict,
+		)
+		return
+	}
+	progress.update("duplicates.scan", 0)
+	t := thread.create_and_start_with_poly_data(struct {
+			library_path: string,
+		}{library_path = strings.clone(s.library_path)}, proc(data: struct {
+				library_path: string,
+			}) {
+			defer sync.atomic_store(&duplicates_scan_active, false)
+			defer progress.finish("duplicates.scan")
+			defer delete(data.library_path)
+			defer free_all(context.temp_allocator)
+
+			path := strings.clone_to_cstring(
+				fmt.tprintf("%s/store.sqlite", data.library_path),
+				context.temp_allocator,
+			)
+			db, rc := sqlite.open(path)
+			if rc != sqlite.OK {
+				if db != nil {sqlite.close(db)}
+				fmt.eprintfln("duplicates: open store failed: rc=%d", rc)
+				return
+			}
+			defer sqlite.close(db)
+
+			start := time.now()
+			pairs, ok := phash.find_all_duplicates(db)
+			defer delete(pairs)
+			if !ok {
+				fmt.eprintln("duplicates: scan failed")
+				return
+			}
+			fmt.eprintfln(
+				"duplicates: found=%d in %.2f ms",
+				len(pairs),
+				time.duration_milliseconds(time.since(start)),
+			)
+		}, self_cleanup = true)
+	if t == nil {
+		progress.finish("duplicates.scan")
+		sync.atomic_store(&duplicates_scan_active, false)
+		http.res_error("could not start duplicate scan", res, .InternalServerError)
+		return
+	}
+	http.res_html(
+		"<div id=\"thumbnail-progress\" class=\"thumbnail-progress\" role=\"status\" aria-live=\"polite\" hx-ext=\"sse\" sse-connect=\"/events/progress\" sse-swap=\"progress\" sse-close=\"done\"></div>",
+		res,
+		.Accepted,
+	)
 }
 
 @(private = "file")

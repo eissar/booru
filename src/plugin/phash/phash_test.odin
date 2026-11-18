@@ -119,4 +119,46 @@ test_register_job_and_find_matches :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(matches), 1)
 	testing.expect_value(t, matches[0].id, 1)
 	testing.expect_value(t, matches[0].dist, 0)
+
+	// Insert item 3 with identical pdq and item 4 with an inverted hash.
+	inv := expected
+	for &b in inv {b = ~b}
+	ins: ^sqlite.Stmt
+	testing.expect_value(
+		t,
+		sqlite.prepare_v2(
+			s.data_store,
+			"INSERT INTO items (id, oid, path, ext, name, comment, content_type, width, height, mtime, added_at, pdq) VALUES (?1, ?2, ?3, 'png', ?2, '', 'image/png', 128, 128, 1, 1, ?4)",
+			-1,
+			&ins,
+			nil,
+		),
+		sqlite.OK,
+	)
+	defer sqlite.finalize(ins)
+	for row in ([2]struct {
+			id:   i64,
+			oid:  cstring,
+			hash: pdq.Hash,
+		}{{3, "item3", expected}, {4, "item4", inv}}) {
+		h := row.hash
+		sqlite.reset(ins)
+		testing.expect_value(t, sqlite.bind_int64(ins, 1, row.id), sqlite.OK)
+		testing.expect_value(t, sqlite.bind_text(ins, 2, row.oid, -1, sqlite.TRANSIENT), sqlite.OK)
+		testing.expect_value(t, sqlite.bind_text(ins, 3, row.oid, -1, sqlite.TRANSIENT), sqlite.OK)
+		testing.expect_value(
+			t,
+			sqlite.bind_blob(ins, 4, &h[0], len(h), sqlite.TRANSIENT),
+			sqlite.OK,
+		)
+		testing.expect_value(t, sqlite.step(ins), sqlite.DONE)
+	}
+
+	dups, dup_ok := find_all_duplicates(s.data_store)
+	defer delete(dups)
+	testing.expect(t, dup_ok)
+	testing.expect_value(t, len(dups), 1)
+	testing.expect_value(t, dups[0].id_a, 1)
+	testing.expect_value(t, dups[0].id_b, 3)
+	testing.expect_value(t, dups[0].dist, 0)
 }

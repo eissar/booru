@@ -20,6 +20,12 @@ Match :: struct {
 	dist: int,
 }
 
+Duplicate_Pair :: struct {
+	id_a: int,
+	id_b: int,
+	dist: int,
+}
+
 PLUGIN :: plugin.NativePlugin {
 	name    = "phash",
 	columns = {{name = "pdq", sql_type = "BLOB"}},
@@ -141,6 +147,70 @@ find_matches :: proc(
 		dist := pdq.hamming_distance(target, candidate)
 		if dist <= max_dist {
 			append(&out, Match{id = int(sqlite.column_int64(stmt, 0)), dist = dist})
+		}
+	}
+	return out[:], true
+}
+
+find_all_duplicates :: proc(
+	db: ^sqlite.DB,
+	max_dist := 31,
+	alloc := context.allocator,
+) -> (
+	pairs: []Duplicate_Pair,
+	ok: bool,
+) {
+	stmt: ^sqlite.Stmt
+	if sqlite.prepare_v2(
+		   db,
+		   "SELECT id, pdq FROM items WHERE deleted = 0 AND pdq IS NOT NULL ORDER BY id",
+		   -1,
+		   &stmt,
+		   nil,
+	   ) !=
+	   sqlite.OK {
+		return nil, false
+	}
+	defer sqlite.finalize(stmt)
+
+	Entry :: struct {
+		id:   int,
+		hash: Hash,
+	}
+	entries := make([dynamic]Entry, alloc)
+	defer delete(entries)
+
+	for {
+		step_rc := sqlite.step(stmt)
+		if step_rc == sqlite.DONE {break}
+		if step_rc != sqlite.ROW {return nil, false}
+		if sqlite.column_bytes(stmt, 1) != pdq.HASH_LENGTH {continue}
+		ptr := cast([^]u8)sqlite.column_blob(stmt, 1)
+		if ptr == nil {continue}
+		e := Entry {
+			id = int(sqlite.column_int64(stmt, 0)),
+		}
+		copy(e.hash[:], ptr[:pdq.HASH_LENGTH])
+		append(&entries, e)
+	}
+
+	n := len(entries)
+	progress.update("duplicates.scan", 0, u64(n))
+	defer progress.finish("duplicates.scan")
+
+	out := make([dynamic]Duplicate_Pair, alloc)
+	for i in 0 ..< n {
+		for j in i + 1 ..< n {
+			dist := pdq.hamming_distance(entries[i].hash, entries[j].hash)
+			if dist <= max_dist {
+				append(
+					&out,
+					Duplicate_Pair{id_a = entries[i].id, id_b = entries[j].id, dist = dist},
+				)
+			}
+		}
+		if (i + 1) % 256 == 0 || i + 1 == n {
+			progress.update("duplicates.scan", u64(i + 1), u64(n))
 		}
 	}
 	return out[:], true
