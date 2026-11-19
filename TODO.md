@@ -157,7 +157,7 @@ Templates are Odin strings, so lint the rendered fixtures (`test/html-fixture-td
 
 - [ ] Exact duplicate detection by content hash (`oid`) on upload/import and across existing library items, with a way to surface/merge or skip duplicates.
 - [ ] Near-duplicate detection (e.g. perceptual hash such as dHash/pHash computed during thumbnailing/ingest) to find visually similar images at different resolutions or re-encodes, plus a UI/review flow to compare and resolve pairs.
-- [ ] Remove the now-unused async `POST /check-duplicates` route, `handle_check_duplicates` and its `duplicates.scan` jobs-panel progress; Settings links to the synchronous `/duplicates` page (`src/server/handlers.odin`, `src/server/server.odin`).
+- [x] Remove the now-unused async `POST /check-duplicates` route, `handle_check_duplicates` and its `duplicates.scan` jobs-panel progress; Settings links to the synchronous `/duplicates` page (`src/server/handlers.odin`, `src/server/server.odin`).
 - [ ] Fix `/duplicates` Apply all (`src/template/duplicates_page.odin`, `handle_duplicates_resolve`): choose the surviving id explicitly instead of by field-pick votes; drop or make read-only the no-op `date` row (`added_at` cannot decrease); don't silently delete pairs with no differing fields; commit only ready pairs in one request/replay, remove committed pairs from the page and stop at the first failure.
 
 # JXL Support

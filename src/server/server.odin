@@ -166,8 +166,6 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			handle_duplicates(s^, &res, req)
 		case req_header.path == "/duplicates/resolve":
 			handle_duplicates_resolve(s, &res, req, body)
-		case req_header.path == "/check-duplicates":
-			handle_check_duplicates(s, &res, req)
 		case req_header.path == "/regen-thumbnail":
 			handle_regen_thumbnail(s, &res, req)
 		case req_header.path == "/ingest":
