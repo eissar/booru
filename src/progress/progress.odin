@@ -1,5 +1,6 @@
 package progress
 
+import "base:runtime"
 import "core:slice"
 import "core:sync"
 
@@ -14,6 +15,20 @@ Progress :: struct {
 mu: sync.Mutex
 @(private = "file")
 items: map[string]Progress
+
+// items outlives any caller's context (handlers, worker threads, tests), so it
+// uses the heap allocator instead of whichever context.allocator calls update first.
+@(init, private = "file")
+init_items :: proc "contextless" () {
+	context = runtime.default_context()
+	items = make(map[string]Progress, allocator = runtime.heap_allocator())
+}
+
+@(fini, private = "file")
+fini_items :: proc "contextless" () {
+	context = runtime.default_context()
+	delete(items)
+}
 
 update :: proc(phase: string, finished: u64, total: Maybe(u64) = nil) {
 	sync.mutex_lock(&mu)
