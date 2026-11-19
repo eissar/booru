@@ -177,12 +177,7 @@ replay :: proc(
 				}
 			case "overwrite":
 				if full_replay {
-					if existing, ok := &lww_items[item.id]; ok {
-						overwrite_step(existing, &item)
-					} else {
-						lww_items[item.id] = {}
-						overwrite_step(&lww_items[item.id], &item)
-					}
+					overwrite_step(&lww_items[item.id], &item)
 				} else {
 					// In incremental replay, apply overwrite directly
 					store_err = store.overwrite_item(&tx, item)
