@@ -5,10 +5,13 @@ import "core:c"
 import "core:fmt"
 import "core:mem"
 import "core:strings"
+import "core:time"
 
 import "../library"
 import "../vendor/sqlite"
 
+// Note: NativePlugin covers SQLite-backed derived plugins only;
+// event-producing plugins (appending to event_log) are deferred / unimplemented.
 ColumnSpec :: struct {
 	name:         string,
 	sql_type:     string, // "BLOB", "TEXT", "INTEGER", "REAL"
@@ -90,6 +93,7 @@ run :: proc(s: ^library.State, plugins: []NativePlugin, alloc: mem.Allocator) ->
 			s     = s,
 			alloc = alloc,
 		}
+		p_start := time.now()
 		rc := sqlite.with_transaction(
 			s.data_store,
 			&payload,
@@ -101,6 +105,13 @@ run :: proc(s: ^library.State, plugins: []NativePlugin, alloc: mem.Allocator) ->
 		if rc != sqlite.OK || !payload.ok {
 			fmt.eprintfln("plugin %s: run failed (rc=%d)", p.name, rc)
 			all_ok = false
+		} else {
+			fmt.eprintfln(
+				"plugin %s: processed=%d in %.2f ms",
+				p.name,
+				payload.processed,
+				time.duration_milliseconds(time.since(p_start)),
+			)
 		}
 	}
 	return all_ok
