@@ -1,6 +1,9 @@
 package main
 
+import "base:runtime"
+import "core:c/libc"
 import "core:fmt"
+import "core:mem"
 import "core:net"
 import "core:os"
 import "core:strings"
@@ -26,6 +29,10 @@ DATA_DIR: string
 
 // Set once when an outdated store is discarded; a second mismatch is fatal.
 STORE_DISCARDED_FOR_SCHEMA: bool
+
+// Debug builds: SIGINT/SIGTERM shut this socket down so a blocked accept fails,
+// Serve returns and main's deferred leak report runs.
+DEBUG_LISTEN_SOCK: net.TCP_Socket
 
 fmt_timestamp :: proc(elapsed: time.Duration) -> string {
 	if elapsed < time.Second {
@@ -79,6 +86,29 @@ startup_verify_older_shards_applied :: proc(
 }
 
 main :: proc() {
+	when ODIN_DEBUG {
+		track: mem.Tracking_Allocator
+		mem.tracking_allocator_init(&track, context.allocator)
+		context.allocator = mem.tracking_allocator(&track)
+		defer {
+			total := 0
+			for _, e in track.allocation_map {
+				fmt.eprintfln("leak: %v bytes @ %v", e.size, e.location)
+				total += e.size
+			}
+			for e in track.bad_free_array {
+				fmt.eprintfln("bad free: %p @ %v", e.memory, e.location)
+			}
+			fmt.eprintfln(
+				"tracking allocator: %d leaks (%d bytes), %d bad frees, peak %d bytes",
+				len(track.allocation_map),
+				total,
+				len(track.bad_free_array),
+				track.peak_memory_allocated,
+			)
+			mem.tracking_allocator_destroy(&track)
+		}
+	}
 	load_start := time.now()
 
 	cfg := cli.getFlags()
@@ -334,6 +364,15 @@ main :: proc() {
 	}
 
 	defer net.close(sock)
+	when ODIN_DEBUG {
+		DEBUG_LISTEN_SOCK = sock
+		on_signal :: proc "c" (_: i32) {
+			context = runtime.default_context()
+			net.shutdown(DEBUG_LISTEN_SOCK, .Both)
+		}
+		libc.signal(libc.SIGINT, on_signal)
+		libc.signal(libc.SIGTERM, on_signal)
+	}
 	if cfg.daemon {daemon_ready(ready_fd)}
 
 	plugin_thread := thread.create_and_start_with_poly_data(struct {
