@@ -967,6 +967,185 @@ handle_sse_progress :: proc(res: ^http.Response) {
 	http.res_event_stream(progress_stream, nil, res)
 }
 
+// handle_duplicates renders the v1 pairwise duplicate comparison page synchronously.
+handle_duplicates :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	if req.header.method != "GET" {
+		http.res_text("method not allowed", res, .MethodNotAllowed)
+		return
+	}
+	params := make(map[string]string, req.alloc)
+	parse_query_params(req.header.query, &params, req.alloc)
+	if DEV_ROUTES && params["sample"] == "1" {
+		sample := [3]template.Duplicate_Pair_View {
+			{
+				a = library.Image {
+					id       = 1042,
+					name     = "blue-hills.png",
+					added_at = 1773446400000, // 2026-03-14
+					comment  = "rough pass, line weight too heavy",
+					tags     = {"sketch", "character", "monochrome"},
+					width    = 48,
+					height   = 36,
+				},
+				b = library.Image {
+					id       = 2177,
+					name     = "blue_hills_final.jpg",
+					added_at = 1773446400000, // 2026-03-14
+					comment  = "cleaned up lines for the final",
+					tags     = {"sketch", "character", "landscape"},
+					width    = 27,
+					height   = 36,
+				},
+				dist = 4,
+			},
+			{
+				a = library.Image {
+					id       = 1310,
+					name     = "hero-portrait.png",
+					added_at = 1775088000000, // 2026-04-02
+					comment  = "colors still flat",
+					tags     = {"character", "monochrome"},
+					width    = 36,
+					height   = 36,
+				},
+				b = library.Image {
+					id       = 1388,
+					name     = "hero-portrait-v2.png",
+					added_at = 1775692800000, // 2026-04-09
+					comment  = "added shading pass",
+					tags     = {"character", "color"},
+					width    = 36,
+					height   = 36,
+				},
+				dist = 7,
+			},
+			{
+				a = library.Image {
+					id       = 1544,
+					name     = "street-study.jpg",
+					added_at = 1779321600000, // 2026-05-21
+					comment  = "quick gesture study",
+					tags     = {"sketch"},
+					width    = 48,
+					height   = 36,
+				},
+				b = library.Image {
+					id       = 1545,
+					name     = "street-study-copy.jpg",
+					added_at = 1779321600000, // 2026-05-21
+					comment  = "quick gesture study",
+					tags     = {"sketch"},
+					width    = 48,
+					height   = 36,
+				},
+				dist = 0,
+			},
+		}
+		http.res_html(
+			template.render_duplicates_page(sample[:], is_sample = true, allocator = req.alloc),
+			res,
+		)
+		return
+	}
+
+	pairs, ok := phash.find_all_duplicates(s.data_store, alloc = req.alloc)
+	if !ok {
+		http.res_error("duplicate scan failed", res, .InternalServerError)
+		return
+	}
+	views := make([dynamic]template.Duplicate_Pair_View, 0, len(pairs), req.alloc)
+	for p in pairs {
+		a, a_ok, a_rc := store.read_image_by_id(s.data_store, p.id_a, req.alloc)
+		b, b_ok, b_rc := store.read_image_by_id(s.data_store, p.id_b, req.alloc)
+		if a_rc != sqlite.OK || b_rc != sqlite.OK {
+			http.res_error("", res, .InternalServerError)
+			return
+		}
+		if a_ok && b_ok {
+			append(&views, template.Duplicate_Pair_View{a = a, b = b, dist = p.dist})
+		}
+	}
+	http.res_html(
+		template.render_duplicates_page(views[:], is_sample = false, allocator = req.alloc),
+		res,
+	)
+}
+
+// handle_duplicates_resolve serves POST /duplicates/resolve: patches keep_id and deletes drop_id.
+handle_duplicates_resolve :: proc(
+	s: ^library.State,
+	res: ^http.Response,
+	req: http.Req,
+	body: []u8,
+) {
+	if req.header.method != "POST" {
+		http.res_text("method not allowed", res, .MethodNotAllowed)
+		return
+	}
+	params := make(map[string]string, req.alloc)
+	if !parse_query_params(string(body), &params, req.alloc) {
+		http.res_error(ENCODING_ERR_MSG, res, .BadRequest)
+		return
+	}
+	if DEV_ROUTES && params["sample"] == "1" {
+		http.res_text("", res, .OK)
+		return
+	}
+	keep_id, keep_ok := parse_int_param(params["keep_id"])
+	drop_id, drop_ok := parse_int_param(params["drop_id"])
+	if !keep_ok || !drop_ok || keep_id < 1 || drop_id < 1 || keep_id == drop_id {
+		http.res_error("bad id", res, .BadRequest)
+		return
+	}
+
+	keep_img, keep_found, k_rc := store.read_image_by_id(s.data_store, keep_id, req.alloc)
+	drop_img, drop_found, d_rc := store.read_image_by_id(s.data_store, drop_id, req.alloc)
+	if k_rc != sqlite.OK || d_rc != sqlite.OK {
+		http.res_error("", res, .InternalServerError)
+		return
+	}
+	if !keep_found || !drop_found {
+		http.res_error("no match for ID", res, .NotFound)
+		return
+	}
+
+	events := make([dynamic]elog.Event, 0, 3, req.alloc)
+	tags := form_tags(params["tags"], req.alloc)
+	name := strings.trim_space(params["name"])
+	comment := strings.trim_space(params["comment"])
+	if name != keep_img.name || !slice.equal(tags, keep_img.tags) {
+		append(&events, elog.Event{id = keep_id, op = "patch", name = name, tags = tags})
+	}
+	if comment != keep_img.comment {
+		append(
+			&events,
+			elog.Event {
+				id = keep_id,
+				op = "patch",
+				comment = pijul.generate_patch(keep_img.comment, comment, req.alloc),
+			},
+		)
+	}
+	append(&events, elog.Event{id = drop_id, op = "delete"})
+
+	if append_err := elog.ev_append(s.event_log, events[:]); append_err != "" {
+		http.res_error("could not write duplicate resolution event", res, .InternalServerError)
+		return
+	}
+	replay.initiate_replay(s, full_replay = false)
+	pth := fmt.aprintf(
+		"%s/images/%d.%s",
+		s.library_path,
+		drop_id,
+		drop_img.ext,
+		allocator = req.alloc,
+	)
+	if remove_err := os.remove(pth); remove_err != nil {
+		fmt.eprintfln("ERROR duplicate resolve: remove original %s: %v", pth, remove_err)
+	}
+	http.res_text("", res, .OK)
+}
+
 @(private = "file")
 duplicates_scan_active: bool
 
