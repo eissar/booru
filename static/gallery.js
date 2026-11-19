@@ -135,7 +135,7 @@
     // Grid/list views render flat cards in canonical order.
     if (columns === 0) {
       for (var i = 0; i < cards.length; i++) insertBeforePagination(grid, cards[i]);
-      for (var i = 0; i < packed.length; i++) packed[i].remove();
+      for (i = 0; i < packed.length; i++) packed[i].remove();
       if (parking) parking.remove();
       return;
     }
@@ -148,20 +148,20 @@
     }
     insertBeforePagination(grid, parking);
     var heights = [];
-    for (var i = 0; i < columns; i++) {
+    for (i = 0; i < columns; i++) {
       var col = document.createElement("div");
       col.className = "masonry-column";
       insertBeforePagination(grid, col);
       packedColumns.push({ el: col, cards: [], ratios: [], first: 0, last: -1 });
       heights.push(0);
     }
-    for (var i = 0; i < cards.length; i++) {
+    for (i = 0; i < cards.length; i++) {
       var shortest = 0;
       for (var j = 1; j < columns; j++) {
         if (heights[j] < heights[shortest]) shortest = j;
       }
       var ratio = cardRatio(cards[i]);
-      var col = packedColumns[shortest];
+      col = packedColumns[shortest];
       // Unmeasured: no range to render, so show the whole column.
       if (!geometry) {
         col.el.appendChild(cards[i]);
@@ -182,7 +182,7 @@
         heights[shortest] += ratio;
       }
     }
-    for (var i = 0; i < packed.length; i++) packed[i].remove();
+    for (i = 0; i < packed.length; i++) packed[i].remove();
     if (geometry) showAroundAnchor(geometry);
   }
 
@@ -277,7 +277,7 @@
         y += h;
       }
       // Move only the cards leaving or entering the column's range.
-      for (var i = col.first; i <= col.last; i++) {
+      for (i = col.first; i <= col.last; i++) {
         if (i < a || i > b) {
           var outMedia = col.cards[i].querySelector(".gallery-card-media");
           if (outMedia instanceof HTMLImageElement && !isMediaLoaded(outMedia) && outMedia.hasAttribute("src")) {
