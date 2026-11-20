@@ -277,7 +277,7 @@ replay :: proc(
 		if force_write_rc != sqlite.OK {return .DATABASE_ERR}
 		defer sqlite.finalize(force_write)
 
-		for id := 1; id <= swap.max_id; id += 1 {
+		for id := 1; id <= swap.high_id; id += 1 {
 			if swap.index[id] == 0 {continue}
 			state := swap_read(&swap, id, context.temp_allocator)
 			length := len(state.name)

@@ -7,12 +7,13 @@ import "core:os"
 import "core:strings"
 
 Swap_Store :: struct {
-	file:   ^os.File,
-	ptr:    [^]u8,
-	size:   int,
-	tail:   int,
-	index:  [^]u32,
-	max_id: int,
+	file:    ^os.File,
+	ptr:     [^]u8,
+	size:    int,
+	tail:    int,
+	index:   [^]u32,
+	max_id:  int,
+	high_id: int,
 }
 
 init_swap :: proc(
@@ -120,6 +121,7 @@ swap_write :: proc(s: ^Swap_Store, id: int, state: ^Patch_State) {
 
 	s.tail += pos
 	s.index[id] = u32(off)
+	if id > s.high_id {s.high_id = id}
 }
 
 swap_read :: proc(s: ^Swap_Store, id: int, alloc: mem.Allocator) -> (state: Patch_State) {

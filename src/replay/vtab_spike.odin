@@ -27,7 +27,7 @@ vtab_insert_items :: proc(
 	}
 
 	advance :: proc "contextless" (tab: ^Items_VTab) {
-		for tab.id += 1; tab.id <= tab.swap.max_id; tab.id += 1 {
+		for tab.id += 1; tab.id <= tab.swap.high_id; tab.id += 1 {
 			off := int(tab.swap.index[tab.id])
 			if off == 0 {continue}
 			status := tab.seen_ids[tab.id]
@@ -126,7 +126,7 @@ vtab_insert_items :: proc(
 		},
 		xEof = proc "c" (pCursor: ^sqlite.VTab_Cursor) -> c.int {
 			tab := cast(^Items_VTab)pCursor.pVTab
-			return tab.id > tab.swap.max_id ? 1 : 0
+			return tab.id > tab.swap.high_id ? 1 : 0
 		},
 		xColumn = proc "c" (pCursor: ^sqlite.VTab_Cursor, pCtx: rawptr, col: c.int) -> c.int {
 			tab := cast(^Items_VTab)pCursor.pVTab
@@ -224,7 +224,7 @@ vtab_insert_item_tags :: proc(
 			}
 
 			tab.id += 1
-			if tab.id > tab.swap.max_id {return}
+			if tab.id > tab.swap.high_id {return}
 
 			off := int(tab.swap.index[tab.id])
 			if off == 0 {
@@ -309,7 +309,7 @@ vtab_insert_item_tags :: proc(
 		},
 		xEof = proc "c" (pCursor: ^sqlite.VTab_Cursor) -> c.int {
 			tab := cast(^Tags_VTab)pCursor.pVTab
-			return tab.id > tab.swap.max_id ? 1 : 0
+			return tab.id > tab.swap.high_id ? 1 : 0
 		},
 		xColumn = proc "c" (pCursor: ^sqlite.VTab_Cursor, pCtx: rawptr, col: c.int) -> c.int {
 			tab := cast(^Tags_VTab)pCursor.pVTab
