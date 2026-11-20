@@ -2,401 +2,279 @@ package template
 
 import "../library"
 import "core:fmt"
-import "core:slice"
 import "core:strings"
 import "core:time"
 
-Duplicate_Pair_View :: struct {
-	a:    library.Image,
-	b:    library.Image,
-	dist: int,
+Duplicate_Group_View :: struct {
+	gid:       int,
+	items:     []library.Image,
+	max_dist:  int,
+	identical: bool,
 }
 
-// render_duplicates_page renders the v1 pairwise duplicate comparison page.
+// render_duplicates_page renders the duplicate comparison and merge page.
 render_duplicates_page :: proc(
-	pairs: []Duplicate_Pair_View,
-	is_sample := false,
+	groups: []Duplicate_Group_View,
 	allocator := context.allocator,
 ) -> string {
 	b := strings.builder_make(allocator)
 
 	wr(
 		&b,
-		"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>booru / Compare</title>",
+		"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Duplicates</title>",
 	)
 	wr(
 		&b,
-		"<script src=\"/static/htmx.min.js\"></script><script src=\"/static/htmx-response-targets.js\"></script><link href=\"/static/gallery.css\" rel=\"stylesheet\"/><script src=\"/static/gallery.js\"></script>",
+		"<link href=\"/static/gallery.css\" rel=\"stylesheet\"/><script src=\"/static/gallery.js\"></script>",
 	)
 	wr(
 		&b,
 		"<style>" +
-		"body{margin:0;background:var(--bg-primary);color:var(--text-primary);font-size:14px;line-height:1.25rem}" +
-		".dup-header{background:var(--bg-surface);border-bottom:1px solid var(--border-color-light);min-height:4rem;padding:0.75rem 1rem;display:flex;flex-wrap:wrap;align-items:center;gap:1rem}" +
-		".dup-btn{background:var(--bg-surface);color:var(--text-secondary);border:1px solid var(--border-color);padding:0.5rem 0.75rem;font-size:0.75rem;font-weight:500;cursor:pointer}" +
-		".dup-btn-sm{background:var(--bg-surface);color:var(--text-secondary);border:1px solid var(--border-color);padding:0.25rem 0.5rem;font-size:0.75rem;font-weight:500;cursor:pointer;margin-left:auto;flex:none}" +
-		".dup-apply{border:0;padding:0.5rem 1rem;font-size:0.75rem;font-weight:500;color:#fff;background:var(--accent-indigo);cursor:pointer}" +
-		".dup-apply:disabled{opacity:0.45;cursor:not-allowed}" +
-		".dup-pair{background:var(--bg-surface);border:1px solid var(--border-color-light)}" +
-		".dup-grid{display:grid;grid-template-columns:140px minmax(0,1fr) minmax(0,1fr);border-bottom:1px solid var(--border-color-light)}" +
-		".dup-col-head{border-left:1px solid var(--border-color-light);padding:0.75rem 1rem;display:flex;gap:0.75rem;align-items:center;min-width:0}" +
-		".dup-cell{font:inherit;text-align:left;cursor:pointer;border:0;border-left:1px solid var(--border-color-light);border-radius:0;padding:0.625rem 1rem;display:flex;flex-direction:column;justify-content:center;min-height:44px;background:transparent;color:var(--text-primary)}" +
-		".dup-cell:focus-visible{outline:2px solid var(--accent-indigo);outline-offset:-2px}" +
-		".dup-cell[disabled]{cursor:default}" +
-		".dup-cell.is-out{background:var(--bg-primary)}" +
-		".dup-cell.is-out .dup-val{text-decoration:line-through;font-weight:400}" +
-		".dup-cell.is-hi .dup-val{text-decoration:underline;font-weight:500}" +
-		".dup-val{font-size:0.875rem;font-weight:500;overflow-wrap:anywhere}" +
-		".dup-tag{font-size:0.75rem;line-height:1rem;font-weight:500;padding:0.25rem 0.375rem}" +
-		".dup-tag.is-shared{color:var(--text-secondary);background:var(--bg-surface-hover)}" +
-		".dup-tag.is-unique{color:var(--accent-indigo);background:color-mix(in srgb,var(--accent-indigo) 12%,transparent)}" +
-		".dup-cell.is-out .dup-tag{color:var(--text-secondary);background:transparent;text-decoration:line-through}" +
-		".dup-cell.is-hi .dup-tag{text-decoration:underline}" +
-		".dup-row.is-same.is-hidden{display:none}" +
-		"</style></head><body hx-ext=\"response-targets\">",
+		".dup-header{position:sticky;top:0;z-index:20;background:var(--bg-surface);border-bottom:1px solid var(--border-color-light);padding:.75rem 1.25rem}" +
+		".dup-bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}" +
+		".dup-bar-left{display:flex;align-items:baseline;gap:.75rem}" +
+		".dup-bar-left h1{margin:0;font-size:1rem;font-weight:600}" +
+		".dup-bar-right{display:flex;align-items:center;gap:.5rem}" +
+		".dup-btn{font:inherit;font-size:.8125rem;padding:.35rem .75rem;border-radius:.375rem;border:1px solid var(--border-color);background:transparent;color:var(--text-primary);cursor:pointer;text-decoration:none}" +
+		".dup-btn:hover:not(:disabled){background:var(--bg-surface-hover)}" +
+		".dup-btn-primary{background:var(--accent-indigo);border-color:var(--accent-indigo);color:#fff}" +
+		".dup-btn-primary:hover:not(:disabled){opacity:.9;background:var(--accent-indigo)}" +
+		".dup-btn:disabled{opacity:.4;cursor:default}" +
+		".dup-settings{display:flex;flex-wrap:wrap;gap:1rem 2.5rem;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border-color-light);font-size:.8125rem}" +
+		".dup-settings-col{display:flex;flex-direction:column;gap:.25rem}" +
+		".dup-settings-label{font-size:.75rem;color:var(--text-muted);margin-bottom:.125rem}" +
+		".dup-opt{display:flex;align-items:center;gap:.45rem}" +
+		".dup-main{max-width:1440px;margin:0 auto;padding:1.5rem 1.25rem 4rem;display:flex;flex-direction:column;gap:2rem}" +
+		".dup-group+.dup-group{border-top:1px solid var(--border-color-light);padding-top:2rem}" +
+		".dup-group-meta{display:flex;align-items:baseline;gap:.75rem;font-size:.875rem;margin-bottom:.75rem}" +
+		".dup-group-error{color:#ef4444;font-size:.8125rem;margin:0 0 .5rem}" +
+		".dup-group-actions{display:flex;justify-content:center;gap:.5rem;margin-top:.75rem}" +
+		".dup-strip{display:flex;gap:1.5rem;overflow-x:auto;padding:2px 2px .75rem;scroll-snap-type:x proximity}" +
+		".dup-card{flex:0 0 280px;scroll-snap-align:start;background:var(--bg-surface);padding:.875rem;border-radius:.5rem;outline:1px solid var(--border-color-light);display:flex;flex-direction:column;gap:.75rem}" +
+		".dup-card:has(input[name=\"into\"]:checked){outline:2px solid var(--accent-indigo)}" +
+		".dup-preview{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:.5rem}" +
+		".dup-keep{display:flex;align-items:center;gap:.5rem;font-weight:600;font-size:.875rem;cursor:pointer}" +
+		".dup-card .inspector-fields{list-style:none;margin:0;padding:0;gap:0 .75rem}" +
+		".dup-tags{display:flex;flex-wrap:wrap;gap:.25rem}" +
+		".dup-tag-unique{outline:1px solid var(--accent-indigo)}" +
+		"</style></head><body>",
 	)
-
-	wr(&b, "<header class=\"dup-header\">")
-	wr(&b, "<div style=\"flex:1 1 260px;min-width:0\"></div>")
-	if len(pairs) > 0 {
-		wr(&b, "<div style=\"display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center\">")
-		wr(&b, "<button type=\"button\" id=\"dup-reset-all\" class=\"dup-btn\">Reset all</button>")
-		wr(
-			&b,
-			"<button type=\"button\" id=\"dup-apply-all\" class=\"dup-apply\" disabled>Apply all</button>",
-		)
-		wr(&b, "</div>")
-	}
-	wr(&b, "</header>")
 
 	wr(
 		&b,
-		"<main style=\"max-width:1120px;margin:0 auto;padding:1.5rem 1rem 3rem;display:flex;flex-direction:column;gap:2.5rem\">",
+		"<header class=\"dup-header\">" +
+		"<div class=\"dup-bar\">" +
+		"<div class=\"dup-bar-left\"><a href=\"/gallery\" class=\"dup-btn\">\u2190 Gallery</a><h1>Duplicates</h1></div>" +
+		"<div class=\"dup-bar-right\">" +
+		"<button type=\"button\" id=\"dup-reset\" class=\"dup-btn\">Reset</button>" +
+		"<button type=\"button\" id=\"dup-apply-all\" class=\"dup-btn dup-btn-primary\" disabled>Apply all (0)</button>" +
+		"</div></div>" +
+		"<div class=\"dup-settings\" role=\"region\" aria-label=\"Merge settings\">" +
+		"<div class=\"dup-settings-col\"><span class=\"dup-settings-label\">Non-mergeable (LWW) fields</span>" +
+		"<label class=\"dup-opt\"><input type=\"radio\" name=\"lww_mode\" value=\"merge_comment\" checked/><span>Merge default &amp; comment non-mergeable fields</span></label>" +
+		"<label class=\"dup-opt text-muted\"><input type=\"radio\" name=\"lww_mode\" value=\"drop_nonmergeable\" disabled/><span>Drop non-mergeable fields (unimplemented)</span></label>" +
+		"<label class=\"dup-opt text-muted\"><input type=\"radio\" name=\"lww_mode\" value=\"target_only\" disabled/><span>Only take target &amp; drop changes (unimplemented)</span></label></div>" +
+		"<div class=\"dup-settings-col\"><span class=\"dup-settings-label\">Other settings</span>" +
+		"<label class=\"dup-opt text-muted\"><input type=\"checkbox\" disabled/><span>Smart suggest merge target (unimplemented)</span></label>" +
+		"<label class=\"dup-opt text-muted\"><input type=\"checkbox\" disabled/><span>Per-field settings (unimplemented)</span></label></div>" +
+		"</div></header>",
 	)
-	if len(pairs) == 0 {
-		wr(
-			&b,
-			"<div class=\"dup-pair\" style=\"padding:2rem;text-align:center;color:var(--text-muted)\">No duplicate pairs found. <a href=\"/gallery\" style=\"color:var(--accent-indigo)\">Back to gallery</a></div>",
-		)
-	}
 
-	for pair, pi in pairs {
-		write_duplicate_pair_section(&b, pair, pi, is_sample)
+	wr(&b, "<main id=\"dup-groups\" class=\"dup-main\">")
+	wr(
+		&b,
+		len(groups) == 0 ? "<p id=\"dup-empty\" class=\"text-muted\">No duplicate groups found.</p>" : "<p id=\"dup-empty\" class=\"text-muted\" hidden>No duplicate groups found.</p>",
+	)
+
+	for g in groups {
+		write_duplicate_group(&b, g)
 	}
 
 	wr(&b, "</main><div id=\"toasts-log\"></div>")
-	if len(pairs) > 0 {
-		write_duplicates_script(&b, is_sample)
-	}
+	write_toast_template(&b)
+	write_duplicates_script(&b)
 	wr(&b, "</body></html>")
 	return strings.to_string(b)
 }
 
 @(private = "file")
-write_duplicate_pair_section :: proc(
-	b: ^strings.Builder,
-	pair: Duplicate_Pair_View,
-	idx: int,
-	is_sample: bool,
-) {
-	a_date := format_unix_ms_date(pair.a.added_at, context.temp_allocator)
-	b_date := format_unix_ms_date(pair.b.added_at, context.temp_allocator)
-	a_tags := join_tags_sorted(pair.a.tags, context.temp_allocator)
-	b_tags := join_tags_sorted(pair.b.tags, context.temp_allocator)
-
-	Field_Def :: struct {
-		key:   string,
-		label: string,
-		a_val: string,
-		b_val: string,
-		same:  bool,
+write_duplicate_group :: proc(b: ^strings.Builder, g: Duplicate_Group_View) {
+	// Count tag occurrences across the group so tags absent from some members
+	// can be highlighted as unique.
+	tag_counts := make(map[string]int, len(g.items) * 4, context.temp_allocator)
+	for item in g.items {
+		for t in item.tags {
+			tag_counts[t] += 1
+		}
 	}
 
-	fields := [4]Field_Def {
-		{
-			key = "name",
-			label = "name",
-			a_val = pair.a.name,
-			b_val = pair.b.name,
-			same = pair.a.name == pair.b.name,
-		},
-		{key = "date", label = "date", a_val = a_date, b_val = b_date, same = a_date == b_date},
-		{
-			key = "comment",
-			label = "comment",
-			a_val = pair.a.comment,
-			b_val = pair.b.comment,
-			same = pair.a.comment == pair.b.comment,
-		},
-		{key = "tags", label = "tags", a_val = a_tags, b_val = b_tags, same = a_tags == b_tags},
+	gid_buf: [24]u8
+	gid := fmt.bprintf(gid_buf[:], "g%d", g.gid)
+
+	wr(b, "<form class=\"dup-group\"")
+	attrf(b, "id", "group-%s", gid)
+	attr(b, "data-gid", gid)
+	if g.identical {
+		wr(b, " data-identical=\"1\"")
 	}
-
-	diff_count := 0
-	same_count := 0
-	for f in fields {
-		if f.same {same_count += 1} else {diff_count += 1}
+	wr(b, "><div class=\"dup-group-meta\"><strong>#")
+	escape_text(b, gid)
+	wr(b, "</strong><span class=\"text-muted\">")
+	textf(b, "%d items \u00b7 max dist %d", len(g.items), g.max_dist)
+	if g.identical {
+		wr(b, " \u00b7 identical metadata")
 	}
-
-	wr(b, "<section class=\"dup-section\"")
-	attrf(b, "id", "pair-%d", idx + 1)
-	attrf(b, "data-pair-id", "p%d", idx + 1)
-	ia(b, "data-a-id", pair.a.id)
-	ia(b, "data-b-id", pair.b.id)
-	ia(b, "data-diff-count", diff_count)
-	if is_sample {wr(b, " data-sample=\"1\"")}
-	wr(b, " style=\"display:flex;flex-direction:column;gap:0.5rem\">")
-
-	wr(b, "<div class=\"dup-pair\">")
-	// Column header row
-	wr(b, "<div class=\"dup-grid\"><div></div>")
-	write_pair_col_header(b, pair.a, "a", idx)
-	write_pair_col_header(b, pair.b, "b", idx)
-	wr(b, "</div>")
-
-	// Field rows
-	for f in fields {
-		wr(b, "<div class=\"dup-grid dup-row")
-		if f.same {wr(b, " is-same is-hidden")}
-		wr(b, "\"")
-		attr(b, "data-field", f.key)
-		wr(b, ">")
-		wr(
-			b,
-			"<div style=\"padding:0.625rem 1rem;display:flex;flex-direction:column;justify-content:center\"><span style=\"font-weight:500\">",
-		)
-		escape_text(b, f.label)
-		wr(b, "</span></div>")
-
-		write_field_cell(b, f.key, "a", f.same, pair.a.tags, pair.b.tags, f.a_val)
-		write_field_cell(b, f.key, "b", f.same, pair.b.tags, pair.a.tags, f.b_val)
-		wr(b, "</div>")
-	}
-
-	wr(b, "</div>")
-
-	if same_count > 0 {
-		noun := same_count == 1 ? "field" : "fields"
-		wr(
-			b,
-			"<div class=\"dup-same-bar\" style=\"font-size:0.75rem;color:var(--text-secondary)\">",
-		)
-		wrf(b, "<span class=\"dup-same-note\">%d identical %s hidden · </span>", same_count, noun)
-		wr(
-			b,
-			"<button type=\"button\" class=\"dup-same-toggle\" style=\"background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer\" data-count=\"",
-		)
-		wrf(b, "%d\" data-noun=\"%s\">Show</button></div>", same_count, noun)
-	}
-
-	wr(b, "</section>")
-}
-
-@(private = "file")
-write_pair_col_header :: proc(b: ^strings.Builder, img: library.Image, side: string, idx: int) {
-	wr(b, "<div class=\"dup-col-head\">")
-	if img.oid != "" {
-		wr(
-			b,
-			"<img loading=\"lazy\" style=\"width:48px;height:36px;object-fit:cover;flex:none;background:var(--border-color)\"",
-		)
-		attrf(b, "src", "/mipmap/64?ids=%d", img.id)
-		attr(b, "alt", img.name)
-		wr(b, "/>")
-	} else {
-		bg := side == "a" ? "#cbd5e1" : "#94a3b8"
-		w :=
-			img.width > 0 && img.height > 0 ? (img.width == img.height ? 36 : (img.width > img.height ? 48 : 27)) : 48
-		wrf(
-			b,
-			"<div aria-hidden=\"true\" style=\"width:%dpx;height:36px;background:%s;flex:none\"></div>",
-			w,
-			bg,
-		)
-	}
-	wr(b, "<div style=\"min-width:0;display:flex;flex-direction:column\">")
-	wrf(b, "<span style=\"font-size:0.75rem;color:var(--text-muted)\">#%d</span>", img.id)
 	wr(
 		b,
-		"<span style=\"font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">",
+		"</span></div><p class=\"dup-group-error\" role=\"alert\" hidden></p><div class=\"dup-strip\" tabindex=\"0\"",
 	)
-	escape_text(b, img.name)
-	wr(b, "</span></div>")
-	wr(b, "<button type=\"button\" class=\"dup-btn-sm dup-keep-all\"")
-	attr(b, "data-side", side)
-	attrf(b, "data-pair", "p%d", idx + 1)
-	wr(b, ">Keep all</button></div>")
-}
+	attrf(b, "aria-label", "Group %s", gid)
+	wr(b, ">")
 
-@(private = "file")
-write_field_cell :: proc(
-	b: ^strings.Builder,
-	field_key, side: string,
-	same: bool,
-	mine_tags, theirs_tags: []string,
-	text_val: string,
-) {
-	wr(b, "<button type=\"button\" class=\"dup-cell\"")
-	attr(b, "data-side", side)
-	attr(b, "data-field", field_key)
-	if field_key != "tags" {
-		attr(b, "data-val", text_val)
-	} else {
-		joined := strings.join(mine_tags, ",", context.temp_allocator)
-		attr(b, "data-val", joined)
-	}
-	if same {wr(b, " disabled")}
-	wr(b, " aria-pressed=\"false\">")
+	for item in g.items {
+		id_buf: [20]u8
+		id := fmt.bprintf(id_buf[:], "%d", item.id)
 
-	if field_key == "tags" {
-		wr(b, "<span style=\"display:flex;flex-wrap:wrap;gap:0.5rem\">")
-		for t in mine_tags {
-			unique := !slice.contains(theirs_tags, t)
-			wr(b, "<span class=\"dup-tag ")
-			wr(b, unique ? "is-unique" : "is-shared")
-			wr(b, "\">#")
+		wr(b, "<section class=\"dup-card\">")
+		if strings.has_prefix(item.content_type, "video/") {
+			wr(b, "<video class=\"dup-preview\"")
+			attrf(b, "src", "/image/%s", item.oid)
+			wr(b, " controls preload=\"none\"></video>")
+		} else {
+			wr(b, "<img class=\"dup-preview\"")
+			if item.content_type == "application/pdf" {
+				attr(b, "src", "/static/unsupported_filetype_128.webp")
+			} else {
+				attrf(b, "src", "/image/%s", item.oid)
+			}
+			attr(b, "alt", item.name)
+			wr(b, " loading=\"lazy\"/>")
+		}
+
+		wr(b, "<div class=\"text-muted\">")
+		textf(b, "#%s \u00b7 %d \u00d7 %d | %s", id, item.width, item.height, item.content_type)
+		wr(b, "</div><label class=\"dup-keep\"><input type=\"radio\" name=\"into\"")
+		attr(b, "value", id)
+		wr(b, "/> Keep #")
+		escape_text(b, id)
+		wr(b, "</label><ul class=\"inspector-fields\">")
+
+		write_detail_row(b, "Name", item.name, true)
+		write_detail_row(b, "Comment", item.comment, false)
+
+		wr(
+			b,
+			"<li class=\"inspector-detail-row\"><span class=\"font-medium\">Tags</span><span class=\"dup-tags\">",
+		)
+		for t in item.tags {
+			wr(b, "<span class=\"tag-badge")
+			if tag_counts[t] < len(g.items) {
+				wr(b, " dup-tag-unique")
+			}
+			wr(b, "\">")
 			escape_text(b, t)
 			wr(b, "</span>")
 		}
-		wr(b, "</span>")
-	} else {
-		wr(b, "<span class=\"dup-val\">")
-		escape_text(b, text_val)
-		wr(b, "</span>")
+		wr(b, "</span></li>")
+
+		added := ""
+		if item.added_at > 0 {
+			dt, _ := time.time_to_datetime(time.Time{_nsec = item.added_at * 1_000_000})
+			added = fmt.tprintf(
+				"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+				dt.year,
+				dt.month,
+				dt.day,
+				dt.hour,
+				dt.minute,
+				dt.second,
+				item.added_at % 1000,
+			)
+		}
+		write_detail_row(b, "Added", added, false)
+
+		wr(b, "</ul></section>")
 	}
 
-	wr(b, "</button>")
+	wr(
+		b,
+		"</div><div class=\"dup-group-actions\"><button type=\"reset\" class=\"dup-btn\">Reset</button><button type=\"submit\" class=\"dup-btn dup-btn-primary dup-group-apply\" disabled>Apply</button></div></form>",
+	)
 }
 
 @(private = "file")
-write_duplicates_script :: proc(b: ^strings.Builder, is_sample: bool) {
-	wr(b, "<script>(function(){\n")
-	wr(b, "var applyBtn=document.getElementById('dup-apply-all');\n")
-	wr(b, "var resetBtn=document.getElementById('dup-reset-all');\n")
-	wr(b, "function sections(){return Array.from(document.querySelectorAll('.dup-section'));}\n")
-	wr(b, "function updateSection(sec){\n")
-	wr(b, "  var rows=Array.from(sec.querySelectorAll('.dup-row:not(.is-same)'));\n")
-	wr(b, "  var resolved=0;\n")
-	wr(b, "  rows.forEach(function(r){\n")
-	wr(b, "    var pick=r.getAttribute('data-pick')||'';\n")
-	wr(b, "    if(pick)resolved++;\n")
-	wr(b, "    r.querySelectorAll('.dup-cell').forEach(function(c){\n")
-	wr(b, "      var s=c.getAttribute('data-side');\n")
-	wr(b, "      c.setAttribute('aria-pressed',pick===s?'true':'false');\n")
-	wr(b, "      c.classList.toggle('is-out',!!(pick&&pick!==s));\n")
-	wr(b, "    });\n")
-	wr(b, "  });\n")
-	wr(b, "  sec.setAttribute('data-resolved',resolved===rows.length?'1':'0');\n")
-	wr(b, "}\n")
-	wr(b, "function updateGlobal(){\n")
-	wr(b, "  var secs=sections();\n")
+write_duplicates_script :: proc(b: ^strings.Builder) {
 	wr(
 		b,
-		"  var all=secs.length>0&&secs.every(function(s){return s.getAttribute('data-resolved')==='1';});\n",
+		"<script>(function(){\n" +
+		"var groupsEl=document.getElementById('dup-groups');\n" +
+		"var emptyEl=document.getElementById('dup-empty');\n" +
+		"var applyAll=document.getElementById('dup-apply-all');\n" +
+		"var resetBtn=document.getElementById('dup-reset');\n" +
+		"var busy=false;\n" +
+		"function groups(){return Array.from(groupsEl.querySelectorAll('.dup-group'));}\n" +
+		"function survivor(g){var r=g.querySelector('input[name=\"into\"]:checked');return r?r.value:'';}\n" +
+		"function plan(g){\n" +
+		"  var into=survivor(g);\n" +
+		"  var from=Array.from(g.querySelectorAll('input[name=\"into\"]')).map(function(r){return r.value;}).filter(function(v){return v!==into;});\n" +
+		"  return {gid:g.dataset.gid,into:into,from:from};\n" +
+		"}\n" +
+		"function setError(g,msg){var e=g.querySelector('.dup-group-error');e.textContent=msg;e.hidden=!msg;}\n" +
+		"function fail(g,msg){setError(g,msg);if(window.booruShowLocalToast)booruShowLocalToast(msg,'error');}\n" +
+		"function post(url,params){\n" +
+		"  return fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params});\n" +
+		"}\n" +
+		"function sync(){\n" +
+		"  var gs=groups(),ready=0;\n" +
+		"  gs.forEach(function(g){\n" +
+		"    var p=plan(g);\n" +
+		"    if(p.into)ready++;\n" +
+		"    g.querySelector('.dup-group-apply').disabled=busy||!p.into;\n" +
+		"  });\n" +
+		"  applyAll.disabled=busy||ready===0;\n" +
+		"  applyAll.textContent='Apply all ('+ready+')';\n" +
+		"  resetBtn.disabled=busy||gs.length===0;\n" +
+		"  emptyEl.hidden=gs.length>0;\n" +
+		"  groupsEl.toggleAttribute('inert',busy);\n" +
+		"}\n" +
+		"groupsEl.addEventListener('change',function(e){\n" +
+		"  var g=e.target.closest('.dup-group');if(g)setError(g,'');sync();\n" +
+		"});\n" +
+		"groupsEl.addEventListener('reset',function(e){\n" +
+		"  var g=e.target.closest('.dup-group');if(g)setError(g,'');queueMicrotask(sync);\n" +
+		"});\n" +
+		"resetBtn.addEventListener('click',function(){\n" +
+		"  groups().forEach(function(g){\n" +
+		"    g.querySelectorAll('input[name=\"into\"]').forEach(function(r){r.checked=false;});\n" +
+		"    setError(g,'');\n" +
+		"  });\n" +
+		"  sync();\n" +
+		"});\n" +
+		"groupsEl.addEventListener('submit',async function(e){\n" +
+		"  e.preventDefault();\n" +
+		"  var g=e.target,p=plan(g);\n" +
+		"  if(busy||!p.into)return;\n" +
+		"  busy=true;sync();\n" +
+		"  try{\n" +
+		"    var res=await post('/merge',new URLSearchParams({into:p.into,from:p.from.join(',')}));\n" +
+		"    if(res.ok)g.remove();else fail(g,(await res.text())||res.statusText);\n" +
+		"  }catch(err){fail(g,String(err));}\n" +
+		"  busy=false;sync();\n" +
+		"});\n" +
+		"applyAll.addEventListener('click',async function(){\n" +
+		"  var ready=groups().filter(survivor);\n" +
+		"  if(busy||!ready.length)return;\n" +
+		"  busy=true;sync();\n" +
+		"  for(var i=0;i<ready.length;i++){\n" +
+		"    var g=ready[i],p=plan(g);\n" +
+		"    try{\n" +
+		"      var res=await post('/merge',new URLSearchParams({into:p.into,from:p.from.join(',')}));\n" +
+		"      if(res.ok){g.remove();}else{fail(g,(await res.text())||res.statusText);break;}\n" +
+		"    }catch(err){fail(g,String(err));break;}\n" +
+		"  }\n" +
+		"  busy=false;sync();\n" +
+		"});\n" +
+		"sync();\n" +
+		"})();</script>",
 	)
-	wr(
-		b,
-		"  if(applyBtn){applyBtn.disabled=!all;if(applyBtn.textContent!=='\u2713 Applied')applyBtn.textContent='Apply all';}\n",
-	)
-	wr(b, "}\n")
-	wr(b, "document.addEventListener('click',function(e){\n")
-	wr(b, "  var cell=e.target.closest('.dup-cell');\n")
-	wr(b, "  if(cell&&!cell.disabled){\n")
-	wr(b, "    var row=cell.closest('.dup-row');\n")
-	wr(b, "    var side=cell.getAttribute('data-side');\n")
-	wr(b, "    row.setAttribute('data-pick',row.getAttribute('data-pick')===side?'':side);\n")
-	wr(b, "    updateSection(cell.closest('.dup-section'));\n")
-	wr(b, "    if(applyBtn)applyBtn.textContent='Apply all';\n")
-	wr(b, "    updateGlobal();return;\n")
-	wr(b, "  }\n")
-	wr(b, "  var ka=e.target.closest('.dup-keep-all');\n")
-	wr(b, "  if(ka){\n")
-	wr(b, "    var sec=ka.closest('.dup-section');\n")
-	wr(b, "    var side=ka.getAttribute('data-side');\n")
-	wr(
-		b,
-		"    sec.querySelectorAll('.dup-row:not(.is-same)').forEach(function(r){r.setAttribute('data-pick',side);});\n",
-	)
-	wr(
-		b,
-		"    updateSection(sec);if(applyBtn)applyBtn.textContent='Apply all';updateGlobal();return;\n",
-	)
-	wr(b, "  }\n")
-	wr(b, "  var st=e.target.closest('.dup-same-toggle');\n")
-	wr(b, "  if(st){\n")
-	wr(b, "    var sec=st.closest('.dup-section');\n")
-	wr(b, "    var open=st.textContent==='Hide';\n")
-	wr(
-		b,
-		"    sec.querySelectorAll('.dup-row.is-same').forEach(function(r){r.classList.toggle('is-hidden',open);});\n",
-	)
-	wr(b, "    st.textContent=open?'Show':'Hide';\n")
-	wr(b, "    var n=st.getAttribute('data-count'),noun=st.getAttribute('data-noun');\n")
-	wr(
-		b,
-		"    sec.querySelector('.dup-same-note').textContent=open?(n+' identical '+noun+' hidden \u00b7 '):('Showing '+n+' identical '+noun+' \u00b7 ');\n",
-	)
-	wr(b, "  }\n")
-	wr(b, "});\n")
-	wr(b, "document.addEventListener('mouseover',function(e){\n")
-	wr(b, "  var ka=e.target.closest('.dup-keep-all');if(!ka)return;\n")
-	wr(b, "  var side=ka.getAttribute('data-side');\n")
-	wr(
-		b,
-		"  ka.closest('.dup-section').querySelectorAll('.dup-row:not(.is-same) .dup-cell[data-side=\"'+side+'\"]').forEach(function(c){c.classList.add('is-hi');});\n",
-	)
-	wr(b, "});\n")
-	wr(b, "document.addEventListener('mouseout',function(e){\n")
-	wr(b, "  var ka=e.target.closest('.dup-keep-all');if(!ka)return;\n")
-	wr(
-		b,
-		"  ka.closest('.dup-section').querySelectorAll('.dup-cell.is-hi').forEach(function(c){c.classList.remove('is-hi');});\n",
-	)
-	wr(b, "});\n")
-	wr(b, "if(resetBtn)resetBtn.addEventListener('click',function(){\n")
-	wr(
-		b,
-		"  sections().forEach(function(s){s.querySelectorAll('.dup-row').forEach(function(r){r.removeAttribute('data-pick');});updateSection(s);});\n",
-	)
-	wr(b, "  if(applyBtn)applyBtn.textContent='Apply all';updateGlobal();\n")
-	wr(b, "});\n")
-	wr(b, "if(applyBtn)applyBtn.addEventListener('click',async function(){\n")
-	wr(b, "  if(applyBtn.disabled)return;\n")
-	wr(b, "  applyBtn.disabled=true;\n")
-	wr(b, "  for(var sec of sections()){\n")
-	wr(b, "    var aId=sec.getAttribute('data-a-id'),bId=sec.getAttribute('data-b-id');\n")
-	wr(b, "    var votesA=0,votesB=0;\n")
-	wr(b, "    sec.querySelectorAll('.dup-row:not(.is-same)').forEach(function(r){\n")
-	wr(b, "      if((r.getAttribute('data-pick')||'a')==='a')votesA++;else votesB++;\n")
-	wr(b, "    });\n")
-	wr(b, "    var keepId=votesB>votesA?bId:aId,dropId=keepId===aId?bId:aId;\n")
-	wr(b, "    var params=new URLSearchParams({into:keepId,from:dropId});\n")
-	if is_sample {
-		wr(b, "    params.set('sample','1');\n")
-	}
-	wr(
-		b,
-		"    var res=await fetch('/merge',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params});\n",
-	)
-	wr(b, "    if(!res.ok){applyBtn.disabled=false;return;}\n")
-	wr(b, "  }\n")
-	wr(b, "  applyBtn.textContent='\u2713 Applied';\n")
-	wr(b, "});\n")
-	wr(b, "sections().forEach(updateSection);updateGlobal();\n")
-	wr(b, "})();</script>\n")
-}
-
-@(private = "file")
-format_unix_ms_date :: proc(ms: i64, alloc := context.allocator) -> string {
-	if ms <= 0 {return ""}
-	t := time.unix(0, ms * 1_000_000)
-	y, m, d := time.date(t)
-	return fmt.aprintf("%04d-%02d-%02d", y, int(m), d, allocator = alloc)
-}
-
-@(private = "file")
-join_tags_sorted :: proc(tags: []string, alloc := context.allocator) -> string {
-	if len(tags) == 0 {return ""}
-	cp := slice.clone(tags, context.temp_allocator)
-	slice.sort(cp)
-	return strings.join(cp, ",", alloc)
 }

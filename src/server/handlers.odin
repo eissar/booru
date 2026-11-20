@@ -966,84 +966,10 @@ handle_sse_progress :: proc(res: ^http.Response) {
 	http.res_event_stream(progress_stream, nil, res)
 }
 
-// handle_duplicates renders the v1 pairwise duplicate comparison page synchronously.
+// handle_duplicates renders the duplicate comparison and merge page synchronously.
 handle_duplicates :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 	if req.header.method != "GET" {
 		http.res_text("method not allowed", res, .MethodNotAllowed)
-		return
-	}
-	params := make(map[string]string, req.alloc)
-	parse_query_params(req.header.query, &params, req.alloc)
-	if DEV_ROUTES && params["sample"] == "1" {
-		sample := [3]template.Duplicate_Pair_View {
-			{
-				a = library.Image {
-					id       = 1042,
-					name     = "blue-hills.png",
-					added_at = 1773446400000, // 2026-03-14
-					comment  = "rough pass, line weight too heavy",
-					tags     = {"sketch", "character", "monochrome"},
-					width    = 48,
-					height   = 36,
-				},
-				b = library.Image {
-					id       = 2177,
-					name     = "blue_hills_final.jpg",
-					added_at = 1773446400000, // 2026-03-14
-					comment  = "cleaned up lines for the final",
-					tags     = {"sketch", "character", "landscape"},
-					width    = 27,
-					height   = 36,
-				},
-				dist = 4,
-			},
-			{
-				a = library.Image {
-					id       = 1310,
-					name     = "hero-portrait.png",
-					added_at = 1775088000000, // 2026-04-02
-					comment  = "colors still flat",
-					tags     = {"character", "monochrome"},
-					width    = 36,
-					height   = 36,
-				},
-				b = library.Image {
-					id       = 1388,
-					name     = "hero-portrait-v2.png",
-					added_at = 1775692800000, // 2026-04-09
-					comment  = "added shading pass",
-					tags     = {"character", "color"},
-					width    = 36,
-					height   = 36,
-				},
-				dist = 7,
-			},
-			{
-				a = library.Image {
-					id       = 1544,
-					name     = "street-study.jpg",
-					added_at = 1779321600000, // 2026-05-21
-					comment  = "quick gesture study",
-					tags     = {"sketch"},
-					width    = 48,
-					height   = 36,
-				},
-				b = library.Image {
-					id       = 1545,
-					name     = "street-study-copy.jpg",
-					added_at = 1779321600000, // 2026-05-21
-					comment  = "quick gesture study",
-					tags     = {"sketch"},
-					width    = 48,
-					height   = 36,
-				},
-				dist = 0,
-			},
-		}
-		http.res_html(
-			template.render_duplicates_page(sample[:], is_sample = true, allocator = req.alloc),
-			res,
-		)
 		return
 	}
 
@@ -1052,22 +978,109 @@ handle_duplicates :: proc(s: library.State, res: ^http.Response, req: http.Req) 
 		http.res_error("duplicate scan failed", res, .InternalServerError)
 		return
 	}
-	views := make([dynamic]template.Duplicate_Pair_View, 0, len(pairs), req.alloc)
+
+	// Build connected components via union-find so overlapping pairs merge into one group.
+	id_to_idx := make(map[int]int, len(pairs) * 2, req.alloc)
+	parent := make([dynamic]int, 0, len(pairs) * 2, req.alloc)
+	ids := make([dynamic]int, 0, len(pairs) * 2, req.alloc)
+	comp_dist := make([dynamic]int, 0, len(pairs) * 2, req.alloc)
+
+	find_root :: proc(parent: []int, x: int) -> int {
+		cur := x
+		for parent[cur] != cur {
+			parent[cur] = parent[parent[cur]]
+			cur = parent[cur]
+		}
+		return cur
+	}
+
+	intern_id :: proc(
+		id_to_idx: ^map[int]int,
+		parent, ids, comp_dist: ^[dynamic]int,
+		id: int,
+	) -> int {
+		if idx, exists := id_to_idx[id]; exists {
+			return idx
+		}
+		idx := len(ids)
+		id_to_idx[id] = idx
+		append(parent, idx)
+		append(ids, id)
+		append(comp_dist, 0)
+		return idx
+	}
+
 	for p in pairs {
-		a, a_ok, a_rc := store.read_image_by_id(s.data_store, p.id_a, req.alloc)
-		b, b_ok, b_rc := store.read_image_by_id(s.data_store, p.id_b, req.alloc)
-		if a_rc != sqlite.OK || b_rc != sqlite.OK {
+		ia := intern_id(&id_to_idx, &parent, &ids, &comp_dist, p.id_a)
+		ib := intern_id(&id_to_idx, &parent, &ids, &comp_dist, p.id_b)
+		ra := find_root(parent[:], ia)
+		rb := find_root(parent[:], ib)
+		if ra != rb {
+			parent[rb] = ra
+			if comp_dist[rb] > comp_dist[ra] {
+				comp_dist[ra] = comp_dist[rb]
+			}
+		}
+		if p.dist > comp_dist[ra] {
+			comp_dist[ra] = p.dist
+		}
+	}
+
+	comp_items := make(map[int][dynamic]library.Image, len(pairs), req.alloc)
+	for id, idx in ids {
+		img, img_ok, rc := store.read_image_by_id(s.data_store, id, req.alloc)
+		if rc != sqlite.OK {
 			http.res_error("", res, .InternalServerError)
 			return
 		}
-		if a_ok && b_ok {
-			append(&views, template.Duplicate_Pair_View{a = a, b = b, dist = p.dist})
+		if !img_ok {continue}
+		root := find_root(parent[:], idx)
+		if root not_in comp_items {
+			comp_items[root] = make([dynamic]library.Image, 0, 4, req.alloc)
 		}
+		append(&comp_items[root], img)
 	}
-	http.res_html(
-		template.render_duplicates_page(views[:], is_sample = false, allocator = req.alloc),
-		res,
+
+	groups := make([dynamic]template.Duplicate_Group_View, 0, len(comp_items), req.alloc)
+	for root, items in comp_items {
+		if len(items) < 2 {continue}
+		slice.sort_by(items[:], proc(a, b: library.Image) -> bool {return a.id < b.id})
+
+		first := items[0]
+		first_tags := slice.clone(first.tags, context.temp_allocator)
+		slice.sort(first_tags)
+		first_tags_joined := strings.join(first_tags, ",", context.temp_allocator)
+
+		identical := true
+		for item in items[1:] {
+			if item.name != first.name || item.comment != first.comment {
+				identical = false
+				break
+			}
+			t := slice.clone(item.tags, context.temp_allocator)
+			slice.sort(t)
+			if strings.join(t, ",", context.temp_allocator) != first_tags_joined {
+				identical = false
+				break
+			}
+		}
+
+		append(
+			&groups,
+			template.Duplicate_Group_View {
+				gid = first.id,
+				items = items[:],
+				max_dist = comp_dist[root],
+				identical = identical,
+			},
+		)
+	}
+	slice.sort_by(
+		groups[:],
+		proc(a, b: template.Duplicate_Group_View) -> bool {return a.gid < b.gid},
 	)
+
+	http.res_html(template.render_duplicates_page(groups[:], allocator = req.alloc), res)
 }
 
 // handle_merge serves POST /merge: merges each comma-separated `from` id into

@@ -160,7 +160,8 @@ Templates are Odin strings, so lint the rendered fixtures (`test/html-fixture-td
 - [ ] Exact duplicate detection by content hash (`oid`) on upload/import and across existing library items, with a way to surface/merge or skip duplicates.
 - [ ] Near-duplicate detection (e.g. perceptual hash such as dHash/pHash computed during thumbnailing/ingest) to find visually similar images at different resolutions or re-encodes, plus a UI/review flow to compare and resolve pairs.
 - [x] Remove the now-unused async `POST /check-duplicates` route, `handle_check_duplicates` and its `duplicates.scan` jobs-panel progress; Settings links to the synchronous `/duplicates` page (`src/server/handlers.odin`, `src/server/server.odin`).
-- [ ] Fix `/duplicates` Apply all (`src/template/duplicates_page.odin`, `handle_duplicates_resolve`): choose the surviving id explicitly instead of by field-pick votes; drop or make read-only the no-op `date` row (`added_at` cannot decrease); don't silently delete pairs with no differing fields; commit only ready pairs in one request/replay, remove committed pairs from the page and stop at the first failure.
+- [ ] Fix `/duplicates` Apply all (`src/template/duplicates_page.odin`, `POST /merge`): commit ready groups in one request/replay instead of sequential `/merge` requests, remove committed groups from the page, and stop at the first failure.
+- [ ] Restructure `/duplicates` to swap inside the persistent app shell (`.main-content` / `#gallery-main` via `hx-get="/duplicates"` + `hx-push-url="true"`, keeping `#toasts-log` and `#jobs-panel` SSE alive across navigation, and serving either the fragment on `HX-Request` or the full shell on direct load/refresh).
 
 # JXL Support
 
