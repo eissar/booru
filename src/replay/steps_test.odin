@@ -65,11 +65,17 @@ patch_fold_all_triples :: proc(t: ^testing.T) {
 					for i in order {state = patch_fold(state, triple[i], alloc)}
 					// Neutral property: folding the zero delta changes nothing.
 					zeroed := patch_fold(state, {tag = -1}, alloc)
+					tags_equal: bool
+					if cap(state.tags) == 0 {
+						tags_equal = (cast(^[2]u64)&zeroed.tags)^ == (cast(^[2]u64)&state.tags)^
+					} else {
+						tags_equal = slice.equal(zeroed.tags[:], state.tags[:])
+					}
 					ok :=
 						zeroed.mtime == state.mtime &&
 						zeroed.added_at == state.added_at &&
 						slice.equal(zeroed.name[:], state.name[:]) &&
-						(state.tags.allocator.procedure == nil ? (cast(^[2]u64)&zeroed.tags)^ == (cast(^[2]u64)&state.tags)^ : slice.equal(zeroed.tags[:], state.tags[:]))
+						tags_equal
 					if !ok {testing.fail_now(t, fmt.tprint("zero delta changes fold:", triple))}
 					if n == 0 {
 						// property-op.fly values: tmax, mem(txor), set(nxor).
@@ -77,8 +83,12 @@ patch_fold_all_triples :: proc(t: ^testing.T) {
 							state.mtime == max(a.mtime, b.mtime, c.mtime) &&
 							state.added_at == max(a.added_at, b.added_at, c.added_at)
 						for tag in 0 ..< 4 {
-							word :=
-								state.tags.allocator.procedure == nil ? (^u64)(&state.tags)^ : (len(state.tags) > 0 ? state.tags[0] : 0)
+							word: u64
+							if cap(state.tags) == 0 {
+								word = (^u64)(&state.tags)^
+							} else if len(state.tags) > 0 {
+								word = state.tags[0]
+							}
 							mem := (word & (u64(1) << u64(tag))) != 0
 							ok &&= mem == ((a.tag == tag) != (b.tag == tag) != (c.tag == tag))
 						}
@@ -91,11 +101,17 @@ patch_fold_all_triples :: proc(t: ^testing.T) {
 						want = state
 						continue
 					}
+					want_tags_equal: bool
+					if cap(state.tags) == 0 {
+						want_tags_equal = (cast(^[2]u64)&state.tags)^ == (cast(^[2]u64)&want.tags)^
+					} else {
+						want_tags_equal = slice.equal(state.tags[:], want.tags[:])
+					}
 					ok =
 						state.mtime == want.mtime &&
 						state.added_at == want.added_at &&
 						slice.equal(state.name[:], want.name[:]) &&
-						(state.tags.allocator.procedure == nil ? (cast(^[2]u64)&state.tags)^ == (cast(^[2]u64)&want.tags)^ : slice.equal(state.tags[:], want.tags[:]))
+						want_tags_equal
 					if !ok {testing.fail_now(t, fmt.tprint("order changes fold:", triple, order))}
 				}
 			}}}

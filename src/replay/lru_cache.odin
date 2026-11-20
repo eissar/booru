@@ -70,7 +70,7 @@ swap_write :: proc(s: ^Swap_Store, id: int, state: ^Patch_State) {
 	   id > s.max_id {fmt.panicf("swap: id %d exceeds preallocated max %d", id, s.max_id)}
 	word_count := 0
 	words_ptr: [^]u64
-	if state.tags.allocator.procedure == nil {
+	if cap(state.tags) == 0 {
 		tags_inline := cast(^[2]u64)&state.tags
 		words_ptr = ([^]u64)(tags_inline)
 		if tags_inline[1] != 0 {

@@ -200,25 +200,25 @@ replay :: proc(
 			if !full_replay && (len(parsed_patch_name) != 0 || len(parsed_patch_comment) != 0) {
 				ok: bool
 				state, ok = lru.get(&patch_states, item.id)
-				if !ok && seen_ids[item.id] != .Absent {state = swap_read(&swap, item.id, alloc)}
+				if !ok {
+					if item.id <= swap.max_id && swap.index[item.id] != 0 {
+						state = swap_read(&swap, item.id, alloc)
+					} else {
+						curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
+						if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
+						if len(curr.name) != 0 {
+							state.name = make([dynamic]u8, len(curr.name), alloc)
+							copy(state.name[:], transmute([]u8)curr.name)
+						}
+						state.comment = curr.comment
+					}
+				}
 			}
 			if len(parsed_patch_name) != 0 {
-				if !full_replay && state.name == nil {
-					// In incremental replay without the add event, read the current name as seed.
-					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
-					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
-					state.name = make([dynamic]u8, len(curr.name), alloc)
-					copy(state.name[:], transmute([]u8)curr.name)
-				}
 				state = patch_fold(state, {name = parsed_patch_name[:], tag = -1}, alloc)
 				state_dirty = true
 			}
 			if len(parsed_patch_comment) != 0 {
-				if !full_replay && len(state.comment) == 0 {
-					curr, found, read_rc := store.read_image_by_id(db, item.id, alloc)
-					if read_rc != sqlite.OK || !found {return .DATABASE_ERR}
-					state.comment = curr.comment
-				}
 				state.comment = pijul.apply_patch(state.comment, parsed_patch_comment, alloc)
 				state_dirty = true
 			}
@@ -287,15 +287,19 @@ replay :: proc(
 			err := store.force_write_item(
 				&tx,
 				id,
-				name = len(name) > 0 ? &name : nil,
-				comment = len(state.comment) > 0 ? &state.comment : nil,
+				name = &name,
+				comment = &state.comment,
 				mtime = state.mtime > 0 ? &state.mtime : nil,
 				added_at = state.added_at > 0 ? &state.added_at : nil,
 				prepared = force_write,
 			)
 			if err != .None && err != .NotFound {return .DATABASE_ERR}
-			words :=
-				state.tags.allocator.procedure == nil ? ([^]u64)(&state.tags)[:2] : state.tags[:]
+			words: []u64
+			if cap(state.tags) == 0 {
+				words = ([^]u64)(&state.tags)[:2]
+			} else {
+				words = state.tags[:]
+			}
 			for word, w_idx in words {
 				w := word
 				for w != 0 {
@@ -669,12 +673,18 @@ patch_fold :: proc(state: Patch_State, p: Patch_Delta, alloc: mem.Allocator) -> 
 	state := state
 	if p.mtime != 0 {state.mtime = max(state.mtime, p.mtime)}
 	if p.added_at != 0 {state.added_at = max(state.added_at, p.added_at)}
-	if len(state.name) < len(p.name) {resize(&state.name, len(p.name))}
+	if len(state.name) < len(p.name) {
+		if cap(state.name) == 0 {
+			state.name = make([dynamic]u8, len(p.name), alloc)
+		} else {
+			resize(&state.name, len(p.name))
+		}
+	}
 	for b, idx in p.name {state.name[idx] ~= b}
 	if p.tag >= 0 {
 		word_idx := p.tag >> 6
 		bit_mask := u64(1) << u64(p.tag & 63)
-		if state.tags.allocator.procedure == nil {
+		if cap(state.tags) == 0 {
 			if word_idx == 0 {
 				(^u64)(&state.tags)^ ~= bit_mask
 				return state
