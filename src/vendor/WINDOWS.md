@@ -123,7 +123,7 @@ media package's two tests pass under Wine, but they do not establish complete
 codec ABI coverage. After rebuilding Tidy with the MSVC static CRT, validation with
 `timeout --kill-after=10s 120s bash test/tools/windows.sh` linked successfully
 and completed all 45 tests, exiting 1 (not a timeout). Three tests failed:
-`test.import_browse_delete_replay` (GET /gallery returned 0 instead of 200),
+`test.import_browse_delete_merge_replay` (GET /gallery returned 0 instead of 200),
 `thumbnail.generate_missing_fixture_thumbnails` (missing-source reporting), and
 `thumbnail.stream_webp_socket_batches` (external command status). See
 `tidy/README.md` for the Tidy rebuild commands. Successful linking is not a

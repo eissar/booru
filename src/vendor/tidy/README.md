@@ -81,7 +81,7 @@ The previous GNU Windows build used an incompatible CRT.
 
 Validation: `timeout --kill-after=10s 120s bash test/tools/windows.sh`
 linked successfully and ran all 45 tests under Wine, exiting 1 with three
-failures (not a timeout): `test.import_browse_delete_replay` (GET /gallery
+failures (not a timeout): `test.import_browse_delete_merge_replay` (GET /gallery
 returned 0 instead of 200), `thumbnail.generate_missing_fixture_thumbnails`
 (missing-source reporting), and `thumbnail.stream_webp_socket_batches`
 (external command status). No test fixes were made.

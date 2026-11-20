@@ -300,3 +300,12 @@ Amdahl's Law (the serial fraction dominates): If even 15% of total time is seria
 - [ ] Consider starting `scan_thread` after socket bind (so bind failure doesn't kill it mid-run).
 - [ ] Jobs/progress UI: make groups dismissable, improve rendering of hierarchical phases (e.g. `total == nil` sub-phases / `0` noise), or render as a tree/DAG.
 - [ ] Consider Multi-Index Hashing (MIH) for O(N) all-pairs PDQ duplicate detection at 100k+ items.
+
+# Test & Replay Issues
+
+- [ ] **Multi-source `/merge` untested.** The lifecycle e2e test merges a single source, because only 2 items remain after its delete. Nothing covers `from=a,b` folding in order, skipping a source comment the target already contains, or the `DEV_ROUTES` `sample=1` shortcut (the unit test that covered these was removed when the test moved to e2e).
+- [ ] **`/duplicates` untested.** It has no handler test and no HTML fixture, so the page's switch to `POST /merge` is not covered.
+- [ ] **Incremental replay cannot clear `name` or `comment`.** In `src/replay/replay.odin:289-290`, `force_write_item` gets `nil` for an empty name or comment, which means "unchanged". So `/update-metadata` with `name=` keeps the old name until a full replay.
+- [ ] **Incremental replay may skip the lifecycle check (unconfirmed).** It does not run `lifecycle_step`, so a tag patch on a deleted or unknown id may go straight to `toggle_tags` instead of `BadEvent`. Check against `delete_item` and the `item_tags` schema.
+- [ ] **`bench/import-tags` panics on empty tags.** `len(ev.tags_xor[0])` panics when an event has no tags.
+- [ ] **`swap_write` truncates lengths (`src/replay/lru_cache.odin`).** Name, comment, and word counts are written as `u16`, so lengths over 65535 truncate silently.

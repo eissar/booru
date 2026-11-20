@@ -25,7 +25,7 @@ server_get_mipmap_with_image_ids :: proc(t: ^testing.T) {
 	}{}
 	sock, err := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
 	if !testing.expect(t, err == nil, "listen on an ephemeral port") {return}
-	defer net.close(sock)
+	defer if sock != {} {net.close(sock)}
 	endpoint, endpoint_err := net.bound_endpoint(sock)
 	if !testing.expect(t, endpoint_err == nil, "read listening port") {return}
 

@@ -60,7 +60,7 @@ import_browse_delete_merge_replay :: proc(t: ^testing.T) {
 
 		sock, listen_err := net.listen_tcp(net.Endpoint{net.IP4_Address{127, 0, 0, 1}, 0})
 		if !testing.expect(t, listen_err == nil) {return}
-		defer net.close(sock)
+		defer if sock != {} {net.close(sock)}
 		endpoint, endpoint_err := net.bound_endpoint(sock)
 		if !testing.expect(t, endpoint_err == nil) {return}
 		data := struct {
@@ -68,13 +68,13 @@ import_browse_delete_merge_replay :: proc(t: ^testing.T) {
 			state: ^library.State,
 		}{sock, &state}
 		worker := thread.create_and_start_with_data(&data, proc(raw: rawptr) {
-			defer runtime.default_temp_allocator_destroy(auto_cast context.temp_allocator.data)
-			data := cast(^struct {
-				sock:  net.TCP_Socket,
-				state: ^library.State,
-			})raw
-			server.Serve(data.state, data.sock)
-		})
+				defer runtime.default_temp_allocator_destroy(auto_cast context.temp_allocator.data)
+				data := cast(^struct {
+					sock:  net.TCP_Socket,
+					state: ^library.State,
+				})raw
+				server.Serve(data.state, data.sock)
+			})
 		defer {
 			// Close before joining to wake accept on Windows.
 			_ = net.shutdown(sock, .Both)
