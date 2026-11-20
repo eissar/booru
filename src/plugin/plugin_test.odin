@@ -3,6 +3,7 @@ package plugin
 import "core:mem"
 import "core:testing"
 
+import "../jobs"
 import "../library"
 import "../vendor/sqlite"
 
@@ -88,7 +89,14 @@ test_run_commits_and_rolls_back :: proc(t: ^testing.T) {
 		data_store = db,
 	}
 
-	commit_proc :: proc(st: ^library.State, alloc: mem.Allocator) -> (processed: int, ok: bool) {
+	commit_proc :: proc(
+		st: ^library.State,
+		alloc: mem.Allocator,
+		flag: ^jobs.Abort_Flag = nil,
+	) -> (
+		processed: int,
+		ok: bool,
+	) {
 		rc := sqlite.exec(
 			st.data_store,
 			"INSERT INTO items (id, val) VALUES (1, 'committed')",
@@ -99,7 +107,14 @@ test_run_commits_and_rolls_back :: proc(t: ^testing.T) {
 		return 1, rc == sqlite.OK
 	}
 
-	rollback_proc :: proc(st: ^library.State, alloc: mem.Allocator) -> (processed: int, ok: bool) {
+	rollback_proc :: proc(
+		st: ^library.State,
+		alloc: mem.Allocator,
+		flag: ^jobs.Abort_Flag = nil,
+	) -> (
+		processed: int,
+		ok: bool,
+	) {
 		_ = sqlite.exec(
 			st.data_store,
 			"INSERT INTO items (id, val) VALUES (2, 'rolled_back')",

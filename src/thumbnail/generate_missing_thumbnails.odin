@@ -8,6 +8,7 @@ import "core:sys/linux"
 import win "core:sys/windows"
 
 import "../dirlist"
+import "../jobs"
 import "../library"
 import "../progress"
 import "../store"
@@ -20,6 +21,7 @@ generate_missing_thumbnails :: proc(
 	s: library.State,
 	ids: []int = nil,
 	all: bool = false,
+	flag: ^jobs.Abort_Flag = nil,
 ) -> (
 	generated, failed: int,
 ) {
@@ -89,6 +91,7 @@ generate_missing_thumbnails :: proc(
 	defer progress.finish("startup.thumbnails")
 
 	for img in images {
+		if jobs.is_aborted(flag) {break}
 		sizes, exists := missing[img.oid]
 		if !exists || sizes == {} {continue}
 		n, f := generate_image_thumbnails(s, img, sizes)

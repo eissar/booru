@@ -7,6 +7,7 @@ import "core:mem"
 import "core:os"
 
 import plugin ".."
+import "../../jobs"
 import "../../library"
 import "../../progress"
 import "../../vendor/libwebp"
@@ -54,7 +55,14 @@ compute_webp :: proc(
 
 // run hashes all unhashed live items using thumbnails/128/<oid>.webp inside the caller's transaction.
 // Missing or unsupported thumbnails are skipped.
-run :: proc(s: ^library.State, alloc: mem.Allocator) -> (processed: int, ok: bool) {
+run :: proc(
+	s: ^library.State,
+	alloc: mem.Allocator,
+	flag: ^jobs.Abort_Flag = nil,
+) -> (
+	processed: int,
+	ok: bool,
+) {
 	if s == nil || s.data_store == nil {return 0, false}
 	db := s.data_store
 
@@ -82,6 +90,7 @@ run :: proc(s: ^library.State, alloc: mem.Allocator) -> (processed: int, ok: boo
 	defer sqlite.finalize(upd)
 
 	for {
+		if jobs.is_aborted(flag) {break}
 		step_rc := sqlite.step(sel)
 		if step_rc == sqlite.DONE {break}
 		if step_rc != sqlite.ROW {return processed, false}

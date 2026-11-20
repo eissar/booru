@@ -8,6 +8,7 @@ import "core:mem"
 import "core:strings"
 import "core:time"
 
+import "../jobs"
 import "../library"
 import "../vendor/sqlite"
 
@@ -22,7 +23,14 @@ ColumnSpec :: struct {
 NativePlugin :: struct {
 	name:    string,
 	columns: []ColumnSpec,
-	run:     proc(s: ^library.State, alloc: mem.Allocator) -> (processed: int, ok: bool),
+	run:     proc(
+		s: ^library.State,
+		alloc: mem.Allocator,
+		flag: ^jobs.Abort_Flag = nil,
+	) -> (
+		processed: int,
+		ok: bool,
+	),
 }
 
 // register ensures declared plugin columns exist on items.
@@ -77,15 +85,22 @@ register :: proc(s: ^library.State, plugins: []NativePlugin) -> bool {
 }
 
 // run executes each plugin's batch runner inside a caller-owned transaction.
-run :: proc(s: ^library.State, plugins: []NativePlugin, alloc: mem.Allocator) -> bool {
+run :: proc(
+	s: ^library.State,
+	plugins: []NativePlugin,
+	alloc: mem.Allocator,
+	flag: ^jobs.Abort_Flag = nil,
+) -> bool {
 	if s == nil || s.data_store == nil {return false}
 	all_ok := true
 	for p in plugins {
+		if jobs.is_aborted(flag) {break}
 		if p.run == nil {continue}
 		Payload :: struct {
 			p:         NativePlugin,
 			s:         ^library.State,
 			alloc:     mem.Allocator,
+			flag:      ^jobs.Abort_Flag,
 			processed: int,
 			ok:        bool,
 		}
@@ -93,13 +108,14 @@ run :: proc(s: ^library.State, plugins: []NativePlugin, alloc: mem.Allocator) ->
 			p     = p,
 			s     = s,
 			alloc = alloc,
+			flag  = flag,
 		}
 		p_start := time.now()
 		rc := sqlite.with_transaction(
 			s.data_store,
 			&payload,
 			proc(_: ^sqlite.Tx, ctx: ^Payload) -> c.int {
-				ctx.processed, ctx.ok = ctx.p.run(ctx.s, ctx.alloc)
+				ctx.processed, ctx.ok = ctx.p.run(ctx.s, ctx.alloc, ctx.flag)
 				return sqlite.OK if ctx.ok else sqlite.ERROR
 			},
 		)
