@@ -5,6 +5,7 @@ import "core:crypto/sha2"
 import "core:encoding/hex"
 import "core:fmt"
 import "core:io"
+import "core:log"
 import "core:net"
 import "core:os"
 import "core:slice"
@@ -240,7 +241,7 @@ handle_static :: proc(res: ^http.Response, req: http.Req) {
 			return
 		}
 
-		fmt.printfln("error at handle_static: %v", err)
+		log.debugf("error at handle_static: %v", err)
 
 		http.res_html("", res, .InternalServerError)
 		return

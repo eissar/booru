@@ -3,6 +3,7 @@ package plugin
 import "base:runtime"
 import "core:c"
 import "core:fmt"
+import "core:log"
 import "core:mem"
 import "core:strings"
 import "core:time"
@@ -39,7 +40,7 @@ register :: proc(s: ^library.State, plugins: []NativePlugin) -> bool {
 				   nil,
 			   ) !=
 			   sqlite.OK {
-				fmt.eprintfln("plugin %s: failed to check column %s", p.name, col.name)
+				log.debugf("plugin %s: failed to check column %s", p.name, col.name)
 				return false
 			}
 			col_cstr := strings.clone_to_cstring(col.name, context.temp_allocator)
@@ -47,7 +48,7 @@ register :: proc(s: ^library.State, plugins: []NativePlugin) -> bool {
 			has_col := bind_rc == sqlite.OK && sqlite.step(check_stmt) == sqlite.ROW
 			sqlite.finalize(check_stmt)
 			if bind_rc != sqlite.OK {
-				fmt.eprintfln("plugin %s: failed to bind column %s", p.name, col.name)
+				log.debugf("plugin %s: failed to bind column %s", p.name, col.name)
 				return false
 			}
 			if has_col {continue}
@@ -61,13 +62,13 @@ register :: proc(s: ^library.State, plugins: []NativePlugin) -> bool {
 			if sqlite.prepare_v2(s.data_store, alter_sql, -1, &alter_stmt, &tail) != sqlite.OK ||
 			   (tail != nil && len(tail) > 0) {
 				if alter_stmt != nil {sqlite.finalize(alter_stmt)}
-				fmt.eprintfln("plugin %s: failed to register column %s", p.name, col.name)
+				log.debugf("plugin %s: failed to register column %s", p.name, col.name)
 				return false
 			}
 			step_rc := sqlite.step(alter_stmt)
 			sqlite.finalize(alter_stmt)
 			if step_rc != sqlite.DONE {
-				fmt.eprintfln("plugin %s: failed to register column %s", p.name, col.name)
+				log.debugf("plugin %s: failed to register column %s", p.name, col.name)
 				return false
 			}
 		}
@@ -103,10 +104,10 @@ run :: proc(s: ^library.State, plugins: []NativePlugin, alloc: mem.Allocator) ->
 			},
 		)
 		if rc != sqlite.OK || !payload.ok {
-			fmt.eprintfln("plugin %s: run failed (rc=%d)", p.name, rc)
+			log.debugf("plugin %s: run failed (rc=%d)", p.name, rc)
 			all_ok = false
 		} else {
-			fmt.eprintfln(
+			log.debugf(
 				"plugin %s: processed=%d in %.2f ms",
 				p.name,
 				payload.processed,
