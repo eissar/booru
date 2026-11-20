@@ -113,6 +113,9 @@ package event_log
 */
 
 import "core:encoding/json"
+import "core:fmt"
+
+MAX_TOKENS :: 2048
 
 Token :: struct {
 	kind:        json.Token_Kind,
@@ -129,7 +132,7 @@ Field :: struct {
 }
 Record :: struct {
 	fields:      [dynamic]Field,
-	values:      [MAX_RECORD]Token,
+	values:      [MAX_TOKENS]Token,
 	value_count: int,
 }
 
@@ -263,6 +266,9 @@ append_scalar :: proc(r: ^Record, token: Token) {
 	case:
 		panic("Cannot parse event: expected a scalar value; nesting is forbidden")
 	}
+	if r.value_count >= len(r.values) {
+		fmt.panicf("Cannot parse event: record exceeds %d scalar values", len(r.values))
+	}
 	r.values[r.value_count] = token
 	r.value_count += 1
 }
@@ -271,7 +277,7 @@ append_scalar :: proc(r: ^Record, token: Token) {
 // Arrays may contain scalars only. No recursion or allocator calls.
 parse_flat :: proc(line: string, r: ^Record) {
 	if len(line) >=
-	   MAX_RECORD {panic("Cannot parse event: record must contain fewer than 2048 bytes")}
+	   MAX_RECORD {fmt.panicf("Cannot parse event: record must contain fewer than %d bytes", MAX_RECORD)}
 	clear(&r.fields)
 	r.value_count = 0
 	t := Scanner {

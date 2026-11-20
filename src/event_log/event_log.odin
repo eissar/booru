@@ -18,7 +18,7 @@ import "../vendor/sqlite"
 // when you do so, we will
 // need to enforce this
 // at a database level as well.
-MAX_RECORD :: 2048
+MAX_RECORD :: 32 * 1024 // keep append_remediation's buffer on the stack (and <= u16 max for swap_write)
 
 // Events without a version field are version 0. Replay refuses newer versions.
 MAX_SUPPORTED_EVENT_VERSION :: 0

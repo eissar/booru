@@ -104,7 +104,7 @@ encoded_event_size_and_field :: proc(t: ^testing.T) {
 
 	bytes.buffer_reset(&buf)
 	// Raw UTF-8 fits, but ASCII Unicode escapes exceed the record limit.
-	name := strings.repeat("é", 400)
+	name := strings.repeat("é", MAX_RECORD / 4)
 	defer delete(name)
 	e := Event {
 		name = name,
@@ -149,7 +149,7 @@ invalid_batch_writes_nothing :: proc(t: ^testing.T) {
 	if !testing.expect(t, read_err == nil) {return}
 	defer delete(before)
 	offset := cursor.offset
-	oversized := strings.repeat("😀", 200)
+	oversized := strings.repeat("😀", MAX_RECORD / 8)
 	defer delete(oversized)
 	invalid_events := []Event{{tags = {"a", "a"}}, {tags = {"Upper"}}, {name = oversized}}
 	for invalid in invalid_events {

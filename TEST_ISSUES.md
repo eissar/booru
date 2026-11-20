@@ -5,7 +5,6 @@ Open issues found while adding `/merge` (5c900ed) and moving e2e HTTP to libcurl
 ## Harness
 
 - [ ] **Listener double close.** In `test/library_lifecycle.odin` and `test/mipmap.odin`, the shutdown `defer` closes `sock` and sets `sock = {}`. The earlier `defer net.close(sock)` then calls `close(0)`, which can close another parallel test's file descriptor. Fix: `defer if sock != 0 {net.close(sock)}`. Also tracked in `TODO.md`.
-- [ ] **Windows not rerun.** The e2e tests now link `vendor:curl`, using the bundled static libs on Windows. `test/tools/windows.sh` has not been run since.
 - [ ] **Weaker unix-socket check.** `unix_socket_serves_request` used to check the raw `HTTP/1.1 200` status line. Now it checks only the status code from `test_http`.
 
 ## Coverage
