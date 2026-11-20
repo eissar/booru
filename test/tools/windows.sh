@@ -81,9 +81,14 @@ if [[ ! -s "$curl_dir/curl.exe" ]]; then
     mv "$tmp/$release/bin/curl.exe" "$curl_dir/curl.exe"
   )
 fi
-# Make the unchanged test command "curl" resolve to curl.exe under Wine.
-curl_windows="Z:${curl_dir//\//\\}"
-export WINEPATH="$curl_windows${WINEPATH:+;$WINEPATH}"
+# Make the unchanged test command "curl" and runtime DLLs resolve under Wine.
+lua_dir="$(odin root)/vendor/lua/5.4/windows"
+sqlite_dir="$PWD/src/vendor/sqlite/windows-amd64"
+ffmpeg_dir="$PWD/src/vendor/ffmpeg/windows-amd64"
+for dir in "$curl_dir" "$lua_dir" "$sqlite_dir" "$ffmpeg_dir"; do
+  WINEPATH="Z:${dir//\//\\}${WINEPATH:+;$WINEPATH}"
+done
+export WINEPATH
 
 # Only point at the final library directories, never the versioned parents.
 # Their case-alias file symlinks are safe; the directory cycles are excluded.
@@ -109,9 +114,6 @@ odin build "${WIN_TEST_PKG:-test}" \
   -build-mode:test -all-packages \
   -extra-linker-flags:"$link_flags" \
   -out:bin/win/tests.exe "$@"
-
-# SQLite uses a DLL; WebP and dav1d are linked statically.
-cp src/vendor/sqlite/windows-amd64/sqlite3.dll bin/win/
 
 # A home-directory prefix also avoids Wine's refusal to initialize a prefix
 # inside a repository owned by another user. Initialization happens once.
