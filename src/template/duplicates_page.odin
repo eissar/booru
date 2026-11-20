@@ -364,24 +364,18 @@ write_duplicates_script :: proc(b: ^strings.Builder, is_sample: bool) {
 	wr(b, "  applyBtn.disabled=true;\n")
 	wr(b, "  for(var sec of sections()){\n")
 	wr(b, "    var aId=sec.getAttribute('data-a-id'),bId=sec.getAttribute('data-b-id');\n")
-	wr(b, "    var votesA=0,votesB=0,vals={};\n")
-	wr(b, "    sec.querySelectorAll('.dup-row').forEach(function(r){\n")
-	wr(b, "      var k=r.getAttribute('data-field'),p=r.getAttribute('data-pick')||'a';\n")
-	wr(b, "      if(!r.classList.contains('is-same')){if(p==='a')votesA++;else votesB++;}\n")
-	wr(b, "      var c=r.querySelector('.dup-cell[data-side=\"'+p+'\"]');\n")
-	wr(b, "      if(c)vals[k]=c.getAttribute('data-val')||'';\n")
+	wr(b, "    var votesA=0,votesB=0;\n")
+	wr(b, "    sec.querySelectorAll('.dup-row:not(.is-same)').forEach(function(r){\n")
+	wr(b, "      if((r.getAttribute('data-pick')||'a')==='a')votesA++;else votesB++;\n")
 	wr(b, "    });\n")
 	wr(b, "    var keepId=votesB>votesA?bId:aId,dropId=keepId===aId?bId:aId;\n")
-	wr(
-		b,
-		"    var params=new URLSearchParams({keep_id:keepId,drop_id:dropId,name:vals.name||'',comment:vals.comment||'',tags:vals.tags||''});\n",
-	)
+	wr(b, "    var params=new URLSearchParams({into:keepId,from:dropId});\n")
 	if is_sample {
 		wr(b, "    params.set('sample','1');\n")
 	}
 	wr(
 		b,
-		"    var res=await fetch('/duplicates/resolve',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params});\n",
+		"    var res=await fetch('/merge',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:params});\n",
 	)
 	wr(b, "    if(!res.ok){applyBtn.disabled=false;return;}\n")
 	wr(b, "  }\n")

@@ -1069,13 +1069,11 @@ handle_duplicates :: proc(s: library.State, res: ^http.Response, req: http.Req) 
 	)
 }
 
-// handle_duplicates_resolve serves POST /duplicates/resolve: patches keep_id and deletes drop_id.
-handle_duplicates_resolve :: proc(
-	s: ^library.State,
-	res: ^http.Response,
-	req: http.Req,
-	body: []u8,
-) {
+// handle_merge serves POST /merge: merges each comma-separated `from` id into
+// `into`, in order, and deletes the sources. Patch tags are toggles (txor), so
+// only tags `into` lacks are logged; `into`'s name wins, and a differing source
+// name and the source comment are appended to `into`'s comment.
+handle_merge :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
 	if req.header.method != "POST" {
 		http.res_text("method not allowed", res, .MethodNotAllowed)
 		return
@@ -1089,57 +1087,90 @@ handle_duplicates_resolve :: proc(
 		http.res_text("", res, .OK)
 		return
 	}
-	keep_id, keep_ok := parse_int_param(params["keep_id"])
-	drop_id, drop_ok := parse_int_param(params["drop_id"])
-	if !keep_ok || !drop_ok || keep_id < 1 || drop_id < 1 || keep_id == drop_id {
+	into_id, into_ok := parse_int_param(params["into"])
+	if !into_ok || into_id < 1 {
 		http.res_error("bad id", res, .BadRequest)
 		return
 	}
+	from_ids := make([dynamic]int, req.alloc)
+	for part in strings.split(params["from"], ",", req.alloc) {
+		id, ok := parse_int_param(strings.trim_space(part))
+		if !ok || id < 1 || id == into_id || slice.contains(from_ids[:], id) {
+			http.res_error("bad id", res, .BadRequest)
+			return
+		}
+		append(&from_ids, id)
+	}
 
-	keep_img, keep_found, k_rc := store.read_image_by_id(s.data_store, keep_id, req.alloc)
-	drop_img, drop_found, d_rc := store.read_image_by_id(s.data_store, drop_id, req.alloc)
-	if k_rc != sqlite.OK || d_rc != sqlite.OK {
+	into_img, into_found, rc := store.read_image_by_id(s.data_store, into_id, req.alloc)
+	if rc != sqlite.OK {
 		http.res_error("", res, .InternalServerError)
 		return
 	}
-	if !keep_found || !drop_found {
+	if !into_found {
 		http.res_error("no match for ID", res, .NotFound)
 		return
 	}
+	tags := slice.clone_to_dynamic(into_img.tags, req.alloc)
+	delta := make([dynamic]string, req.alloc)
+	comment := into_img.comment
+	froms := make([dynamic]library.Image, 0, len(from_ids), req.alloc)
+	for id in from_ids {
+		img, found, from_rc := store.read_image_by_id(s.data_store, id, req.alloc)
+		if from_rc != sqlite.OK {
+			http.res_error("", res, .InternalServerError)
+			return
+		}
+		if !found {
+			http.res_error("no match for ID", res, .NotFound)
+			return
+		}
+		append(&froms, img)
+		for tag in img.tags {
+			if !slice.contains(tags[:], tag) {
+				append(&tags, tag)
+				append(&delta, tag)
+			}
+		}
+		lines := [2]string{"", img.comment}
+		if img.name != into_img.name {
+			lines[0] = fmt.aprintf("merged #%d name=%q", id, img.name, allocator = req.alloc)
+		}
+		for line in lines {
+			if line == "" || strings.contains(comment, line) {continue}
+			sep := comment == "" || strings.has_suffix(comment, "\n") ? "" : "\n"
+			comment = strings.concatenate({comment, sep, line}, req.alloc)
+		}
+	}
 
-	events := make([dynamic]elog.Event, 0, 3, req.alloc)
-	tags := form_tags(params["tags"], req.alloc)
-	name := strings.trim_space(params["name"])
-	comment := strings.trim_space(params["comment"])
-	if name != keep_img.name || !slice.equal(tags, keep_img.tags) {
-		append(&events, elog.Event{id = keep_id, op = "patch", name = name, tags = tags})
+	events := make([dynamic]elog.Event, 0, len(froms) + 1, req.alloc)
+	patch_ev := elog.Event {
+		id   = into_id,
+		op   = "patch",
+		tags = delta[:],
 	}
-	if comment != keep_img.comment {
-		append(
-			&events,
-			elog.Event {
-				id = keep_id,
-				op = "patch",
-				comment = pijul.generate_patch(keep_img.comment, comment, req.alloc),
-			},
-		)
+	if comment != into_img.comment {
+		patch_ev.comment = pijul.generate_patch(into_img.comment, comment, req.alloc)
 	}
-	append(&events, elog.Event{id = drop_id, op = "delete"})
+	if len(delta) != 0 || patch_ev.comment != "" {append(&events, patch_ev)}
+	for img in froms {append(&events, elog.Event{id = img.id, op = "delete"})}
 
 	if append_err := elog.ev_append(s.event_log, events[:]); append_err != "" {
-		http.res_error("could not write duplicate resolution event", res, .InternalServerError)
+		http.res_error("could not write merge events", res, .InternalServerError)
 		return
 	}
 	replay.initiate_replay(s, full_replay = false)
-	pth := fmt.aprintf(
-		"%s/images/%d.%s",
-		s.library_path,
-		drop_id,
-		drop_img.ext,
-		allocator = req.alloc,
-	)
-	if remove_err := os.remove(pth); remove_err != nil {
-		fmt.eprintfln("ERROR duplicate resolve: remove original %s: %v", pth, remove_err)
+	for img in froms {
+		pth := fmt.aprintf(
+			"%s/images/%d.%s",
+			s.library_path,
+			img.id,
+			img.ext,
+			allocator = req.alloc,
+		)
+		if remove_err := os.remove(pth); remove_err != nil {
+			fmt.eprintfln("ERROR merge: remove original %s: %v", pth, remove_err)
+		}
 	}
 	http.res_text("", res, .OK)
 }

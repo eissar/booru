@@ -28,6 +28,7 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 
 - [ ] Test: `mtime` and `added_at` never decrease: a lower or zero value in a `patch` is ignored, `overwrite` carrying either is rejected, and the writer omits them when not greater than current.
 - [ ] Test: patches clearing `name`, `comment` and tags replay to empty values, in both full and incremental replay.
+- [ ] Fix the listener double close in `test/library_lifecycle.odin` and `test/mipmap.odin`: the shutdown `defer` closes `sock` and sets `sock = {}`, then the earlier `defer net.close(sock)` runs `close(0)`, which can close another parallel test's file descriptor (seen as flaky `import_browse_delete_merge_replay` event-log reads and jxl/video thumbnail writes). Guard it: `defer if sock != 0 {net.close(sock)}`.
 
 # Store Write Path TODO
 
@@ -64,6 +65,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
   - Track `high_id = max(high_id, item.id)` in `replay` / `Swap_Store` and bound those three loops to `high_id` instead of `swap.max_id`.
   - For sparse or small `!full_replay` runs, iterate `seen_ids` / dirty IDs (or `patch_states.entries` directly when nothing evicted to swap) instead of scanning `1..=high_id`.
   - Defer `init_swap` (`swap.bin` create / 64 MiB `ftruncate` / `mmap`) until the first LRU eviction so small replays don't allocate/unlink `swap.bin` at all.
+- [ ] Add `bench/replay_incremental/` (same style as `bench/replay`): seed a library with N items, then report the median time of single-event `ev_append` + `initiate_replay(full_replay = false)` edits on random ids; optionally add a batch over >10k distinct ids to exercise LRU eviction to swap. No existing bench covers incremental replay; `bench/replay` and `bench/replay_mixed` are full replay only.
 - [ ] Verify `search_images` query plans use index order for all four sorts (unfiltered and tag-filtered) and benchmark them.
 
 - [ ] Compare item and tag snapshots across the pre- and post-prepared-insert replay revisions using the same 100,000-event fixture; the benchmark currently checks repeatability within each run, not equality between revisions.
