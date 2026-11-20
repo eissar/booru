@@ -9,7 +9,6 @@ import "base:runtime"
 import "core:fmt"
 import "core:net"
 import "core:os"
-import "core:strings"
 import "core:testing"
 import "core:thread"
 
@@ -52,19 +51,5 @@ unix_socket_serves_request :: proc(t: ^testing.T) {
 	_, second_err := server.listen_unix(sock_path)
 	testing.expect(t, second_err != "", "live socket is refused")
 
-	_, body, _, curl_err := os.process_exec(
-		{
-			command = {
-				"curl",
-				"--silent",
-				"--include",
-				"--unix-socket",
-				sock_path,
-				"http://x/gallery",
-			},
-		},
-		context.temp_allocator,
-	)
-	if !testing.expect(t, curl_err == nil, "run curl") {return}
-	testing.expect(t, strings.has_prefix(string(body), "HTTP/1.1 200"), string(body))
+	_, _ = test_http(t, "GET", "http://x/gallery", "", 200, unix_socket = sock_path)
 }

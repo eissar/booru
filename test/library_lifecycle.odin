@@ -4,7 +4,6 @@ import "base:runtime"
 import "core:fmt"
 import "core:net"
 import "core:os"
-import "core:strconv"
 import "core:strings"
 import "core:testing"
 import "core:thread"
@@ -82,41 +81,39 @@ import_browse_delete_replay :: proc(t: ^testing.T) {
 			thread.destroy(worker)
 		}
 
-		gallery, ok := lifecycle_http(t, endpoint.port, "GET", "/gallery", "", 200)
+		base := fmt.tprintf("http://127.0.0.1:%d", endpoint.port)
+		gallery, ok := test_http(t, "GET", fmt.tprintf("%s/gallery", base), "", 200)
 		if !ok {return}
 		for id in ids {
 			testing.expect(t, strings.contains(gallery, fmt.tprintf("data-image-id=\"%d\"", id)))
 		}
-		_, image_ok := lifecycle_http(
+		_, image_ok := test_http(
 			t,
-			endpoint.port,
 			"GET",
-			fmt.tprintf("/image/%s", images[0].oid),
+			fmt.tprintf("%s/image/%s", base, images[0].oid),
 			"",
 			200,
 		)
 		if !image_ok {return}
 
-		_, deleted := lifecycle_http(
+		_, deleted := test_http(
 			t,
-			endpoint.port,
 			"POST",
-			"/delete",
+			fmt.tprintf("%s/delete", base),
 			fmt.tprintf("id=%d", ids[0]),
 			200,
 		)
 		if !deleted {return}
-		gallery, ok = lifecycle_http(t, endpoint.port, "GET", "/gallery", "", 200)
+		gallery, ok = test_http(t, "GET", fmt.tprintf("%s/gallery", base), "", 200)
 		if !ok {return}
 		testing.expect(t, !strings.contains(gallery, fmt.tprintf("data-image-id=\"%d\"", ids[0])))
 		for id in ids[1:] {
 			testing.expect(t, strings.contains(gallery, fmt.tprintf("data-image-id=\"%d\"", id)))
 		}
-		_, _ = lifecycle_http(
+		_, _ = test_http(
 			t,
-			endpoint.port,
 			"GET",
-			fmt.tprintf("/fragment/inspect/%d?order=0", ids[0]),
+			fmt.tprintf("%s/fragment/inspect/%d?order=0", base, ids[0]),
 			"",
 			404,
 		)
@@ -148,60 +145,4 @@ import_browse_delete_replay :: proc(t: ^testing.T) {
 		remaining[0].id == ids[1] && remaining[1].id == ids[2],
 		"deleted item stays deleted after replay",
 	)
-}
-
-// curl exercises the socket/parser/router as well as the handler. Keep failures
-// bounded and include the actual HTTP status in test output.
-lifecycle_http :: proc(
-	t: ^testing.T,
-	port: int,
-	method, path, body: string,
-	expected: int,
-) -> (
-	string,
-	bool,
-) {
-	command := make([dynamic]string, 0, 18, context.temp_allocator)
-	append(
-		&command,
-		"curl",
-		"--silent",
-		"--show-error",
-		"--noproxy",
-		"*",
-		"--connect-timeout",
-		"1",
-		"--max-time",
-		"5",
-		"--request",
-		method,
-		"--write-out",
-		"%{http_code}",
-		fmt.tprintf("http://127.0.0.1:%d%s", port, path),
-	)
-	// Avoid empty argv entries on Windows and = syntax on older curl.
-	if body != "" {append(&command, "--data-raw", body)}
-	state, output, errors, err := os.process_exec({command = command[:]}, context.temp_allocator)
-	if !testing.expectf(
-		t,
-		err == nil && state.exit_code == 0 && len(output) >= 3,
-		"%s %s: curl failed: %s (%v)",
-		method,
-		path,
-		errors,
-		err,
-	) {
-		return "", false
-	}
-	status, parsed := strconv.parse_int(string(output[len(output) - 3:]))
-	ok := testing.expectf(
-		t,
-		parsed && status == expected,
-		"%s %s: expected HTTP %d, got %d",
-		method,
-		path,
-		expected,
-		status,
-	)
-	return string(output[:len(output) - 3]), ok
 }

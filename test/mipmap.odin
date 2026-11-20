@@ -8,7 +8,6 @@ import "../src/vendor/sqlite"
 import "base:runtime"
 import "core:fmt"
 import "core:net"
-import "core:os"
 import "core:testing"
 import "core:thread"
 
@@ -49,37 +48,15 @@ server_get_mipmap_with_image_ids :: proc(t: ^testing.T) {
 		thread.destroy(worker)
 	}
 
-	state, body, errors, curl_err := os.process_exec(
-		{
-			command = {
-				"curl",
-				"--request",
-				"GET",
-				"--header",
-				"Content-Type: text/plain",
-				"--data-binary",
-				"3,1,2",
-				"--silent",
-				"--show-error",
-				"--fail",
-				"--noproxy",
-				"*",
-				"--connect-timeout",
-				"1",
-				"--max-time",
-				"5",
-				fmt.tprintf("http://127.0.0.1:%d/mipmap/64", endpoint.port),
-			},
-		},
-		context.allocator,
-	)
-	defer delete(body)
-	defer delete(errors)
-	if !testing.expect(
+	body, ok := test_http(
 		t,
-		curl_err == nil && state.exit_code == 0,
-		fmt.tprintf("curl mipmap: %s (%v)", errors, curl_err),
-	) {return}
+		"GET",
+		fmt.tprintf("http://127.0.0.1:%d/mipmap/64", endpoint.port),
+		"3,1,2",
+		200,
+		content_type = "text/plain",
+	)
+	if !ok {return}
 	testing.expect(t, len(body) >= 12, "mipmap returns a WebP header")
 	if len(body) >= 12 {
 		testing.expect(t, string(body[:4]) == "RIFF", "RIFF signature")
