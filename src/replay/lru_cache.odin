@@ -2,9 +2,9 @@ package replay
 
 import "core:fmt"
 import "core:mem"
+import "core:mem/virtual"
 import "core:os"
 import "core:strings"
-import "core:sys/posix"
 
 Swap_Store :: struct {
 	file:   ^os.File,
@@ -23,45 +23,44 @@ init_swap :: proc(
 	base := len(lib_path) > 0 ? lib_path : ".test-data"
 	f, err := os.create_temp_file(base, "swap.*.bin")
 	if err != nil {fmt.panicf("swap: cannot create temp file in %s: %v", base, err)}
-	os.remove(os.name(f))
+	ok := false
+	defer if !ok {
+		path := strings.clone(os.name(f), context.temp_allocator)
+		os.close(f)
+		os.remove(path)
+	}
 
 	if trunc_err := os.truncate(f, i64(prealloc_bytes)); trunc_err != nil {
-		os.close(f)
 		fmt.panicf("swap: cannot truncate swap file in %s: %v", base, trunc_err)
 	}
 
-	m_ptr := posix.mmap(
-		nil,
-		uint(prealloc_bytes),
-		{.READ, .WRITE},
-		{.SHARED},
-		posix.FD(os.fd(f)),
-		0,
-	)
-	if m_ptr == posix.MAP_FAILED {
-		os.close(f)
-		fmt.panicf("swap: cannot mmap swap file in %s", base)
+	data, map_err := virtual.map_file(f, {.Read, .Write})
+	if map_err != nil {
+		fmt.panicf("swap: cannot mmap swap file in %s: %v", base, map_err)
 	}
+	ok = true
 
 	index_bytes := (max_id + 1) * size_of(u32)
 	return Swap_Store {
 		file = f,
-		ptr = ([^]u8)(m_ptr),
+		ptr = raw_data(data),
 		size = prealloc_bytes,
 		tail = index_bytes,
-		index = ([^]u32)(m_ptr),
+		index = ([^]u32)(raw_data(data)),
 		max_id = max_id,
 	}
 }
 
 destroy_swap :: proc(s: ^Swap_Store) {
 	if s.ptr != nil {
-		posix.munmap(s.ptr, uint(s.size))
+		virtual.unmap_file(s.ptr[:s.size])
 		s.ptr = nil
 	}
 	if s.file != nil {
+		path := strings.clone(os.name(s.file), context.temp_allocator)
 		os.close(s.file)
 		s.file = nil
+		os.remove(path)
 	}
 }
 
