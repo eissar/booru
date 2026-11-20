@@ -7,13 +7,13 @@ import "core:mem"
 import "core:net"
 import "core:os"
 import "core:strings"
-import "core:sync"
 import "core:thread"
 import "core:time"
 
 import "cli"
 import elog "event_log"
 import "importers"
+import "jobs"
 import "library"
 import "plugin"
 import "plugin/phash"
@@ -316,32 +316,6 @@ main :: proc() {
 
 	defer free_all(context.temp_allocator)
 
-	progress.update("startup", 0)
-	startup_wg: sync.Wait_Group
-	scan_thread: ^thread.Thread
-	if cfg.scan_thumbnail {
-		sync.wait_group_add(&startup_wg, 1)
-		scan_thread = thread.create_and_start_with_poly_data(struct {
-			library_path: string,
-			wg:           ^sync.Wait_Group,
-		}{library_path = cfg.library, wg = &startup_wg}, proc(data: struct {
-				library_path: string,
-				wg:           ^sync.Wait_Group,
-			}) {
-			defer sync.wait_group_done(data.wg)
-			thumbnail.startup_threaded_generate_missing_thumbnails(
-				{library_path = data.library_path},
-			)
-		})
-		if scan_thread == nil {
-			sync.wait_group_done(&startup_wg)
-			fmt.eprintln("thumbnails: could not create scan thread")
-		}
-	}
-	defer {
-		if scan_thread != nil {thread.destroy(scan_thread)}
-	}
-
 	fmt.eprintfln("total startup time=%v", fmt_timestamp(time.since(load_start)))
 
 	// Bind last: the socket existing means the server is ready.
@@ -375,28 +349,67 @@ main :: proc() {
 	}
 	if cfg.daemon {daemon_ready(ready_fd)}
 
-	plugin_thread := thread.create_and_start_with_poly_data(struct {
-		library_path: string,
-		plugins:      []plugin.NativePlugin,
-		wg:           ^sync.Wait_Group,
-	}{library_path = cfg.library, plugins = plugins, wg = &startup_wg}, proc(data: struct {
-			library_path: string,
-			plugins:      []plugin.NativePlugin,
-			wg:           ^sync.Wait_Group,
-		}) {
-		defer progress.finish("startup")
-		sync.wait_group_wait(data.wg)
-		plugin.startup_threaded_run_plugins(
-			{library_path = data.library_path, plugins = data.plugins},
-		)
-	})
-	if plugin_thread == nil {
+	progress.update("startup", 0)
+	startup_abort: jobs.Abort_Flag
+	startup_thread := thread.create_and_start_with_poly_data(struct {
+			library_path:   string,
+			plugins:        []plugin.NativePlugin,
+			scan_thumbnail: bool,
+			flag:           ^jobs.Abort_Flag,
+		} {
+			library_path = cfg.library,
+			plugins = plugins,
+			scan_thumbnail = cfg.scan_thumbnail,
+			flag = &startup_abort,
+		}, startup_job_generate_thumbnails_and_run_plugins)
+	if startup_thread == nil {
 		progress.finish("startup")
-		fmt.eprintln("plugins: could not create plugin thread")
+		fmt.eprintln("startup: could not create background thread")
 	}
 	defer {
-		if plugin_thread != nil {thread.destroy(plugin_thread)}
+		jobs.abort(&startup_abort)
+		if startup_thread != nil {thread.destroy(startup_thread)}
 	}
 
 	server.Serve(&state, sock, accept) // this should take an allocator
+}
+
+startup_job_generate_thumbnails_and_run_plugins :: proc(data: struct {
+		library_path:   string,
+		plugins:        []plugin.NativePlugin,
+		scan_thumbnail: bool,
+		flag:           ^jobs.Abort_Flag,
+	}) {
+	defer free_all(context.temp_allocator)
+	defer progress.finish("startup")
+
+	path := strings.clone_to_cstring(
+		fmt.tprintf("%s/store.sqlite", data.library_path),
+		context.temp_allocator,
+	)
+	db, rc := sqlite.open(path)
+	if rc != sqlite.OK {
+		if db != nil {sqlite.close(db)}
+		fmt.eprintfln("startup job: open store failed: rc=%d", rc)
+		return
+	}
+	defer sqlite.close(db)
+
+	s := library.State {
+		library_path = data.library_path,
+		data_store   = db,
+	}
+	if data.scan_thumbnail && !jobs.is_aborted(data.flag) {
+		start := time.now()
+		generated, failed := thumbnail.generate_missing_thumbnails(s, all = true, flag = data.flag)
+		fmt.eprintfln(
+			"thumbnails: generated=%d, failed=%d in %.2f ms",
+			generated,
+			failed,
+			time.duration_milliseconds(time.since(start)),
+		)
+	}
+	if !jobs.is_aborted(data.flag) {
+		_ = plugin.run(&s, data.plugins, context.allocator, data.flag)
+	}
 }

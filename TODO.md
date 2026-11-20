@@ -84,7 +84,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 - [ ] Open question: should the UI trigger `refresh thumbnail` also re-probe metadata?
 - [ ] Cache derived card media renderer state on disk under `thumbnails/max/{oid}.webp` (full-resolution resting still cover) and `thumbnails/interactive/{oid}/...` (multi-asset/interactive renderer outputs like 3D carousels).
-- [ ] Make startup thumbnail/artifact scan async as a background job (don't gate server startup on `generate_missing_thumbnails`; run on a worker thread with an in-memory job queue surfaced in `#jobs-panel`, not a `store.sqlite` table).
+- [ ] Make startup artifact scan (`max/`, `interactive/`) async as a background job (`generate_missing_thumbnails` already runs async on `startup_thread` surfaced in `#jobs-panel`; no general job queue yet).
 - [ ] Add a post-ingest job hook in `handle_upload` (`src/server/handlers.odin`) to enqueue artifact generation for newly uploaded items.
 - [ ] Unify missing-artifact registration per media handler (`matches`, `expected_paths`/`missing`, `generate`) across `64/`, `128/`, `max/`, and `interactive/` in one pass so a single source decode is shared.
 - [ ] Generate full-res `thumbnails/max/{oid}.webp` covers for video (`ffmpeg.first_frame` + `libwebp` without rescale) and use them as the resting `<img>`/`poster` cover so scroll stays on the image decoder.
@@ -299,7 +299,7 @@ if sort is a chip, why shouldn't view be one? view:grid
 Amdahl's Law (the serial fraction dominates): If even 15% of total time is serialized (SQLite writer lock, transaction commits, queue mutex), infinite cores cap speedup at 1 / 0.15 ≈ 6.7×
 
 - [ ] Consider blocking write routes while startup phase is active (return 503 instead of failing on SQLITE_BUSY / event_log divergence).
-- [ ] Consider starting `scan_thread` after socket bind (so bind failure doesn't kill it mid-run).
+- [x] Start `scan_thread` after socket bind (unified into post-bind `startup_thread` / `startup_job_generate_thumbnails_and_run_plugins` in `src/main.odin` with `jobs.Abort_Flag` on shutdown).
 - [ ] Jobs/progress UI: make groups dismissable, improve rendering of hierarchical phases (e.g. `total == nil` sub-phases / `0` noise), or render as a tree/DAG.
 - [ ] Consider Multi-Index Hashing (MIH) for O(N) all-pairs PDQ duplicate detection at 100k+ items.
 
