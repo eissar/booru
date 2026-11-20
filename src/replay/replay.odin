@@ -62,7 +62,7 @@ replay :: proc(
 	swap := init_swap(s.library_path)
 	defer destroy_swap(&swap)
 
-	// Bounded in-memory working set; evictions spill to swap.bin
+	// Bounded in-memory working set; evictions spill to the swap tmpfile
 	patch_states: lru.Cache(int, Patch_State)
 	lru.init(&patch_states, capacity = 10_000, entries_allocator = alloc, node_allocator = alloc)
 	defer lru.destroy(&patch_states, call_on_remove = false)

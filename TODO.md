@@ -64,7 +64,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 - [ ] Speed up `replay.replay` / `server.metadata_edits_write_membership_deltas` (~149ms, 1.35B Ir under callgrind because every `replay` scans all `swap.max_id` = 1,000,000 slots in `vtab_insert_items.advance`, `vtab_insert_item_tags.advance`, and `replay.odin:286` even for 1 item):
   - Track `high_id = max(high_id, item.id)` in `replay` / `Swap_Store` and bound those three loops to `high_id` instead of `swap.max_id`.
   - For sparse or small `!full_replay` runs, iterate `seen_ids` / dirty IDs (or `patch_states.entries` directly when nothing evicted to swap) instead of scanning `1..=high_id`.
-  - Defer `init_swap` (`swap.bin` create / 64 MiB `ftruncate` / `mmap`) until the first LRU eviction so small replays don't allocate/unlink `swap.bin` at all.
+  - Defer `init_swap` (swap tmpfile create / 64 MiB `truncate` / `mmap`) until the first LRU eviction so small replays don't allocate/unlink a swap file at all.
 - [ ] Add `bench/replay_incremental/` (same style as `bench/replay`): seed a library with N items, then report the median time of single-event `ev_append` + `initiate_replay(full_replay = false)` edits on random ids; optionally add a batch over >10k distinct ids to exercise LRU eviction to swap. No existing bench covers incremental replay; `bench/replay` and `bench/replay_mixed` are full replay only.
 - [ ] Verify `search_images` query plans use index order for all four sorts (unfiltered and tag-filtered) and benchmark them.
 

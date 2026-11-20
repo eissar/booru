@@ -7,8 +7,7 @@ import "core:strings"
 import "core:sys/posix"
 
 Swap_Store :: struct {
-	fd:     posix.FD,
-	path:   string,
+	file:   ^os.File,
 	ptr:    [^]u8,
 	size:   int,
 	tail:   int,
@@ -22,29 +21,31 @@ init_swap :: proc(
 	prealloc_bytes := 64 * 1024 * 1024,
 ) -> Swap_Store {
 	base := len(lib_path) > 0 ? lib_path : ".test-data"
-	path := fmt.aprintf("%s/swap.bin", base)
-	c_path := strings.clone_to_cstring(path, context.temp_allocator)
+	f, err := os.create_temp_file(base, "swap.*.bin")
+	if err != nil {fmt.panicf("swap: cannot create temp file in %s: %v", base, err)}
+	os.remove(os.name(f))
 
-	fd := posix.open(c_path, {.RDWR, .CREAT, .TRUNC}, {.IRUSR, .IWUSR})
-	if fd < 0 {fmt.panicf("swap: cannot create %s", path)}
-
-	if posix.ftruncate(fd, posix.off_t(prealloc_bytes)) != .OK {
-		posix.close(fd)
-		os.remove(path)
-		fmt.panicf("swap: cannot ftruncate %s", path)
+	if trunc_err := os.truncate(f, i64(prealloc_bytes)); trunc_err != nil {
+		os.close(f)
+		fmt.panicf("swap: cannot truncate swap file in %s: %v", base, trunc_err)
 	}
 
-	m_ptr := posix.mmap(nil, uint(prealloc_bytes), {.READ, .WRITE}, {.SHARED}, fd, 0)
+	m_ptr := posix.mmap(
+		nil,
+		uint(prealloc_bytes),
+		{.READ, .WRITE},
+		{.SHARED},
+		posix.FD(os.fd(f)),
+		0,
+	)
 	if m_ptr == posix.MAP_FAILED {
-		posix.close(fd)
-		os.remove(path)
-		fmt.panicf("swap: cannot mmap %s", path)
+		os.close(f)
+		fmt.panicf("swap: cannot mmap swap file in %s", base)
 	}
 
 	index_bytes := (max_id + 1) * size_of(u32)
 	return Swap_Store {
-		fd = fd,
-		path = path,
+		file = f,
 		ptr = ([^]u8)(m_ptr),
 		size = prealloc_bytes,
 		tail = index_bytes,
@@ -58,14 +59,9 @@ destroy_swap :: proc(s: ^Swap_Store) {
 		posix.munmap(s.ptr, uint(s.size))
 		s.ptr = nil
 	}
-	if s.fd >= 0 {
-		posix.close(s.fd)
-		s.fd = -1
-	}
-	if len(s.path) > 0 {
-		os.remove(s.path)
-		delete(s.path)
-		s.path = ""
+	if s.file != nil {
+		os.close(s.file)
+		s.file = nil
 	}
 }
 
