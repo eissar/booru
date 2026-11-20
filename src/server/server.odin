@@ -9,6 +9,7 @@ import "core:time"
 
 import "../http"
 import "../library"
+import "../progress"
 import "../template"
 
 // TODO: put /dev/* behind a flag or a runtime global; enabled unconditionally
@@ -152,6 +153,23 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		}
 
 		switch {
+		case req_header.method == "POST" && progress.is_active("startup"):
+			res.headers["Retry-After"] = "5"
+			res.headers["Vary"] = "Hx-Request"
+			if req_header.known_headers.hx_request {
+				res.headers["HX-Reswap"] = "beforeend"
+				http.res_html(
+					template.render_toast(
+						"Server starting up, try again shortly",
+						.Error,
+						req.alloc,
+					),
+					&res,
+					.ServiceUnavailable,
+				)
+			} else {
+				http.res_text("Service Unavailable", &res, .ServiceUnavailable)
+			}
 		case req_header.path == "/" || req_header.path == "/gallery":
 			handle_gallery(s^, &res, req)
 		case req_header.path == "/fragment/gallery-content":

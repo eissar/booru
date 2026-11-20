@@ -344,3 +344,37 @@ gallery_until_id_snapshot_isolation :: proc(t: ^testing.T) {
 		"unconstrained query includes item 3",
 	)
 }
+
+@(test)
+write_handlers_reject_non_post :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+
+	state := library.State{}
+	{
+		res := http.Response {
+			headers = make(map[string]string, alloc),
+		}
+		handle_delete(
+			&state,
+			&res,
+			{{method = "GET", path = "/delete"}, alloc, time.Time{}},
+			transmute([]u8)string("id=1"),
+		)
+		testing.expect_value(t, res.status, http.STATUS.MethodNotAllowed)
+		testing.expect_value(t, res.headers["Allow"], "POST")
+	}
+	{
+		res := http.Response {
+			headers = make(map[string]string, alloc),
+		}
+		handle_update_metadata(
+			&state,
+			&res,
+			{{method = "GET", path = "/update-metadata"}, alloc, time.Time{}},
+			transmute([]u8)string("id=1&name=x"),
+		)
+		testing.expect_value(t, res.status, http.STATUS.MethodNotAllowed)
+		testing.expect_value(t, res.headers["Allow"], "POST")
+	}
+}

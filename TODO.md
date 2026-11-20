@@ -298,7 +298,7 @@ if sort is a chip, why shouldn't view be one? view:grid
 
 Amdahl's Law (the serial fraction dominates): If even 15% of total time is serialized (SQLite writer lock, transaction commits, queue mutex), infinite cores cap speedup at 1 / 0.15 ≈ 6.7×
 
-- [ ] Consider blocking write routes while startup phase is active (return 503 instead of failing on SQLITE_BUSY / event_log divergence).
+- [x] Block `POST` write routes while startup phase is active (`progress.is_active("startup")` in `src/server/server.odin` returns 503 with `Retry-After: 5`).
 - [x] Start `scan_thread` after socket bind (unified into post-bind `startup_thread` / `startup_job_generate_thumbnails_and_run_plugins` in `src/main.odin` with `jobs.Abort_Flag` on shutdown).
 - [ ] Jobs/progress UI: make groups dismissable, improve rendering of hierarchical phases (e.g. `total == nil` sub-phases / `0` noise), or render as a tree/DAG.
 - [ ] Consider Multi-Index Hashing (MIH) for O(N) all-pairs PDQ duplicate detection at 100k+ items.

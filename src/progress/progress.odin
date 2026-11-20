@@ -61,6 +61,13 @@ has_active :: proc() -> bool {
 	return false
 }
 
+is_active :: proc(phase: string) -> bool {
+	sync.mutex_lock(&mu)
+	defer sync.mutex_unlock(&mu)
+	p, ok := items[phase]
+	return ok && !p.done
+}
+
 // Dependent jobs should keep a parent phase active (e.g. "startup" around
 // "startup.thumbnails" / "startup.phash") so has_active stays true between steps.
 snapshot :: proc(alloc := context.allocator) -> []Progress {

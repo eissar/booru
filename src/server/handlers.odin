@@ -694,6 +694,17 @@ handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http
 }
 
 handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
+	if req.header.method != "POST" {
+		res.headers["Allow"] = "POST"
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("Method not allowed", .Error, req.alloc),
+			res,
+			.MethodNotAllowed,
+		)
+		return
+	}
+
 	body := transmute(string)body
 
 	parts, split_err := strings.split(body, "=", req.alloc)
@@ -756,6 +767,17 @@ handle_delete :: proc(s: ^library.State, res: ^http.Response, req: http.Req, bod
 // handle_update_metadata serves POST /update-metadata (inspector name form).
 // Logs a "patch" event first, then applies it to the store.
 handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http.Req, body: []u8) {
+	if req.header.method != "POST" {
+		res.headers["Allow"] = "POST"
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("Method not allowed", .Error, req.alloc),
+			res,
+			.MethodNotAllowed,
+		)
+		return
+	}
+
 	params := make(map[string]string, req.alloc)
 	if !parse_query_params(string(body), &params, req.alloc) {
 		res.headers["HX-Reswap"] = "beforeend"
