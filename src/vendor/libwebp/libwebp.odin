@@ -189,16 +189,6 @@ rescale :: proc(
 	cfg := &DEFAULT_CONFIG if cfg == nil else cfg
 	assert(file != nil)
 
-	// WebPPictureRescale derives
-	// dimension automatically
-	// from aspect ratio if passed as 0
-	w, h := longest_edge, longest_edge
-	if pic.width >= pic.height {h = 0} else {w = 0}
-
-	if WebPPictureRescale(pic, w, h) == 0 {
-		return false
-	}
-
 	pic.writer = proc "c" (data: [^]u8, data_size: c.size_t, picture: ^WebPPicture) -> c.int {
 		context = runtime.default_context()
 		file := (^os.File)(picture.custom_ptr)
@@ -212,6 +202,20 @@ rescale :: proc(
 	}
 	pic.custom_ptr = file
 	defer pic.custom_ptr = nil
+
+	if longest_edge == 0 {
+		return WebPEncode(cfg, pic) != 0
+	}
+
+	// WebPPictureRescale derives
+	// dimension automatically
+	// from aspect ratio if passed as 0
+	w, h := longest_edge, longest_edge
+	if pic.width >= pic.height {h = 0} else {w = 0}
+
+	if WebPPictureRescale(pic, w, h) == 0 {
+		return false
+	}
 
 	return WebPEncode(cfg, pic) != 0
 }

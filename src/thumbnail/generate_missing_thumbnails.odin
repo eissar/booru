@@ -49,7 +49,7 @@ generate_missing_thumbnails :: proc(
 			if !found {continue}
 			append(&selected, img)
 			need: bit_set[LOD_RESOLUTION]
-			for size in ([2]LOD_RESOLUTION{.x64, .x128}) {
+			for size in expected_resolutions(img.content_type) {
 				p := fmt.tprintf(
 					"%s/thumbnails/%s/%s.webp",
 					s.library_path,
@@ -109,6 +109,7 @@ LOD_RESOLUTION :: enum {
 	x256  = 2,
 	x128  = 3,
 	x64   = 4,
+	max   = 5,
 }
 
 resolution_pixels :: proc(size: LOD_RESOLUTION) -> int {
@@ -123,6 +124,8 @@ resolution_pixels :: proc(size: LOD_RESOLUTION) -> int {
 		return 128
 	case .x64:
 		return 64
+	case .max:
+		return 0
 	}
 	return 0
 }
@@ -141,34 +144,35 @@ largest_resolution :: proc(sizes: bit_set[LOD_RESOLUTION]) -> (largest: LOD_RESO
 name_for_r := #partial [LOD_RESOLUTION]string {
 	.x64  = "64",
 	.x128 = "128",
+	.max  = "max",
+}
+
+expected_resolutions :: proc(content_type: string) -> bit_set[LOD_RESOLUTION] {
+	if content_type == "application/pdf" {
+		return {.x64, .x128, .max}
+	}
+	return {.x64, .x128}
 }
 
 find_missing_thumbnails :: proc(
 	s: library.State,
 	images: []library.Image,
 	check: ^map[string]bit_set[LOD_RESOLUTION],
-	resolutions: bit_set[LOD_RESOLUTION] = {.x64, .x128},
+	resolutions: bit_set[LOD_RESOLUTION] = {.x64, .x128, .max},
 ) {
 	for img in images {
-		check[img.oid] = resolutions
+		check[img.oid] = expected_resolutions(img.content_type)
 	}
 	exclude_existing_thumbnails(s, check, resolutions)
 }
 
-// Resets caller-seeded OIDs to resolutions, then subtracts sizes found on disk.
+// Subtracts sizes found on disk from caller-seeded OIDs in check.
 // Does not add OIDs to check.
 exclude_existing_thumbnails :: proc(
 	s: library.State,
 	check: ^map[string]bit_set[LOD_RESOLUTION],
-	resolutions: bit_set[LOD_RESOLUTION] = {.x64, .x128},
+	resolutions: bit_set[LOD_RESOLUTION] = {.x64, .x128, .max},
 ) {
-	for _, &entry in check {
-		// set the list of res to check.
-		// when we scan, we will remove
-		// any matches for this entry
-		entry = resolutions
-	}
-
 	// scan
 	for res in resolutions {
 		res_name := name_for_r[res]
