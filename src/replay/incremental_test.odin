@@ -109,3 +109,35 @@ incremental_application_and_cursor_roll_back_together :: proc(t: ^testing.T) {
 	saved, cursor_rc := elog.load_cursor(&log, string(cursor.shard[:]))
 	testing.expect(t, cursor_rc == sqlite.OK && saved == cursor)
 }
+
+@(test)
+incremental_patch_on_deleted_or_unknown_item_is_bad_event :: proc(t: ^testing.T) {
+	root, err := os.make_directory_temp("", "booru-incremental-*", context.temp_allocator)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	s := library.State {
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&s)
+	seed := "{\"op\":\"add\",\"id\":1,\"tags\":[\"cat\"]}\n{\"op\":\"delete\",\"id\":1}\n"
+	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
+	if !testing.expect(t, replay(&s, {seed}, context.allocator) == nil) {return}
+	if !testing.expect(t, sqlite.run(s.data_store, "COMMIT")) {return}
+	events := [?]string {
+		"{\"op\":\"patch\",\"id\":1,\"tags\":[\"dog\"]}\n",
+		"{\"op\":\"patch\",\"id\":1,\"name\":\"0a0b\"}\n",
+		"{\"op\":\"patch\",\"id\":2,\"tags\":[\"dog\"]}\n",
+		"{\"op\":\"patch\",\"id\":2,\"name\":\"0a0b\"}\n",
+		"{\"op\":\"add\",\"id\":2}\n{\"op\":\"delete\",\"id\":2}\n{\"op\":\"patch\",\"id\":2,\"tags\":[\"dog\"]}\n",
+	}
+	for event in events {
+		if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
+		testing.expect_value(
+			t,
+			replay(&s, {event}, context.allocator, full_replay = false),
+			Error.BadEvent,
+		)
+		sqlite.run(s.data_store, "ROLLBACK")
+	}
+}

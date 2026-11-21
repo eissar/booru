@@ -101,6 +101,12 @@ replay :: proc(
 		if patch_rc != sqlite.OK {return .DATABASE_ERR}
 	}
 	defer {if item_patch != nil {sqlite.finalize(item_patch)}}
+	// Incremental replay seeds seen_ids from the store on first touch of an id.
+	item_status: ^sqlite.Stmt
+	defer {if item_status != nil {sqlite.finalize(item_status)}}
+	if !full_replay &&
+	   sqlite.prepare_v2(db, "SELECT deleted FROM items WHERE id = ?", -1, &item_status, nil) !=
+		   sqlite.OK {return .DATABASE_ERR}
 	item_delete, delete_rc := store.prepare_item_delete(db)
 	if delete_rc != sqlite.OK {return .DATABASE_ERR}
 	defer sqlite.finalize(item_delete)
@@ -133,11 +139,22 @@ replay :: proc(
 			rc: i32 = sqlite.OK
 			store_err: store.Error
 			// Lifecycle: the only place item status is decided (lifecycle.fly).
-			if full_replay {
-				next_status, ok := lifecycle_step(seen_ids[item.id], op)
-				if !ok {return .BadEvent}
-				seen_ids[item.id] = next_status
+			if !full_replay && item.id not_in seen_ids {
+				if sqlite.bind_int64(item_status, 1, i64(item.id)) !=
+				   sqlite.OK {return .DATABASE_ERR}
+				switch sqlite.step(item_status) {
+				case sqlite.ROW:
+					seen_ids[item.id] = sqlite.column_int64(item_status, 0) == 0 ? .Live : .Deleted
+				case sqlite.DONE:
+					seen_ids[item.id] = .Absent
+				case:
+					return .DATABASE_ERR
+				}
+				if sqlite.reset(item_status) != sqlite.OK {return .DATABASE_ERR}
 			}
+			next_status, ok := lifecycle_step(seen_ids[item.id], op)
+			if !ok {return .BadEvent}
+			seen_ids[item.id] = next_status
 			state: Patch_State
 			state_dirty: bool
 			switch op {
