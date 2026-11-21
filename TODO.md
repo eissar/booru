@@ -2,6 +2,8 @@ high level tasks
 
 - [ ] Allow user preference for max server memory usage (cap concurrent `Conn_Slot` count / large-body budget in `src/server/server.odin` instead of a fixed 64 slots × 4 MiB + unbounded 16 MiB uploads).
 - [ ] Have `render_photo_grid` (`src/template/photo_grid.odin`) write cards into one `strings.Builder` instead of allocating 100 separate `render_item_card` builders.
+- [ ] Render/preview `.url` (`application/x-mswinurl`) items in card, inspector, and duplicates templates instead of falling back to the unsupported-filetype placeholder.
+- [ ] Support drag-and-drop ingestion of directories and `.zip` archives of `.url` files.
 
 - [ ] Move platform-specific `when ODIN_OS` branches that depend on platform-only imports into suffixed files such as `_windows.odin` and `_linux.odin`. Keep those imports in their platform files so `odin check -vet` does not flag imports needed only by another target. Cover `src/dirlist`, `src/importers/eagle_import.odin`, and `src/thumbnail/generate_missing_thumbnails.odin`, and audit for other occurrences.
 
@@ -18,12 +20,10 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Review existing replay panic/error states and thoroughly evaluate when a failed incremental replay (`full_replay = false`) can safely fall back to full replay.
 - [ ] Classify startup store errors and rebuild only when restartable. Already done: a stale schema (missing columns, detected as `SCHEMA_MISMATCH` from `prepare_item_patch`) discards `store.sqlite` and rebuilds once per startup (`src/main.odin`). Remaining: `PRAGMA user_version` check, `SQLITE_CORRUPT`, and refusing non-restartable errors. Restartable means the derived `store.sqlite` is bad or stale: e.g. a stale schema (`PRAGMA user_version` mismatch, such as a store without the `deleted` column) or `SQLITE_CORRUPT`; discard it and do a full replay, at most once per startup. Not restartable means rebuilding can't help: e.g. `SQLITE_FULL` (disk full), or a replay `.BadEvent`, where the log is the problem. The README's "discards and rebuilds" claim is not implemented yet.
   - Consider: store a 32-bit hash of the `create_tables` + `create_indexes` DDL strings in `PRAGMA user_version` instead of a manually bumped integer, so any table, column, constraint, or index change triggers an O(1) rebuild without forgetting to bump a version.
-- [x] Enforce the assumption that older event shards are fully applied at startup: compare every non-current `.ndjson` shard's file size against its persisted offset in `replay_cursors`; if any differ (e.g. crash between `ev_append` and `replay` across a month rollover), discard/rebuild (`startup_verify_older_shards_applied` in `src/main.odin`).
 
 - [ ] Test: `name` finalization (growth, shrink, clear, multibyte) trims NUL padding to the final name; order independence is covered by `steps_test.odin`.
 - [ ] Test: comment patches at distinct anchors commute and reduce to the final text.
 - [ ] Test: overwrite applies in log order across shards; the last assignment per LWW field wins.
-- [x] Simplify `case "overwrite"` in `src/replay/replay.odin` to `overwrite_step(&lww_items[item.id], &item)` during `full_replay`: remove the unreachable `else` branch that zero-initializes `lww_items[item.id] = {}`. `lifecycle_step(seen_ids[item.id], op)` already rejects `"overwrite"` unless `seen_ids[item.id] == .Live` (`model/lifecycle.fly` L2, L4), which only happens after an `"add"` event has seeded `lww_items[item.id]`, and keys are never removed from `lww_items`.
 - [ ] Test: `slop_pijul` round trip for empty comments, repeated lines, whitespace, line endings, multibyte UTF-8.
 - [ ] Benchmark comment patches against direct XOR (high-water memory, shifted-suffix cost).
 - [ ] Define behavior when a mixed patch+overwrite batch fails partway through `ev_append` (`src/server/handlers.odin`).
@@ -32,7 +32,6 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 
 - [ ] Test: `mtime` and `added_at` never decrease: a lower or zero value in a `patch` is ignored, `overwrite` carrying either is rejected, and the writer omits them when not greater than current.
 - [ ] Test: patches clearing `name`, `comment` and tags replay to empty values, in both full and incremental replay.
-- [x] Fix the listener double close in `test/library_lifecycle.odin` and `test/mipmap.odin`: the shutdown `defer` closes `sock` and sets `sock = {}`, then the earlier `defer net.close(sock)` runs `close(0)`, which can close another parallel test's file descriptor (seen as flaky `import_browse_delete_merge_replay` event-log reads and jxl/video thumbnail writes). Guarded with `defer if sock != {} {net.close(sock)}` (e4b76f1).
 
 # Store Write Path TODO
 
@@ -42,11 +41,7 @@ Writes are log-first: handlers and Eagle import append events, then run incremen
 // Rebuild path defers indexes and runs with foreign_keys = OFF because we trust event log writes.
 // Consider running `PRAGMA foreign_key_check` after bulk insert if we ever stop trusting the event log.
 - [ ] Optional: CI/pre-commit check that nothing outside `replay` calls the store write procs or writes to the DB directly.
-- [x] Normalize tags in the web handlers. Eagle import lowercases tags, turns whitespace into `-`, canonicalizes anything else outside `is_allowed_tag_char` and records the original in a per-import remediation queue (`src/library/tags.odin`, `src/importers/eagle_import.odin`). `handle_update_metadata` (`src/server/handlers.odin`) normalizes with `lowercase_and_dash_whitespace` and rejects anything else outside `is_allowed_tag_char`.
 - [ ] Add tests for `handle_delete` (store row removed, 404/500 paths).
-- [x] Remove `core:log` from non-test runtime paths; use `fmt.eprint*` instead (remaining `core:log` usage is gated behind `when ODIN_TEST` or lives in test files).
-
-
 
 # Lua Hook TODO
 
@@ -69,8 +64,6 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
   - Track `high_id = max(high_id, item.id)` in `replay` / `Swap_Store` and bound those three loops to `high_id` instead of `swap.max_id`.
   - For sparse or small `!full_replay` runs, iterate `seen_ids` / dirty IDs (or `patch_states.entries` directly when nothing evicted to swap) instead of scanning `1..=high_id`.
   - Defer `init_swap` (swap tmpfile create / 64 MiB `truncate` / `mmap`) until the first LRU eviction so small replays don't allocate/unlink a swap file at all.
-- [x] Add `bench/replay_incremental/`: seeds 100k items, then reports median/p10/p90 of `replay(full_replay = false)` for 1 tag patch, 1 name patch, 100 and 20,000 mixed patches on random ids, each inside BEGIN..ROLLBACK. It times `replay` directly, not `ev_append` + `initiate_replay` (no fsync or file read).
-  - [ ] Optional: a batch over >10k distinct ids with name/comment patches to exercise LRU eviction to swap.
 - [ ] Verify `search_images` query plans use index order for all four sorts (unfiltered and tag-filtered) and benchmark them.
 
 - [ ] Compare item and tag snapshots across the pre- and post-prepared-insert replay revisions using the same 100,000-event fixture; the benchmark currently checks repeatability within each run, not equality between revisions.
@@ -91,21 +84,11 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 - [ ] Make startup artifact scan (`max/`, `interactive/`) async as a background job (`generate_missing_thumbnails` already runs async on `startup_thread` surfaced in `#jobs-panel`; no general job queue yet).
 - [ ] Add a post-ingest job hook in `handle_upload` (`src/server/handlers.odin`) to enqueue artifact generation for newly uploaded items.
 - [ ] Unify missing-artifact registration per media handler (`matches`, `expected_paths`/`missing`, `generate`) across `64/`, `128/`, `max/`, and `interactive/` in one pass so a single source decode is shared.
-- [ ] Generate full-res `thumbnails/max/{oid}.webp` covers for video (`ffmpeg.first_frame` + `libwebp` without rescale) and use them as the resting `<img>`/`poster` cover so scroll stays on the image decoder.
-- [x] Check dimensions before decoding and skip oversized image thumbnail inputs with a documented pixel-count limit and clear log (`8192 * 8192` in `src/media/media.odin`, `src/thumbnail/generate.odin`; `decode_rgba` and `decode_yuv_dav1d` enforce the limit pre-decode, while video and JXL currently decode via `ffmpeg.first_frame` before checking `max_pixels`).
 - [ ] Enforce `max_pixels` before decoding pixels for video and JXL (`ffmpeg.first_frame` in `src/media/media.odin`).
 - [ ] Non-bounded thumbnail generation unimplemented (images over `8192 * 8192` pixels are skipped).
 - [ ] Fast path for AVIF dimension probing: `media.probe_dimensions` (`src/media/media.odin`) currently calls `decode_yuv_dav1d` (~569 us/op in `bench/probe/probe_test.odin` vs 0.2–3.7 us/op for header-only image probes). Parse the `ispe` box (`u32be` width/height) via `ipco`/`ipma` in `src/media/avif.odin` (accounting for `irot`/`imir` transforms if present, or fall back to the AV1 sequence header OBU) without decoding pixels.
 - [ ] 1-byte thumbnail failure sentinel: when `media.decode_frame` in `src/thumbnail/generate.odin` fails deterministically (`.Unsupported`, `.Too_Large`, or corrupt `.Failed` data), write a 1-byte failure-reason enum to `thumbnails/{64,128}/{oid}.webp` instead of leaving the file missing. This lets `exclude_existing_thumbnails` skip permanently failed items via its `getdents` scan and `/mipmap` pick the embedded fallback (`NOT_FOUND_*` vs `UNSUPPORTED_FILETYPE_*`) by checking `len(bytes) == 1` on its existing file read, with no extra syscalls or DB columns. However, because `getdents` only sees filenames and not sizes, startup cannot distinguish 1-byte sentinels from real WebPs without `stat`, so `.Too_Large`/`.Unsupported` items won't auto-regenerate when support is later added unless sentinels are purged. Writing sentinels on transient I/O or missing-source `.Failed` errors would also suppress retries (breaking `generate_missing_fixture_thumbnails`), and direct readers of `thumbnails/{64,128}/*.webp` will see non-WebP 1-byte files.
 
-
-# PDF Support TODO
-
-- [x] Phase 1 placeholder (12c1973, a3d0304): `.PDF` in `media.Format` (`%PDF-` magic, `pdf` / `application/pdf`); `probe_dimensions` returns 0×0 and `decode_frame` returns `.Unsupported`, so no thumbnails are written. Card and inspector `<img>` use `/static/unsupported_filetype_128.webp`; Download / Open-in-tab still link `/image/<oid>` (the PDF). Fixtures `item_card_pdf` / `inspector_pdf`. No ingest/detection tests (removed by choice).
-- [x] Headers (e47c485): instead of PDF-only `CSP: sandbox` (likely breaks Chrome's PDF viewer), every `/image` original gets `nosniff` + strict `IMAGE_CSP` without `sandbox`; verified in headless Chromium for PNG/MP4/PDF. Firefox unverified.
-- [ ] `/mipmap` preview for PDFs: `handle_mipmap` returns `new_not_found_thumb` for missing thumbnails, so PDF cards show "NOT FOUND" under the placeholder until it loads. Return an unsupported-filetype thumb (the `unsupported_filetype_{64,128}.webp` bytes `#load`ed in `src/thumbnail/thumbnail.odin`) for PDF items; needs each oid's content_type in the mipmap path. Alternative: the 1-byte failure-sentinel TODO above.
-- [ ] PDF `probe_dimensions` via `/MediaBox`: PDFs ingest at 0×0, so cards fall back to `aspect-ratio: 1/1` (`render_item_card`, `src/template/item_card.odin`). Read the first page's `/MediaBox [x0 y0 x1 y1]` in the `.PDF` case of `probe_dimensions` (`src/media/media.odin`) so cards get the real page shape (A4 ≈ 1/1.414). Caveats: MediaBox can be inherited from the `/Pages` tree, may sit inside compressed object streams (needs inflate), and `/Rotate 90|270` swaps width/height; fall back to 0×0 when not found. Only worthwhile once the card shows something non-square (the current placeholder is 128×128); superseded if phase 2 sets dimensions from the rendered page.
-- [ ] [deferred] Phase 2 real first-page render: vendor pdfium or mupdf under `src/vendor/` and add `decode_pdf_first_page` returning `Decoded_ARGB` (then `encode_thumbnail` works unchanged); set `width`/`height` from the PDF page size for card aspect ratio. 16 MiB `MAX_BODY_SIZE` is fine for now; revisit only if large PDFs become a need.
 
 # Thumbnail Preview TODO
 
@@ -116,17 +99,9 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 
 - If visible-grid redraws become a bottleneck, render changed slots into a persistent texture-backed framebuffer and blit it to the canvas on rAF. Compare blit bandwidth and framebuffer memory against drawing the cached textures; invalidate affected slots on sorting, scrolling, and resize.
 
-# LOD 0 Micro-Atlas TODO
-
-   - [ ] Reuse the writer, picture, and settings for bulk thumbnails (see `rescale_half` TODO in `src/thumbnail/create_thumbnail.odin`).
-2. Port the Go atlas builder: decode every thumbnail → 48px micro thumb → pack 2048² sheets → PNG-encode to a content-keyed disk cache, and add `micro_page/x/y/w/h` fields to `library.Image` plus an immutable-cached `/api/atlas/:key/page_N.png` handler.
-3. Swap the card renderer to a CSS-sprite div using the atlas as LOD 0 with the existing webp thumbs lazy-loaded as LOD 1, then update the render fixture tests.
-4. Harden the mipmap handler: replace sequential sends with writev, right-size the arena, and assert response correctness in tests.
-
 # Gallery Pagination TODO
 
 - Infinite scroll: the load-more button fires on `intersect once root:.main-content` (click remains as fallback), with `hx-sync="#photo-grid:drop"`; default page size is 100.
-- [x] Verify infinite scroll in a browser: sentinel position after masonry packing, no duplicate pages on fast scroll, and a short first page that doesn't fill the viewport still chains loads.
 
 - Open question: choose a reasonable default for fresh loads after loading more. Load-more URLs currently omit offset; should refresh start with one page, restore the displayed count, or restore a position? Decide the URL semantics and default before implementing accumulated-offset restoration.
 
@@ -139,12 +114,8 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
 # Frontend / Native Browser TODO
 
 - [-] Replace JS default theme detection (`static/gallery.js`, `window.matchMedia("(prefers-color-scheme: dark)")`) and the `html:not([data-theme]) { visibility: hidden; }` render-blocking hack (`static/gallery.css`) with CSS `color-scheme: light dark` and `light-dark()` (or `@media (prefers-color-scheme: dark)`), keeping JS only for explicit `localStorage` user overrides. (Current impl has better browser support.)
-- [x] Replace the Inspector tag-edit input toggle (`src/template/inspector.odin`, `data-hx-on-click` toggling `.hidden` and calling `.focus()`) with a native `popover` and `autofocus` on the `<input>`.
 - [ ] Replace the custom drag-and-drop upload handlers (`src/template/gallery_page.odin`, `data-hx-on-dragover`/`dragleave`/`drop` on `#upload-form`, plus `window` `dragover`/`drop` in `static/gallery.js`) by letting `<input type="file">` act as the native drop target (if URL/HTML image drops are no longer needed).
-- [x] Replace JS Inspector open/close class toggling (`src/template/gallery_page.odin`, `data-hx-on::after-swap` / `booruToggleInspector`) with CSS `:has()` + `:empty` (e.g. `#gallery-main:has(#inspector-content:not(:empty))`) or `popover` (keeping JS only if `localStorage` persistence across reloads is still desired).
 - [ ] Consider retaining inspector in DOM.
-- [x] Remove dead `body.light-mode` and `body.dark-mode` CSS rules and duplicate variable blocks in `static/gallery.css` (lines 48, 67, 86–120, 336–341, 364–418); theming uses `html[data-theme='light'|'dark']`.
-- [x] Consolidate the three separate `DOMContentLoaded` listeners in `static/gallery.js`.
 
 # Web Lint TODO
 
@@ -162,69 +133,13 @@ Templates are Odin strings, so lint the rendered fixtures (`test/html-fixture-td
 
 # Duplicate Detection TODO
 
-- [ ] Exact duplicate detection by content hash (`oid`) on upload/import and across existing library items, with a way to surface/merge or skip duplicates.
-- [ ] Near-duplicate detection (e.g. perceptual hash such as dHash/pHash computed during thumbnailing/ingest) to find visually similar images at different resolutions or re-encodes, plus a UI/review flow to compare and resolve pairs.
-- [x] Remove the now-unused async `POST /check-duplicates` route, `handle_check_duplicates` and its `duplicates.scan` jobs-panel progress; Settings links to the synchronous `/duplicates` page (`src/server/handlers.odin`, `src/server/server.odin`).
 - [ ] Fix `/duplicates` Apply all (`src/template/duplicates_page.odin`, `POST /merge`): commit ready groups in one request/replay instead of sequential `/merge` requests, remove committed groups from the page, and stop at the first failure.
 - [ ] Restructure `/duplicates` to swap inside the persistent app shell (`.main-content` / `#gallery-main` via `hx-get="/duplicates"` + `hx-push-url="true"`, keeping `#toasts-log` and `#jobs-panel` SSE alive across navigation, and serving either the fragment on `HX-Request` or the full shell on direct load/refresh).
 
 # JXL Support
 
-- [x] Format detection, ISOBMFF/`jxlp` extraction, codestream dimension probing, and 8-bit RGB24 WebP thumbnailing (`src/media/jxl.odin`, `src/media/media.odin`, `src/thumbnail/generate.odin`)
 - [ ] Non-RGB24 JXL decode (alpha/RGBA, grayscale, >8-bit)
 - [ ] `Accept: image/jxl` passthrough to skip WebP mipmaps
-
-Estimates, using about 85 KB in thumbnails per image:
-~ 80 KB for LOD 0.
-~ 4 KB for LOD 1.
-~ 1 KB for LOD 2.
-
-1,000 images
-- LOD 0: ~80 MB
-- LOD 1: ~4 MB
-- LOD 2: ~1 MB
-- Total: ~85 MB (range 43–158 MB)
-
-10,000 images
-- LOD 0: ~800 MB
-- LOD 1: ~40 MB
-- LOD 2: ~10 MB
-- Total: ~850 MB (range 0.4–1.6 GB)
-
-100,000 images
-- LOD 0: ~8 GB
-- LOD 1: ~400 MB
-- LOD 2: ~100 MB
-- Total: ~8.5 GB (range 4.3–16 GB)
-
-1,000,000 images
-- LOD 0: ~80 GB
-- LOD 1: ~4 GB
-- LOD 2: ~1 GB
-- Total: ~85 GB (range 43–160 GB)
-
-I hadn't considered this, but storing a bunch of small files is bad.
-most file systems have smallest block size of 4kb, meaning
-LOD 1 + 2 take up 8 kb instead of 5.
-
-an idea was to store thumbnails in a DB, which makes even more sense with
-that in mind. The file layout to the user still stays stupid simple,
-with LOD 0 stored in the /thumbnails dir, like my original first instinct
-was while making the project
-
-we can add JXL support in-place.
-if user sends Accept: image/jxl
-we can skip the mipmap stuff and just send the user the JXL
-and let progressive decode handle everything
-
-6kb/item is negligible, especially as a sane default.
-we can raise alerts to users with less reasonable library sizes
-
-===
-JXL//
-toast:
-> slow network connection ; not loading high res images
-|open settings| |dismiss|
 
 
 # Template TODO
@@ -303,8 +218,6 @@ if sort is a chip, why shouldn't view be one? view:grid
 
 Amdahl's Law (the serial fraction dominates): If even 15% of total time is serialized (SQLite writer lock, transaction commits, queue mutex), infinite cores cap speedup at 1 / 0.15 ≈ 6.7×
 
-- [x] Block `POST` write routes while startup phase is active (`progress.is_active("startup")` in `src/server/server.odin` returns 503 with `Retry-After: 5`).
-- [x] Start `scan_thread` after socket bind (unified into post-bind `startup_thread` / `startup_job_generate_thumbnails_and_run_plugins` in `src/main.odin` with `jobs.Abort_Flag` on shutdown).
 - [ ] Jobs/progress UI: make groups dismissable, improve rendering of hierarchical phases (e.g. `total == nil` sub-phases / `0` noise), or render as a tree/DAG.
 - [ ] Consider Multi-Index Hashing (MIH) for O(N) all-pairs PDQ duplicate detection at 100k+ items.
 
@@ -312,7 +225,3 @@ Amdahl's Law (the serial fraction dominates): If even 15% of total time is seria
 
 - [ ] **Multi-source `/merge` untested.** The lifecycle e2e test merges a single source, because only 2 items remain after its delete. Nothing covers `from=a,b` folding in order, skipping a source comment the target already contains, or the `DEV_ROUTES` `sample=1` shortcut (the unit test that covered these was removed when the test moved to e2e).
 - [ ] **`/duplicates` untested.** It has no handler test and no HTML fixture, so the page's switch to `POST /merge` is not covered.
-- [x] **Incremental replay cannot clear `name` or `comment`.** Fixed in `src/replay/replay.odin` by seeding both `name` and `comment` once on first miss in `!full_replay` and passing `&name` / `&state.comment` unconditionally to `force_write_item`.
-- [x] **Incremental replay skipped the lifecycle check.** A tag patch on a deleted id reached `toggle_tags`, and name/comment patches on deleted or unknown ids returned `DATABASE_ERR`. Fixed in `src/replay/replay.odin`: incremental replay seeds `seen_ids` from `items.deleted` on first touch and runs `lifecycle_step` like full replay (about +5 µs per call and +1 µs per distinct id).
-- [x] **`bench/import-tags` panics on empty tags.** `len(ev.tags_xor[0])` panicked when an event had no tags, and the bench no longer compiled after `elog.Event.tags_xor` was renamed to `tags`. Renamed the mirrored field and guarded the first-tag length.
-- [x] **`swap_write` truncated lengths (`src/replay/lru_cache.odin`).** Name, comment, and word counts were written as `u16`, so lengths over 65535 desynced the record and `swap_read` parsed later fields from comment bytes. Now `int`, also in the `vtab_spike.odin` readers; full replay bench unchanged.

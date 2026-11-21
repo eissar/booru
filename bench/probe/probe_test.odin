@@ -39,7 +39,7 @@ probe_dimensions_by_format :: proc(t: ^testing.T) {
 		ok := false
 
 		switch format {
-		case .Unknown:
+		case .Unknown, .WINURL:
 			continue
 		case .PNG:
 			ok = gen_ffmpeg_image(src_path, "png")

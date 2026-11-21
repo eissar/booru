@@ -24,6 +24,8 @@ Format :: enum {
 	WebM,
 	MKV,
 	PDF,
+	// unregistered
+	WINURL,
 }
 
 has_magic :: proc(data: []u8, offset: int, magic: []u8) -> bool {
@@ -110,6 +112,9 @@ detect_format :: proc(data: []u8) -> Format {
 		return .MKV
 	case has_magic(data, 0, transmute([]u8)string("%PDF-")):
 		return .PDF
+	// unregistered
+	case has_magic(data, 0, transmute([]u8)string("[InternetShortcut]")):
+		return .WINURL
 	}
 	return .Unknown
 }
@@ -156,6 +161,9 @@ extension :: proc(format: Format) -> string {
 		return "mkv"
 	case .PDF:
 		return "pdf"
+	// unregistered
+	case .WINURL:
+		return "url"
 	}
 	return ""
 }
@@ -202,6 +210,10 @@ mime :: proc(format: Format) -> string {
 		return "video/x-matroska"
 	case .PDF:
 		return "application/pdf"
+	// unregistered
+	case .WINURL:
+		// used by the FreeDesktop/XDG shared-mime-info
+		return "application/x-mswinurl"
 	}
 	return ""
 }

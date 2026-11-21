@@ -364,7 +364,7 @@ decode_frame :: proc(
 			},
 			.None
 	case .AVIF, .PNG, .JPEG, .GIF, .WebP:
-	case .Unknown:
+	case .Unknown, .WINURL:
 		return nil, .Unsupported
 	}
 
