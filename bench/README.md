@@ -6,6 +6,7 @@ benchmarks don't compete for CPU:
     odin test bench/handlers -o:speed -define:ODIN_TEST_THREADS=1
     odin test bench/probe -o:speed -define:ODIN_TEST_THREADS=1
     odin test bench/replay -o:speed -define:ODIN_TEST_THREADS=1
+    odin test bench/replay_incremental -o:speed -define:ODIN_TEST_THREADS=1
     odin test bench/breakpoint_reflow -define:ODIN_TEST_THREADS=1
 
 - `bench/` (package `bench`): thumbnail and HTML escape benchmarks. Its `main`
@@ -13,6 +14,8 @@ benchmarks don't compete for CPU:
 - `bench/handlers`: in-process handler throughput, no sockets.
 - `bench/probe`: `media.probe_dimensions` throughput across all supported formats.
 - `bench/replay`: replay of a generated 100k-event log (`.test-data/`).
+- `bench/replay_incremental`: incremental replay of patch batches against a
+  100k-item store.
 - `bench/breakpoint_reflow`: masonry column transitions in headless Chromium over
   CDP (needs chromium and libcurl; `-define:CARDS=n -define:RUNS=n`).
 

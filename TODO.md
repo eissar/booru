@@ -68,7 +68,8 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
   - Track `high_id = max(high_id, item.id)` in `replay` / `Swap_Store` and bound those three loops to `high_id` instead of `swap.max_id`.
   - For sparse or small `!full_replay` runs, iterate `seen_ids` / dirty IDs (or `patch_states.entries` directly when nothing evicted to swap) instead of scanning `1..=high_id`.
   - Defer `init_swap` (swap tmpfile create / 64 MiB `truncate` / `mmap`) until the first LRU eviction so small replays don't allocate/unlink a swap file at all.
-- [ ] Add `bench/replay_incremental/` (same style as `bench/replay`): seed a library with N items, then report the median time of single-event `ev_append` + `initiate_replay(full_replay = false)` edits on random ids; optionally add a batch over >10k distinct ids to exercise LRU eviction to swap. No existing bench covers incremental replay; `bench/replay` and `bench/replay_mixed` are full replay only.
+- [x] Add `bench/replay_incremental/`: seeds 100k items, then reports median/p10/p90 of `replay(full_replay = false)` for 1 tag patch, 1 name patch, 100 and 20,000 mixed patches on random ids, each inside BEGIN..ROLLBACK. It times `replay` directly, not `ev_append` + `initiate_replay` (no fsync or file read).
+  - [ ] Optional: a batch over >10k distinct ids with name/comment patches to exercise LRU eviction to swap.
 - [ ] Verify `search_images` query plans use index order for all four sorts (unfiltered and tag-filtered) and benchmark them.
 
 - [ ] Compare item and tag snapshots across the pre- and post-prepared-insert replay revisions using the same 100,000-event fixture; the benchmark currently checks repeatability within each run, not equality between revisions.
