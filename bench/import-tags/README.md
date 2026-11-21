@@ -18,9 +18,9 @@ Baseline on the current host (`-o:speed`):
 
 | Input | Mean ms / 100k items | Range ms | ns/item | items/s |
 | --- | ---: | ---: | ---: | ---: |
-| Clean | 515.511 | 509.865–524.583 | 5155.1 | 193982 |
-| Unsupported characters | 531.980 | 517.744–539.458 | 5319.8 | 187977 |
-| Potential collisions | 515.569 | 504.041–522.485 | 5155.7 | 193960 |
+| Clean | 172.327 | 170.465–174.311 | 1723.3 | 580291 |
+| Unsupported characters | 172.821 | 172.381–174.196 | 1728.2 | 578632 |
+| Potential collisions | 172.969 | 172.449–173.546 | 1729.7 | 578139 |
 
 The inputs differ but currently follow the same code path: none is validated or
 remediated. These differences are not measurements of remediation overhead.
