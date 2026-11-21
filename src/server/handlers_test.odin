@@ -6,12 +6,15 @@ import "core:bytes"
 import "core:fmt"
 import "core:io"
 import "core:os"
+import "core:slice"
 import "core:strings"
 import "core:testing"
 import "core:time"
 
+import elog "../event_log"
 import "../http"
 import "../library"
+import "../replay"
 import "../store"
 import "../thumbnail"
 import "../thumbnail/webpx"
@@ -376,5 +379,229 @@ write_handlers_reject_non_post :: proc(t: ^testing.T) {
 		)
 		testing.expect_value(t, res.status, http.STATUS.MethodNotAllowed)
 		testing.expect_value(t, res.headers["Allow"], "POST")
+	}
+}
+
+@(test)
+update_metadata_rejects_empty_oid_or_path_and_appends_nothing :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-update-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	if !testing.expect(t, library.init_new_library(root) == nil) {return}
+	cursor: elog.Cursor
+	log := elog.EventLog {
+		root   = root,
+		cursor = &cursor,
+	}
+	s := library.State {
+		library_path = root,
+		event_log    = &log,
+	}
+	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&s)
+	if !testing.expect(
+		t,
+		elog.ev_append(&log, []elog.Event{{op = "add", id = 1, oid = "a", path = "p"}}) == "",
+	) {return}
+	replay.initiate_replay(&s)
+	before := cursor
+	for body in ([]string{"id=1&oid=", "id=1&oid=%20", "id=1&path=", "id=1&name=x&path=%09"}) {
+		res := http.Response {
+			headers = make(map[string]string, alloc),
+		}
+		handle_update_metadata(
+			&s,
+			&res,
+			{{method = "POST", path = "/update-metadata"}, alloc, time.Time{}},
+			transmute([]u8)body,
+		)
+		testing.expectf(t, res.status == .BadRequest, "%s: got %v", body, res.status)
+		testing.expectf(t, cursor == before, "%s: appended to the event log", body)
+	}
+	shard := fmt.tprintf("%s/events/%s", root, string(cursor.shard[:]))
+	data, read_err := os.read_entire_file(shard, alloc)
+	if !testing.expect(t, read_err == nil) {return}
+	testing.expect_value(t, i64(len(data)), before.offset)
+	image, found, rc := store.read_image_by_id(s.data_store, 1, alloc)
+	testing.expect(t, rc == sqlite.OK && found)
+	testing.expect(t, image.oid == "a" && image.path == "p" && image.name == "")
+}
+
+@(test)
+delete_removes_row_and_rejects_unknown_id :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-delete-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	if !testing.expect(t, library.init_new_library(root) == nil) {return}
+	cursor: elog.Cursor
+	log := elog.EventLog {
+		root   = root,
+		cursor = &cursor,
+	}
+	s := library.State {
+		library_path = root,
+		event_log    = &log,
+	}
+	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&s)
+	if !testing.expect(
+		t,
+		elog.ev_append(
+			&log,
+			[]elog.Event{{op = "add", id = 1, ext = "png"}, {op = "add", id = 2, ext = "png"}},
+		) ==
+		"",
+	) {return}
+	replay.initiate_replay(&s)
+	original := fmt.tprintf("%s/images/1.png", root)
+	if !testing.expect(t, os.write_entire_file(original, []u8{1}) == nil) {return}
+	shard := fmt.tprintf("%s/events/%s", root, string(cursor.shard[:]))
+
+	res := http.Response {
+		headers = make(map[string]string, alloc),
+	}
+	handle_delete(
+		&s,
+		&res,
+		{{method = "POST", path = "/delete"}, alloc, time.Time{}},
+		transmute([]u8)string("id=1"),
+	)
+	testing.expect_value(t, res.status, http.STATUS.OK)
+	data, read_err := os.read_entire_file(shard, alloc)
+	if !testing.expect(t, read_err == nil) {return}
+	lines := strings.split_lines(strings.trim_right(string(data), "\n"), alloc)
+	if testing.expect_value(t, len(lines), 3) {
+		testing.expect(
+			t,
+			strings.contains(lines[2], `"id":1,`) && strings.contains(lines[2], `"op":"delete"`),
+		)
+	}
+	_, found, rc := store.read_image_by_id(s.data_store, 1, alloc)
+	testing.expect(t, rc == sqlite.OK && !found)
+	_, found, rc = store.read_image_by_id(s.data_store, 2, alloc)
+	testing.expect(t, rc == sqlite.OK && found)
+	testing.expect(t, !os.exists(original))
+
+	// Already-deleted and unknown ids are 404 and leave the log untouched.
+	before := cursor
+	for body in ([]string{"id=1", "id=99"}) {
+		res = http.Response {
+			headers = make(map[string]string, alloc),
+		}
+		handle_delete(
+			&s,
+			&res,
+			{{method = "POST", path = "/delete"}, alloc, time.Time{}},
+			transmute([]u8)body,
+		)
+		testing.expectf(t, res.status == .NotFound, "%s: got %v", body, res.status)
+		testing.expectf(t, cursor == before, "%s: appended to the event log", body)
+	}
+	after, after_err := os.read_entire_file(shard, alloc)
+	testing.expect(t, after_err == nil && len(after) == len(data))
+}
+
+@(test)
+merge_folds_multiple_sources_in_order :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-merge-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	if !testing.expect(t, library.init_new_library(root) == nil) {return}
+	cursor: elog.Cursor
+	log := elog.EventLog {
+		root   = root,
+		cursor = &cursor,
+	}
+	s := library.State {
+		library_path = root,
+		event_log    = &log,
+	}
+	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&s)
+	// "shared" is on both sources and absent on into; b's comment repeats a's.
+	if !testing.expect(
+		t,
+		elog.ev_append(
+			&log,
+			[]elog.Event {
+				{op = "add", id = 1, name = "t", comment = "base", tags = {"x"}},
+				{
+					op = "add",
+					id = 2,
+					ext = "png",
+					name = "a",
+					comment = "from a",
+					tags = {"shared", "only-a"},
+				},
+				{
+					op = "add",
+					id = 3,
+					ext = "png",
+					name = "b",
+					comment = "from a",
+					tags = {"shared", "only-b"},
+				},
+			},
+		) ==
+		"",
+	) {return}
+	replay.initiate_replay(&s)
+	for id in 2 ..= 3 {
+		original := fmt.tprintf("%s/images/%d.png", root, id)
+		if !testing.expect(t, os.write_entire_file(original, []u8{1}) == nil) {return}
+	}
+	shard := fmt.tprintf("%s/events/%s", root, string(cursor.shard[:]))
+	before, before_err := os.read_entire_file(shard, alloc)
+	if !testing.expect(t, before_err == nil) {return}
+
+	res := http.Response {
+		headers = make(map[string]string, alloc),
+	}
+	handle_merge(
+		&s,
+		&res,
+		{{method = "POST", path = "/merge"}, alloc, time.Time{}},
+		transmute([]u8)string("into=1&from=2,3"),
+	)
+	testing.expect_value(t, res.status, http.STATUS.OK)
+
+	into, found, rc := store.read_image_by_id(s.data_store, 1, alloc)
+	if !testing.expect(t, rc == sqlite.OK && found) {return}
+	testing.expect_value(t, into.name, "t")
+	testing.expect_value(
+		t,
+		into.comment,
+		"base\nmerged #2 name=\"a\"\nfrom a\nmerged #3 name=\"b\"",
+	)
+	testing.expect(t, slice.equal(into.tags, []string{"only-a", "only-b", "shared", "x"}))
+	for id in 2 ..= 3 {
+		_, source_found, source_rc := store.read_image_by_id(s.data_store, id, alloc)
+		testing.expect(t, source_rc == sqlite.OK && !source_found)
+		testing.expect(t, !os.exists(fmt.tprintf("%s/images/%d.png", root, id)))
+	}
+	after, after_err := os.read_entire_file(shard, alloc)
+	if !testing.expect(t, after_err == nil) {return}
+	appended := strings.split_lines(strings.trim_right(string(after[len(before):]), "\n"), alloc)
+	if testing.expect_value(t, len(appended), 3) {
+		ops := [3][2]string {
+			{`"id":1,`, `"op":"patch"`},
+			{`"id":2,`, `"op":"delete"`},
+			{`"id":3,`, `"op":"delete"`},
+		}
+		for want, i in ops {
+			testing.expectf(
+				t,
+				strings.contains(appended[i], want[0]) && strings.contains(appended[i], want[1]),
+				"record %d: %s",
+				i,
+				appended[i],
+			)
+		}
 	}
 }
