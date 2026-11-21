@@ -41,15 +41,17 @@ accept_tcp :: proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool) {
 // Serve handles requests on an already-listening socket until accept fails.
 // The caller owns the socket.
 Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = accept_tcp) {
-	slot: Conn_Slot
-	err: mem.Allocator_Error
-	slot.backing, err = make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
-	assert(err == nil)
-	defer delete(slot.backing, context.allocator)
+	bitlist := ~Bitlist{}
+	slots := make([]Conn_Slot, 64, context.allocator)
+	defer {
+		for i in 0 ..< len(slots) {
+			if len(slots[i].backing) > 0 {
+				delete(slots[i].backing, context.allocator)
+			}
+		}
+		delete(slots, context.allocator)
+	}
 
-	// request scoped arena, we free_all explicitly before each conn
-	mem.arena_init(&slot.arena, slot.backing)
-	alloc := mem.arena_allocator(&slot.arena)
 	if accept == accept_tcp {
 		if ep, endpoint_err := net.bound_endpoint(sock); endpoint_err == nil {
 			when ODIN_TEST {
@@ -62,6 +64,19 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 
 	// loop new client conns
 	for conn, accepted := accept(sock); accepted; conn, accepted = accept(sock) {
+		idx, slot_ok := acquire(&bitlist)
+		if !slot_ok {
+			net.close(conn)
+			continue
+		}
+		slot := &slots[idx]
+		if len(slot.backing) == 0 {
+			err: mem.Allocator_Error
+			slot.backing, err = make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
+			assert(err == nil)
+			mem.arena_init(&slot.arena, slot.backing)
+		}
+		alloc := mem.arena_allocator(&slot.arena)
 		slot.conn = conn
 
 		free_all(alloc)
@@ -106,6 +121,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 
 		if recv_failed || total_read == 0 {
 			net.close(slot.conn)
+			release(&bitlist, idx)
 			continue
 		}
 
@@ -143,6 +159,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 				fmt.eprintln("send response:", send_err)
 			}
 			net.close(slot.conn)
+			release(&bitlist, idx)
 			continue
 		case !header_ok || length < 0:
 			http.res_error("", &slot.res, .BadRequest)
@@ -150,6 +167,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 				fmt.eprintln("send response:", send_err)
 			}
 			net.close(slot.conn)
+			release(&bitlist, idx)
 			continue
 		case has_transfer_encoding:
 			http.res_error("Transfer-Encoding not supported.", &slot.res, .NotImplemented)
@@ -157,6 +175,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 				fmt.eprintln("send response:", send_err)
 			}
 			net.close(slot.conn)
+			release(&bitlist, idx)
 			continue
 		case body_too_large:
 			http.res_error("request body too large.", &slot.res, .ContentTooLarge)
@@ -164,6 +183,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 				fmt.eprintln("send response:", send_err)
 			}
 			net.close(slot.conn)
+			release(&bitlist, idx)
 			continue
 		}
 
@@ -192,6 +212,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 				fmt.eprintln("send response:", send_err)
 			}
 			net.close(slot.conn)
+			release(&bitlist, idx)
 			continue
 		}
 
@@ -207,6 +228,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 					fmt.eprintln("send response:", err)
 				}
 				net.close(slot.conn)
+				release(&bitlist, idx)
 				continue
 			}
 		}
@@ -279,5 +301,6 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		}
 
 		net.close(slot.conn)
+		release(&bitlist, idx)
 	}
 }
