@@ -292,6 +292,8 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			handle_fragment_inspect(s^, res, req)
 		case strings.starts_with(req_header.path, "/mipmap/"):
 			handle_mipmap(s^, res, req, body)
+		case strings.starts_with(req_header.path, "/thumbnails/"):
+			handle_thumbnail(s^, res, req)
 		case strings.starts_with(req_header.path, "/image/"):
 			handle_image(s^, res, req)
 		case strings.starts_with(req_header.path, "/static/"):

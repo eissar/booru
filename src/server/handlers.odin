@@ -327,6 +327,49 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 	http.res_error("", res, .NotFound)
 }
 
+// handle_thumbnail serves /thumbnails/:res/:oid.webp from disk.
+handle_thumbnail :: proc(s: library.State, res: ^http.Response, req: http.Req) {
+	rest := req.header.path[len("/thumbnails/"):]
+	slash := strings.index_byte(rest, '/')
+	if slash <= 0 {
+		http.res_error("", res, .NotFound)
+		return
+	}
+	res_name := rest[:slash]
+	// Reject backslashes and dots so res_name cannot traverse upward from thumbnails/.
+	if strings.contains_any(res_name, "\\.") {
+		http.res_error("", res, .NotFound)
+		return
+	}
+	leaf := rest[slash + 1:]
+	if !strings.has_suffix(leaf, ".webp") {
+		http.res_error("", res, .NotFound)
+		return
+	}
+	oid := leaf[:len(leaf) - len(".webp")]
+	if !oid_path_safe(oid) {
+		http.res_error("", res, .NotFound)
+		return
+	}
+
+	fp := fmt.aprintf(
+		"%s/thumbnails/%s/%s.webp",
+		s.library_path,
+		res_name,
+		oid,
+		allocator = req.alloc,
+	)
+	data, err := os.read_entire_file(fp, req.alloc)
+	if err != nil {
+		http.res_error("", res, .NotFound)
+		return
+	}
+	http.res_blob(data, res)
+	res.headers["Content-Type"] = "image/webp"
+	res.headers["X-Content-Type-Options"] = "nosniff"
+	res.headers["Content-Security-Policy"] = IMAGE_CSP
+}
+
 Mipmap_Stream :: struct {
 	files:  []thumbnail.Thumb,
 	prefix: webpx.Webp_Extended_Prefix,
