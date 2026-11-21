@@ -4,6 +4,7 @@ import "base:runtime"
 import "core:fmt"
 import "core:io"
 import "core:net"
+import "core:os"
 import "core:strings"
 import "core:testing"
 
@@ -56,6 +57,9 @@ marshal_and_send :: proc(
 	res: Response,
 	alloc: runtime.Allocator,
 ) -> net.TCP_Send_Error {
+	defer if res.body_stream == send_file_stream && res.body_stream_data != nil {
+		os.close((^os.File)(res.body_stream_data))
+	}
 	wire := marshal(res, alloc)
 	defer delete(wire, alloc)
 
@@ -189,6 +193,41 @@ res_blob :: proc(b: []u8, res: ^Response, type := Content_Type.Octet_Stream, sta
 
 	res.headers["Content-Type"] = CONTENT_TYPE_MIME[type]
 	res.body = b
+	res.status = status
+}
+
+@(private = "file")
+send_file_stream :: proc(conn: ^net.TCP_Socket, raw: rawptr) -> io.Error {
+	file := (^os.File)(raw)
+	buf: [64 * 1024]u8 = ---
+	for {
+		n, read_err := os.read(file, buf[:])
+		for off := 0; off < n; {
+			sent, send_err := net.send_tcp(conn^, buf[off:n])
+			if send_err != nil || sent <= 0 {return .Unknown}
+			off += sent
+		}
+		if read_err == .EOF || n == 0 {break}
+		if read_err != nil {return .Unknown}
+	}
+	return nil
+}
+
+// res_file streams an open file handle as the response body and closes it when done.
+res_file :: proc(
+	file: ^os.File,
+	length: int,
+	res: ^Response,
+	type := Content_Type.Octet_Stream,
+	status := STATUS.OK,
+) {
+	when ODIN_DEBUG {assert_res_helper(res)}
+
+	res.headers["Content-Type"] = CONTENT_TYPE_MIME[type]
+	res.body = nil
+	res.body_stream = send_file_stream
+	res.body_stream_data = file
+	res.body_stream_length = length
 	res.status = status
 }
 

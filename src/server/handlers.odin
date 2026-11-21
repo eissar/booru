@@ -273,30 +273,22 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		return
 	}
 
-	dir_buf: [4096]u8
-	dir: string
-	if len(s.library_path) + len("/images") <= len(dir_buf) {
-		dir = fmt.bprintf(dir_buf[:], "%s/images", s.library_path)
-	} else {
-		dir = fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
-	}
-	if img.ext == "" {
+	fp := fmt.aprintf("%s/images/%d.%s", s.library_path, img.id, img.ext, allocator = req.alloc)
+	file, open_err := os.open(fp, {.Read})
+	if open_err != nil {
 		http.res_error("", res, .NotFound)
 		return
 	}
-	path_buf: [4096]u8
-	fp: string
-	if len(dir) + len(img.ext) + 22 <= len(path_buf) {
-		fp = fmt.bprintf(path_buf[:], "%s/%d.%s", dir, img.id, img.ext)
-	} else {
-		fp = fmt.aprintf("%s/%d.%s", dir, img.id, img.ext, allocator = req.alloc)
-	}
-	data, err := os.read_entire_file(fp, req.alloc)
-	if err != nil {
-		http.res_error("", res, .NotFound)
+	defer if file != nil {os.close(file)}
+
+	size, size_err := os.file_size(file)
+	if size_err != nil {
+		http.res_error("", res, .InternalServerError)
 		return
 	}
-	http.res_blob(data, res)
+
+	http.res_file(file, int(size), res)
+	file = nil
 	if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
 	res.headers["X-Content-Type-Options"] = "nosniff"
 	res.headers["Content-Security-Policy"] = IMAGE_CSP
