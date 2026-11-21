@@ -72,6 +72,9 @@ mupdf_probe_dimensions(const char *path, int *out_w, int *out_h)
 	fz_page *page = NULL;
 	int ok = 0;
 
+	fz_var(doc);
+	fz_var(page);
+
 	fz_try(ctx) {
 		fz_register_document_handlers(ctx);
 		doc = fz_open_document(ctx, path);
@@ -119,6 +122,12 @@ mupdf_render_first_page_rgba(
 	unsigned char *buf = NULL;
 	int ok = 0;
 
+	fz_var(doc);
+	fz_var(page);
+	fz_var(pix);
+	fz_var(dev);
+	fz_var(buf);
+
 	fz_try(ctx) {
 		fz_register_document_handlers(ctx);
 		doc = fz_open_document(ctx, path);
@@ -136,6 +145,8 @@ mupdf_render_first_page_rgba(
 		float scale = (float)max_edge / (pw > ph ? pw : ph);
 		fz_matrix ctm = fz_scale(scale, scale);
 		fz_irect bbox = fz_round_rect(fz_transform_rect(bounds, ctm));
+		if (bbox.x1 <= bbox.x0) bbox.x1 = bbox.x0 + 1;
+		if (bbox.y1 <= bbox.y0) bbox.y1 = bbox.y0 + 1;
 		int w = bbox.x1 - bbox.x0;
 		int h = bbox.y1 - bbox.y0;
 		if (w <= 0 || h <= 0) {
