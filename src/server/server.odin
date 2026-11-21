@@ -1,5 +1,6 @@
 package server
 
+import "core:bytes"
 import "core:fmt"
 import "core:log"
 import "core:mem"
@@ -17,6 +18,9 @@ import "../template"
 DEV_ROUTES :: true
 
 REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte + http.MAX_BODY_SIZE
+RECV_POLL_INTERVAL :: time.Second
+IDLE_TIMEOUT :: 10 * time.Second
+REQUEST_TIMEOUT :: 30 * time.Second
 
 Accept_Proc :: #type proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool)
 
@@ -55,14 +59,43 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		// just read into a 16 kb slice
 		raw: [16 * 1024]byte
 
-
 		rec_time := time.now()
-		// todo: make more robust;
-		// the header/ body handling
-		// is ugly
-		bytes_read, err := net.recv_tcp(conn, raw[:])
-		if err != nil {
-			fmt.eprintln("recv error:", err)
+		if opt_err := net.set_option(conn, .Receive_Timeout, RECV_POLL_INTERVAL); opt_err != nil {
+			fmt.eprintfln("set_option Receive_Timeout: %v", opt_err)
+		}
+
+		total_read: int
+		header_end_idx := -1
+		header_complete: bool
+		recv_failed: bool
+		for total_read < len(raw) {
+			n, recv_err := net.recv_tcp(conn, raw[total_read:])
+			if recv_err == .Timeout || recv_err == .Would_Block {
+				elapsed := time.since(rec_time)
+				limit := total_read == 0 ? IDLE_TIMEOUT : REQUEST_TIMEOUT
+				if elapsed > limit {
+					recv_failed = true
+					break
+				}
+				continue
+			}
+			if recv_err != nil {
+				fmt.eprintln("recv error:", recv_err)
+				recv_failed = true
+				break
+			}
+			if n == 0 {break}
+			total_read += n
+
+			if idx_found := bytes.index(raw[:total_read], []u8{'\r', '\n', '\r', '\n'});
+			   idx_found >= 0 {
+				header_end_idx = idx_found
+				header_complete = true
+				break
+			}
+		}
+
+		if recv_failed || total_read == 0 {
 			net.close(conn)
 			continue
 		}
@@ -74,67 +107,79 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		// keep alive support
 		res.headers["Connection"] = "close"
 
-		request_bytes := raw[:bytes_read]
-
 		// todo rename
 		req_header: http.Header
 		req_header.headers = make(map[string]string, alloc)
-		ok := http.read_header(conn, &req_header, request_bytes, alloc)
+		header_ok :=
+			header_complete && http.read_header(conn, &req_header, raw[:header_end_idx + 4], alloc)
 
-		if !ok {
+		has_transfer_encoding := false
+		for name in req_header.headers {
+			if strings.equal_fold(name, "Transfer-Encoding") {
+				has_transfer_encoding = true
+				break
+			}
+		}
+
+		length := req_header.known_headers.content_length
+		body_too_large := header_ok && length > http.MAX_BODY_SIZE
+
+		switch {
+		case !header_complete && total_read >= len(raw):
+			http.res_error("request too large.", &res, .RequestHeaderFieldsTooLarge)
+			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+				fmt.eprintln("send response:", send_err)
+			}
+			net.close(conn)
+			continue
+		case !header_ok || length < 0:
 			http.res_error("", &res, .BadRequest)
-			http.marshal_and_send(conn, res, alloc)
+			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+				fmt.eprintln("send response:", send_err)
+			}
+			net.close(conn)
+			continue
+		case has_transfer_encoding:
+			http.res_error("Transfer-Encoding not supported.", &res, .NotImplemented)
+			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+				fmt.eprintln("send response:", send_err)
+			}
+			net.close(conn)
+			continue
+		case body_too_large:
+			http.res_error("request body too large.", &res, .ContentTooLarge)
+			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+				fmt.eprintln("send response:", send_err)
+			}
 			net.close(conn)
 			continue
 		}
 
 		req: http.Req = {req_header, alloc, rec_time}
 
-		length := req_header.known_headers.content_length
-		if length < 0 || length > http.MAX_BODY_SIZE {
-			fmt.eprintln("read body:", "invalid content-length from req of:", length)
-
-			http.res_error("Bad Request", &res, status = .BadRequest)
-			if err := http.marshal_and_send(conn, res, alloc); err != nil {
-				fmt.eprintln("send response:", err)
-			}
-			net.close(conn)
-			continue
-		}
-
 		body := make([]u8, length, alloc)
-		// defer delete(body, alloc)
-
-		// probably can do this more efficiently
-		// for now, just strings. index of /r/n/r/n
-		// offset of the
-		off := strings.index(transmute(string)request_bytes, "\r\n\r\n")
-		if off == -1 {
-			// bad request
-			http.res_error("Bad Request", &res, status = .BadRequest)
-			if err := http.marshal_and_send(conn, res, alloc); err != nil {
-				fmt.eprintln("send response:", err)
+		body_read := copy(body, raw[header_end_idx + 4:total_read])
+		for body_read < length {
+			n, recv_err := net.recv_tcp(conn, body[body_read:])
+			if recv_err == .Timeout || recv_err == .Would_Block {
+				if time.since(rec_time) > REQUEST_TIMEOUT {
+					recv_failed = true
+					break
+				}
+				continue
 			}
-			net.close(conn)
-			continue
-		}
-
-		n := copy(body, request_bytes[off + 4:])
-		received := http.read_body_sync(conn, body[n:])
-		if received < 0 {
-			fmt.eprintln("read body:", "failed to receive request body")
-			http.res_error("Bad Request", &res, status = .BadRequest)
-			if err := http.marshal_and_send(conn, res, alloc); err != nil {
-				fmt.eprintln("send response:", err)
+			if recv_err != nil {
+				fmt.eprintln("recv body:", recv_err)
+				recv_failed = true
+				break
 			}
-			net.close(conn)
-			continue
+			if n == 0 {break}
+			body_read += n
 		}
-		if received != length - n {
-			fmt.eprintln("read body:", "connection closed before request body was complete")
-			http.res_error("Bad Request", &res, status = .BadRequest)
-			if err := http.marshal_and_send(conn, res, alloc); err != nil {
-				fmt.eprintln("send response:", err)
+		if recv_failed || body_read < length {
+			http.res_error("incomplete request body.", &res, .BadRequest)
+			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+				fmt.eprintln("send response:", send_err)
 			}
 			net.close(conn)
 			continue
