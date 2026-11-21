@@ -1,6 +1,7 @@
 package template
 
 import "../library"
+import "../thumbnail"
 import "core:fmt"
 import "core:strings"
 import "core:time"
@@ -136,17 +137,24 @@ write_duplicate_group :: proc(b: ^strings.Builder, g: Duplicate_Group_View) {
 		id := fmt.bprintf(id_buf[:], "%d", item.id)
 
 		wr(b, "<section class=\"dup-card\">")
-		if strings.has_prefix(item.content_type, "video/") {
+		switch {
+		case strings.has_prefix(item.content_type, "video/"):
 			wr(b, "<video class=\"dup-preview\"")
 			attrf(b, "src", "/image/%s", item.oid)
 			wr(b, " controls preload=\"none\"></video>")
-		} else {
+		case strings.has_prefix(item.content_type, "image/"):
 			wr(b, "<img class=\"dup-preview\"")
-			if item.content_type == "application/pdf" {
-				attr(b, "src", "/static/unsupported_filetype_128.webp")
-			} else {
-				attrf(b, "src", "/image/%s", item.oid)
-			}
+			attrf(b, "src", "/image/%s", item.oid)
+			attr(b, "alt", item.name)
+			wr(b, " loading=\"lazy\"/>")
+		case .max in thumbnail.expected_resolutions(item.content_type):
+			wr(b, "<img class=\"dup-preview\"")
+			attrf(b, "src", "/thumbnails/max/%s.webp", item.oid)
+			attr(b, "alt", item.name)
+			wr(b, " loading=\"lazy\"/>")
+		case:
+			wr(b, "<img class=\"dup-preview\"")
+			attr(b, "src", "/static/unsupported_filetype_128.webp")
 			attr(b, "alt", item.name)
 			wr(b, " loading=\"lazy\"/>")
 		}

@@ -5,6 +5,7 @@ import "core:strings"
 import "core:time"
 
 import "../library"
+import "../thumbnail"
 
 // inspector_icon writes an icon <img> with the shared heroicons attributes.
 inspector_icon :: proc(b: ^strings.Builder, name, alt: string) {
@@ -32,20 +33,27 @@ render_inspector :: proc(
 	attr(&b, "value", id)
 	wr(&b, "/><input type=\"hidden\" name=\"order\"")
 	ia(&b, "value", order)
-	if strings.has_prefix(image.content_type, "video/") {
+	switch {
+	case strings.has_prefix(image.content_type, "video/"):
 		wr(&b, "/><video")
 		attrf(&b, "src", "/image/%s", image.oid)
 		wr(
 			&b,
 			" controls preload=\"none\" class=\"aspect-square w-full rounded-lg object-cover\"></video>",
 		)
-	} else {
+	case strings.has_prefix(image.content_type, "image/"):
 		wr(&b, "/><img")
-		if image.content_type == "application/pdf" {
-			attr(&b, "src", "/static/unsupported_filetype_128.webp")
-		} else {
-			attrf(&b, "src", "/image/%s", image.oid)
-		}
+		attrf(&b, "src", "/image/%s", image.oid)
+		attr(&b, "alt", image.name)
+		wr(&b, " class=\"aspect-square w-full rounded-lg object-cover\"/>")
+	case .max in thumbnail.expected_resolutions(image.content_type):
+		wr(&b, "/><img")
+		attrf(&b, "src", "/thumbnails/max/%s.webp", image.oid)
+		attr(&b, "alt", image.name)
+		wr(&b, " class=\"aspect-square w-full rounded-lg object-cover\"/>")
+	case:
+		wr(&b, "/><img")
+		attr(&b, "src", "/static/unsupported_filetype_128.webp")
 		attr(&b, "alt", image.name)
 		wr(&b, " class=\"aspect-square w-full rounded-lg object-cover\"/>")
 	}

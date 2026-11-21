@@ -1,6 +1,7 @@
 package template
 
 import "../library"
+import "../thumbnail"
 import "core:strings"
 
 // write_card_media emits the card's media element, dispatching on image.content_type.
@@ -24,13 +25,37 @@ write_card_media :: proc(
 		}
 		attr(b, "style", aspect_ratio)
 		wr(b, " class=\"gallery-card-media order-1\"></video>")
+	case strings.has_prefix(image.content_type, "image/"):
+		wr(b, "<img")
+		attrf(b, "src", "/image/%s", image.oid)
+		wr(b, " loading=\"lazy\" decoding=\"async\"")
+		wr(
+			b,
+			render_order >= 0 && render_order < 6 ? " fetchpriority=\"high\"" : " fetchpriority=\"low\"",
+		)
+		if image.width > 0 && image.height > 0 {
+			ia(b, "width", image.width)
+			ia(b, "height", image.height)
+		}
+		attr(b, "style", aspect_ratio)
+		wr(b, " class=\"gallery-card-media order-1\"/>")
+	case .max in thumbnail.expected_resolutions(image.content_type):
+		wr(b, "<img")
+		attrf(b, "src", "/thumbnails/max/%s.webp", image.oid)
+		wr(b, " loading=\"lazy\" decoding=\"async\"")
+		wr(
+			b,
+			render_order >= 0 && render_order < 6 ? " fetchpriority=\"high\"" : " fetchpriority=\"low\"",
+		)
+		if image.width > 0 && image.height > 0 {
+			ia(b, "width", image.width)
+			ia(b, "height", image.height)
+		}
+		attr(b, "style", aspect_ratio)
+		wr(b, " class=\"gallery-card-media order-1\"/>")
 	case:
 		wr(b, "<img")
-		if image.content_type == "application/pdf" {
-			attr(b, "src", "/static/unsupported_filetype_128.webp")
-		} else {
-			attrf(b, "src", "/image/%s", image.oid)
-		}
+		attr(b, "src", "/static/unsupported_filetype_128.webp")
 		wr(b, " loading=\"lazy\" decoding=\"async\"")
 		wr(
 			b,
