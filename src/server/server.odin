@@ -17,7 +17,8 @@ import "../template"
 // while prototyping.
 DEV_ROUTES :: true
 
-REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte + http.MAX_BODY_SIZE
+REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte
+LARGE_BODY_THRESHOLD :: 512 * mem.Kilobyte
 RECV_POLL_INTERVAL :: time.Second
 IDLE_TIMEOUT :: 10 * time.Second
 REQUEST_TIMEOUT :: 30 * time.Second
@@ -96,7 +97,10 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			n, recv_err := net.recv_tcp(slot.conn, slot.raw[total_read:])
 			if recv_err == .Timeout || recv_err == .Would_Block {
 				elapsed := time.since(rec_time)
-				limit := total_read == 0 ? IDLE_TIMEOUT : REQUEST_TIMEOUT
+				limit := REQUEST_TIMEOUT
+				if total_read == 0 {
+					limit = IDLE_TIMEOUT
+				}
 				if elapsed > limit {
 					recv_failed = true
 					break
@@ -187,7 +191,12 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			continue
 		}
 
-		body := make([]u8, length, alloc)
+		body_heap := length > LARGE_BODY_THRESHOLD
+		body_alloc := alloc
+		if body_heap {
+			body_alloc = context.allocator
+		}
+		body := make([]u8, length, body_alloc)
 		body_read := copy(body, slot.raw[header_end_idx + 4:total_read])
 		for body_read < length {
 			n, recv_err := net.recv_tcp(slot.conn, body[body_read:])
@@ -211,6 +220,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			if send_err := http.marshal_and_send(slot.conn, slot.res, alloc); send_err != nil {
 				fmt.eprintln("send response:", send_err)
 			}
+			if body_heap {delete(body, context.allocator)}
 			net.close(slot.conn)
 			release(&bitlist, idx)
 			continue
@@ -227,6 +237,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 				if err := http.marshal_and_send(slot.conn, res^, alloc); err != nil {
 					fmt.eprintln("send response:", err)
 				}
+				if body_heap {delete(body, context.allocator)}
 				net.close(slot.conn)
 				release(&bitlist, idx)
 				continue
@@ -300,6 +311,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			fmt.eprintln("send response:", err)
 		}
 
+		if body_heap {delete(body, context.allocator)}
 		net.close(slot.conn)
 		release(&bitlist, idx)
 	}

@@ -5,6 +5,9 @@ vars:
   # Resolves to the shared hooks dir even in a linked worktree, where .git is a file.
   GIT_HOOKS:
     sh: git rev-parse --git-path hooks
+  # Link with mold when installed; otherwise the system linker.
+  LINKER:
+    sh: command -v ld.mold >/dev/null && echo -linker:mold || true
 
 tasks:
   default:
@@ -57,14 +60,14 @@ tasks:
       - '{{.BIN_DIR}}/booru'
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin build src -o:speed -out:{{.BIN_DIR}}/booru
+      - odin build src -o:speed -out:{{.BIN_DIR}}/booru {{.LINKER}}
 
   run:
     desc: 'Build and run the server (e.g. task run -- -debug -- -port:9000)'
     deps: [hooks:check, tailwind]
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin run src -out:{{.BIN_DIR}}/booru {{.CLI_ARGS}}
+      - odin run src -out:{{.BIN_DIR}}/booru {{.LINKER}} {{.CLI_ARGS}}
 
   worktree-proxy:
     desc: 'Serve on bin/booru.sock and expose it on a free localhost port (URL printed); Ctrl-C stops both'
@@ -73,7 +76,7 @@ tasks:
       - |
         SOCK={{.BIN_DIR}}/booru.sock
         mkdir -p {{.BIN_DIR}}
-        odin run src -out:{{.BIN_DIR}}/booru -- -socket:$SOCK -daemon >>{{.BIN_DIR}}/booru.log 2>&1 || exit 1
+        odin run src -out:{{.BIN_DIR}}/booru {{.LINKER}} -- -socket:$SOCK -daemon >>{{.BIN_DIR}}/booru.log 2>&1 || exit 1
         trap 'env kill $(lsof -t $SOCK)' EXIT
         socat -d -d TCP-LISTEN:0,bind=localhost,fork,reuseaddr UNIX-CONNECT:$SOCK 2>&1 |
           awk '/listening on/ {n = split($NF, a, ":"); print "http://localhost:" a[n] "/"} / [EF] / {print} {fflush()}'
@@ -91,21 +94,21 @@ tasks:
     deps: [hooks:check]
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin test -out:{{.BIN_DIR}}/test {{.CLI_ARGS}}
+      - odin test -out:{{.BIN_DIR}}/test {{.LINKER}} {{.CLI_ARGS}}
 
   test:render:
     desc: 'Run HTML fixture tests (extra Odin flags after --)'
     deps: [hooks:check]
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin test src/template -out:{{.BIN_DIR}}/test-render {{.CLI_ARGS}}
+      - odin test src/template -out:{{.BIN_DIR}}/test-render {{.LINKER}} {{.CLI_ARGS}}
 
   test:cdp:
     desc: 'Run browser CDP tests in test/cdp (extra Odin flags after --)'
     deps: [hooks:check]
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin test test/cdp -out:{{.BIN_DIR}}/test-cdp -define:ODIN_TEST_PROGRESS_WIDTH=0 {{.CLI_ARGS}}
+      - odin test test/cdp -out:{{.BIN_DIR}}/test-cdp -define:ODIN_TEST_PROGRESS_WIDTH=0 {{.LINKER}} {{.CLI_ARGS}}
 
   test:all:build:
     desc: Build the full test suite
@@ -118,7 +121,7 @@ tasks:
       - '{{.BIN_DIR}}/test-all'
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - odin build test/ -build-mode:test -all-packages -debug -out:{{.BIN_DIR}}/test-all -define:ODIN_TEST_PROGRESS_WIDTH=0
+      - odin build test/ -build-mode:test -all-packages -debug -out:{{.BIN_DIR}}/test-all -define:ODIN_TEST_PROGRESS_WIDTH=0 {{.LINKER}}
 
   test:all:
     desc: Run the full test suite (reuse the build when sources are unchanged)
