@@ -2,10 +2,12 @@ package replay
 
 import elog "../event_log"
 import "../library"
+import pijul "../slop_pijul"
 import "../store"
 import "../vendor/sqlite"
 import "core:os"
 import "core:slice"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -174,5 +176,70 @@ incremental_patch_on_evicted_id_reads_swap :: proc(t: ^testing.T) {
 		image, found, rc := store.read_image_by_id(s.data_store, want.id, alloc)
 		if !testing.expect(t, rc == sqlite.OK && found) {return}
 		testing.expect_value(t, image.name, want.name)
+	}
+}
+
+@(test)
+patch_clears_name_comment_and_tags_full_and_incremental :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-incremental-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	seed_b := strings.builder_make(alloc)
+	elog.write_event(
+		strings.to_writer(&seed_b),
+		elog.Event {
+			op = "add",
+			id = 1,
+			name = "before",
+			comment = "keep\nthis",
+			tags = {"cat", "dog"},
+		},
+	)
+	clear_b := strings.builder_make(alloc)
+	elog.write_event(
+		strings.to_writer(&clear_b),
+		elog.Event {
+			op = "patch",
+			id = 1,
+			name = elog.name_delta("before", "", alloc),
+			comment = pijul.generate_patch("keep\nthis", "", alloc),
+			tags = {"cat", "dog"},
+		},
+	)
+	seed := strings.to_string(seed_b)
+	clear := strings.to_string(clear_b)
+
+	full := library.State {
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&full, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&full)
+	if !testing.expect(t, sqlite.run(full.data_store, "BEGIN")) {return}
+	if !testing.expect(t, replay(&full, {seed, clear}, context.allocator) == nil) {return}
+	if !testing.expect(t, sqlite.run(full.data_store, "COMMIT")) {return}
+
+	incremental := library.State {
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&incremental, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&incremental)
+	if !testing.expect(t, sqlite.run(incremental.data_store, "BEGIN")) {return}
+	if !testing.expect(t, replay(&incremental, {seed}, context.allocator) == nil) {return}
+	if !testing.expect(t, sqlite.run(incremental.data_store, "COMMIT")) {return}
+	if !testing.expect(t, sqlite.run(incremental.data_store, "BEGIN")) {return}
+	if !testing.expect(
+		t,
+		replay(&incremental, {clear}, context.allocator, full_replay = false) == nil,
+	) {return}
+	if !testing.expect(t, sqlite.run(incremental.data_store, "COMMIT")) {return}
+
+	for s in ([]^library.State{&full, &incremental}) {
+		image, found, rc := store.read_image_by_id(s.data_store, 1, alloc)
+		if !testing.expect(t, rc == sqlite.OK && found) {return}
+		testing.expect_value(t, image.name, "")
+		testing.expect_value(t, image.comment, "")
+		testing.expect_value(t, len(image.tags), 0)
 	}
 }

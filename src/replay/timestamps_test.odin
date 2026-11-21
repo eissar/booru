@@ -79,3 +79,54 @@ timestamp_advances_commute_and_merge :: proc(t: ^testing.T) {
 		testing.expect(t, sqlite.run(s.data_store, "COMMIT"))
 	}
 }
+
+@(test)
+overwrite_rejects_nonzero_timestamps :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-timestamps-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	seed := `{"op":"add","id":1,"oid":"a","mtime":100,"added_at":200}`
+	cases := []struct {
+		line:     string,
+		expected: Error,
+	} {
+		{`{"op":"overwrite","id":1,"oid":"b","mtime":0,"added_at":0}`, .None},
+		{`{"op":"overwrite","id":1,"oid":"b","mtime":300}`, .BadEvent},
+		{`{"op":"overwrite","id":1,"oid":"b","added_at":300}`, .BadEvent},
+		{`{"op":"overwrite","id":1,"oid":"b","mtime":50}`, .BadEvent},
+		{`{"op":"overwrite","id":1,"oid":"b","added_at":-1}`, .BadEvent},
+		{`{"op":"overwrite","id":1,"oid":"b","mtime":"0"}`, .BadEvent},
+	}
+	for test in cases {
+		for full_replay in ([]bool{true, false}) {
+			s := library.State {
+				library_path = root,
+			}
+			if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+			defer store.Close(&s)
+			if !full_replay {
+				testing.expect(t, sqlite.run(s.data_store, "BEGIN"))
+				testing.expect(t, replay(&s, {seed}, context.allocator) == nil)
+				testing.expect(t, sqlite.run(s.data_store, "COMMIT"))
+			}
+			streams := full_replay ? []string{seed, test.line} : []string{test.line}
+			testing.expect(t, sqlite.run(s.data_store, "BEGIN"))
+			result := replay(&s, streams, context.allocator, full_replay)
+			testing.expectf(
+				t,
+				result == test.expected,
+				"%s (full=%v): got %v",
+				test.line,
+				full_replay,
+				result,
+			)
+			testing.expect(t, sqlite.run(s.data_store, result == nil ? "COMMIT" : "ROLLBACK"))
+			if result != nil {continue}
+			item, found, rc := store.read_image_by_id(s.data_store, 1, alloc)
+			testing.expect(t, rc == sqlite.OK && found)
+			testing.expect(t, item.oid == "b" && item.mtime == 100 && item.added_at == 200)
+		}
+	}
+}

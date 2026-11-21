@@ -331,3 +331,184 @@ duplicate_patch_delivery_cancels :: proc(t: ^testing.T) {
 		testing.expect(t, slice.equal(images[0].tags, []string{"cat"}))
 	}
 }
+
+@(test)
+overwrite_applies_in_log_order_across_shards :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	events := fmt.tprintf("%s/events", root)
+	if !testing.expect(t, os.mkdir_all(events, os.Permissions_Default_Directory) == nil) {return}
+	first := `{"op":"add","id":1,"oid":"a","path":"p","ext":"png","content_type":"image/png","width":10,"height":20}
+{"op":"overwrite","id":1,"oid":"b","width":11}
+`
+	middle := `{"op":"overwrite","id":1,"oid":"c","height":22}
+`
+	last := `{"op":"overwrite","id":1,"path":"q","width":0}
+`
+	// Deliberately create files out of lexical order.
+	shards := [3][2]string {
+		{"2026-03.ndjson", last},
+		{"2026-01.ndjson", first},
+		{"2026-02.ndjson", middle},
+	}
+	for shard in shards {
+		testing.expect(
+			t,
+			os.write_entire_file(
+				fmt.tprintf("%s/%s", events, shard[0]),
+				transmute([]u8)shard[1],
+			) ==
+			nil,
+		)
+	}
+	full := library.State {
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&full, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&full)
+	initiate_replay(&full)
+
+	// Incremental replay applies overwrites through the store, not overwrite_step.
+	incremental := library.State {
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&incremental, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&incremental)
+	testing.expect(t, sqlite.run(incremental.data_store, "BEGIN"))
+	testing.expect(t, replay(&incremental, {first}, context.allocator) == nil)
+	testing.expect(t, sqlite.run(incremental.data_store, "COMMIT"))
+	for stream in ([]string{middle, last}) {
+		testing.expect(t, sqlite.run(incremental.data_store, "BEGIN"))
+		testing.expect(
+			t,
+			replay(&incremental, {stream}, context.allocator, full_replay = false) == nil,
+		)
+		testing.expect(t, sqlite.run(incremental.data_store, "COMMIT"))
+	}
+
+	for s in ([]^library.State{&full, &incremental}) {
+		image, found, rc := store.read_image_by_id(s.data_store, 1, alloc)
+		if !testing.expect(t, rc == sqlite.OK && found) {return}
+		testing.expect_value(t, image.oid, "c")
+		testing.expect_value(t, image.path, "q")
+		testing.expect_value(t, image.ext, "png")
+		testing.expect_value(t, image.content_type, "image/png")
+		testing.expect_value(t, image.width, 11)
+		testing.expect_value(t, image.height, 22)
+	}
+}
+
+@(test)
+name_finalization_trims_nul_padding :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	// Grow, shrink, clear, multibyte, then shrink within multibyte.
+	names := [?]string{"ab", "abcdef", "x", "", "日本語", "é"}
+	lines := make([]string, len(names), alloc)
+	lines[0] = `{"op":"add","id":1,"name":"ab"}`
+	for i in 1 ..< len(names) {
+		lines[i] = fmt.tprintf(
+			`{{"op":"patch","id":1,"name":"%s"}}`,
+			elog.name_delta(names[i - 1], names[i], alloc),
+		)
+	}
+
+	incremental := library.State {
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&incremental, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&incremental)
+	testing.expect(t, sqlite.run(incremental.data_store, "BEGIN"))
+	testing.expect(t, replay(&incremental, {lines[0]}, context.allocator) == nil)
+	testing.expect(t, sqlite.run(incremental.data_store, "COMMIT"))
+
+	for k in 1 ..< len(names) {
+		full := library.State {
+			library_path = root,
+		}
+		if !testing.expect(t, store.Init(&full, ":memory:") == sqlite.OK) {return}
+		defer store.Close(&full)
+		testing.expect(t, sqlite.run(full.data_store, "BEGIN"))
+		testing.expect(t, replay(&full, lines[:k + 1], context.allocator) == nil)
+		testing.expect(t, sqlite.run(full.data_store, "COMMIT"))
+
+		testing.expect(t, sqlite.run(incremental.data_store, "BEGIN"))
+		testing.expect(
+			t,
+			replay(&incremental, {lines[k]}, context.allocator, full_replay = false) == nil,
+		)
+		testing.expect(t, sqlite.run(incremental.data_store, "COMMIT"))
+
+		for s in ([]^library.State{&full, &incremental}) {
+			image, found, rc := store.read_image_by_id(s.data_store, 1, alloc)
+			if !testing.expect(t, rc == sqlite.OK && found) {return}
+			testing.expect_value(t, image.name, names[k])
+		}
+	}
+}
+
+@(test)
+json_null_field_is_bad_event :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-replay-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	fields := [?]struct {
+		op:   string,
+		keys: []string,
+	} {
+		{
+			"add",
+			{
+				"oid",
+				"path",
+				"ext",
+				"content_type",
+				"name",
+				"comment",
+				"width",
+				"height",
+				"mtime",
+				"added_at",
+				"tags",
+				"version",
+			},
+		},
+		{"patch", {"name", "comment", "mtime", "added_at", "width", "height", "tags", "version"}},
+		{
+			"overwrite",
+			{"oid", "path", "ext", "content_type", "width", "height", "mtime", "added_at"},
+		},
+		{"delete", {"mtime", "version"}},
+	}
+	lines := make([dynamic]string, alloc)
+	append(&lines, `{"op":null,"id":1}`, `{"op":"patch","id":null}`)
+	for f in fields {
+		for key in f.keys {
+			// add creates a fresh id; the rest act on the seeded live item.
+			append(
+				&lines,
+				fmt.tprintf(`{{"op":"%s","id":%d,"%s":null}}`, f.op, f.op == "add" ? 2 : 1, key),
+			)
+		}
+	}
+	for line in lines {
+		s := library.State {
+			library_path = root,
+		}
+		if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+		defer store.Close(&s)
+		text := strings.concatenate({`{"op":"add","id":1}`, "\n", line, "\n"}, alloc)
+		testing.expect(t, sqlite.run(s.data_store, "BEGIN"))
+		result := replay(&s, {text}, context.allocator)
+		testing.expectf(t, result == .BadEvent, "%s: got %v", line, result)
+		testing.expect(t, sqlite.run(s.data_store, "ROLLBACK"))
+	}
+}
