@@ -141,3 +141,38 @@ incremental_patch_on_deleted_or_unknown_item_is_bad_event :: proc(t: ^testing.T)
 		sqlite.run(s.data_store, "ROLLBACK")
 	}
 }
+
+@(test)
+incremental_patch_on_evicted_id_reads_swap :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	defer free_all(alloc)
+	root, err := os.make_directory_temp("", "booru-incremental-*", alloc)
+	if !testing.expect(t, err == nil) {return}
+	defer os.remove_all(root)
+	s := library.State {
+		library_path = root,
+	}
+	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
+	defer store.Close(&s)
+	seed := "{\"op\":\"add\",\"id\":1,\"name\":\"a\"}\n{\"op\":\"add\",\"id\":2,\"name\":\"x\"}\n"
+	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
+	if !testing.expect(t, replay(&s, {seed}, context.allocator) == nil) {return}
+	if !testing.expect(t, sqlite.run(s.data_store, "COMMIT")) {return}
+	// a->b on 1, x->y on 2 evicts 1 to swap, then b->c on 1 must resume from swap.
+	batch := "{\"op\":\"patch\",\"id\":1,\"name\":\"03\"}\n{\"op\":\"patch\",\"id\":2,\"name\":\"01\"}\n{\"op\":\"patch\",\"id\":1,\"name\":\"01\"}\n"
+	if !testing.expect(t, sqlite.run(s.data_store, "BEGIN")) {return}
+	if !testing.expect(
+		t,
+		replay(&s, {batch}, context.allocator, full_replay = false, lru_cap = 1) == nil,
+	) {return}
+	if !testing.expect(t, sqlite.run(s.data_store, "COMMIT")) {return}
+	expected := [?]struct {
+		id:   int,
+		name: string,
+	}{{1, "c"}, {2, "y"}}
+	for want in expected {
+		image, found, rc := store.read_image_by_id(s.data_store, want.id, alloc)
+		if !testing.expect(t, rc == sqlite.OK && found) {return}
+		testing.expect_value(t, image.name, want.name)
+	}
+}

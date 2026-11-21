@@ -50,6 +50,7 @@ replay :: proc(
 	streams: []string,
 	backing_alloc: mem.Allocator,
 	full_replay := true,
+	lru_cap := 10_000,
 ) -> Error {
 	// Own all temporary reduction state and decoded strings until replay ends.
 	arena: mem.Dynamic_Arena
@@ -64,7 +65,7 @@ replay :: proc(
 
 	// Bounded in-memory working set; evictions spill to the swap tmpfile
 	patch_states: lru.Cache(int, Patch_State)
-	lru.init(&patch_states, capacity = 10_000, entries_allocator = alloc, node_allocator = alloc)
+	lru.init(&patch_states, capacity = lru_cap, entries_allocator = alloc, node_allocator = alloc)
 	defer lru.destroy(&patch_states, call_on_remove = false)
 	patch_states.on_remove = on_evict_to_swap
 	patch_states.on_remove_user_data = &swap
