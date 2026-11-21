@@ -38,14 +38,14 @@ vtab_insert_items :: proc(
 			added_at := (^i64)(&src[8])^
 			pos := 16
 
-			n_len := int((^u16)(&src[pos])^)
-			pos += 2
+			n_len := (^int)(&src[pos])^
+			pos += size_of(int)
 			name_bytes := src[pos:pos + n_len]
 			pos += n_len
 			for n_len > 0 && name_bytes[n_len - 1] == 0 {n_len -= 1}
 
-			c_len := int((^u16)(&src[pos])^)
-			pos += 2
+			c_len := (^int)(&src[pos])^
+			pos += size_of(int)
 			comment := string(src[pos:pos + c_len])
 
 			row := tab.lww_items[tab.id]
@@ -239,12 +239,12 @@ vtab_insert_item_tags :: proc(
 
 			src := tab.swap.ptr[off:]
 			pos := 16
-			n_len := int((^u16)(&src[pos])^)
-			pos += 2 + n_len
-			c_len := int((^u16)(&src[pos])^)
-			pos += 2 + c_len
-			w_len := int((^u16)(&src[pos])^)
-			pos += 2
+			n_len := (^int)(&src[pos])^
+			pos += size_of(int) + n_len
+			c_len := (^int)(&src[pos])^
+			pos += size_of(int) + c_len
+			w_len := (^int)(&src[pos])^
+			pos += size_of(int)
 
 			tab.words_ptr = ([^]u64)(&src[pos])
 			tab.words_len = w_len

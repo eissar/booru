@@ -85,7 +85,15 @@ swap_write :: proc(s: ^Swap_Store, id: int, state: ^Patch_State) {
 			word_count -= 1
 		}
 	}
-	rec_size := 8 + 8 + 2 + len(state.name) + 2 + len(state.comment) + 2 + word_count * 8
+	rec_size :=
+		8 +
+		8 +
+		size_of(int) +
+		len(state.name) +
+		size_of(int) +
+		len(state.comment) +
+		size_of(int) +
+		word_count * 8
 	if s.tail + rec_size > s.size {
 		fmt.panicf("swap: out of preallocated swap space (%d + %d > %d)", s.tail, rec_size, s.size)
 	}
@@ -98,22 +106,22 @@ swap_write :: proc(s: ^Swap_Store, id: int, state: ^Patch_State) {
 	(^i64)(&dst[pos])^ = state.added_at
 	pos += 8
 
-	(^u16)(&dst[pos])^ = u16(len(state.name))
-	pos += 2
+	(^int)(&dst[pos])^ = len(state.name)
+	pos += size_of(int)
 	if len(state.name) > 0 {
 		mem.copy(&dst[pos], raw_data(state.name), len(state.name))
 		pos += len(state.name)
 	}
 
-	(^u16)(&dst[pos])^ = u16(len(state.comment))
-	pos += 2
+	(^int)(&dst[pos])^ = len(state.comment)
+	pos += size_of(int)
 	if len(state.comment) > 0 {
 		mem.copy(&dst[pos], raw_data(state.comment), len(state.comment))
 		pos += len(state.comment)
 	}
 
-	(^u16)(&dst[pos])^ = u16(word_count)
-	pos += 2
+	(^int)(&dst[pos])^ = word_count
+	pos += size_of(int)
 	if word_count > 0 {
 		mem.copy(&dst[pos], words_ptr, word_count * 8)
 		pos += word_count * 8
@@ -136,23 +144,23 @@ swap_read :: proc(s: ^Swap_Store, id: int, alloc: mem.Allocator) -> (state: Patc
 	state.added_at = (^i64)(&src[pos])^
 	pos += 8
 
-	n_len := int((^u16)(&src[pos])^)
-	pos += 2
+	n_len := (^int)(&src[pos])^
+	pos += size_of(int)
 	if n_len > 0 {
 		state.name = make([dynamic]u8, n_len, alloc)
 		mem.copy(raw_data(state.name), &src[pos], n_len)
 		pos += n_len
 	}
 
-	c_len := int((^u16)(&src[pos])^)
-	pos += 2
+	c_len := (^int)(&src[pos])^
+	pos += size_of(int)
 	if c_len > 0 {
 		state.comment = strings.clone(string(src[pos:pos + c_len]), alloc)
 		pos += c_len
 	}
 
-	w_len := int((^u16)(&src[pos])^)
-	pos += 2
+	w_len := (^int)(&src[pos])^
+	pos += size_of(int)
 	if w_len == 1 {
 		(^u64)(&state.tags)^ = (^u64)(&src[pos])^
 		pos += 8
