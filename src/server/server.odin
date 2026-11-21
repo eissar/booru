@@ -17,7 +17,7 @@ import "../template"
 // while prototyping.
 DEV_ROUTES :: true
 
-REQUEST_ARENA_BACKING_SIZE :: 1 * mem.Megabyte
+REQUEST_ARENA_BACKING_SIZE :: 4 * mem.Megabyte
 LARGE_BODY_THRESHOLD :: 512 * mem.Kilobyte
 RECV_POLL_INTERVAL :: time.Second
 IDLE_TIMEOUT :: 10 * time.Second

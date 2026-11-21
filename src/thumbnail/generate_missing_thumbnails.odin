@@ -112,35 +112,6 @@ LOD_RESOLUTION :: enum {
 	max   = 5,
 }
 
-resolution_pixels :: proc(size: LOD_RESOLUTION) -> int {
-	switch size {
-	case .x1024:
-		return 1024
-	case .x512:
-		return 512
-	case .x256:
-		return 256
-	case .x128:
-		return 128
-	case .x64:
-		return 64
-	case .max:
-		return 0
-	}
-	return 0
-}
-
-// Returns the largest resolution; ok is false for an empty set.
-largest_resolution :: proc(sizes: bit_set[LOD_RESOLUTION]) -> (largest: LOD_RESOLUTION, ok: bool) {
-	for size in sizes {
-		if !ok || resolution_pixels(size) > resolution_pixels(largest) {
-			largest = size
-			ok = true
-		}
-	}
-	return
-}
-
 name_for_r := #partial [LOD_RESOLUTION]string {
 	.x64  = "64",
 	.x128 = "128",

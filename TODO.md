@@ -1,6 +1,7 @@
 high level tasks
 
-- [ ] Allow user preference for max server memory usage (cap concurrent `Conn_Slot` count / large-body budget in `src/server/server.odin` instead of a fixed 64 slots × 1 MiB + unbounded 16 MiB uploads).
+- [ ] Allow user preference for max server memory usage (cap concurrent `Conn_Slot` count / large-body budget in `src/server/server.odin` instead of a fixed 64 slots × 4 MiB + unbounded 16 MiB uploads).
+- [ ] Have `render_photo_grid` (`src/template/photo_grid.odin`) write cards into one `strings.Builder` instead of allocating 100 separate `render_item_card` builders.
 
 - [ ] Move platform-specific `when ODIN_OS` branches that depend on platform-only imports into suffixed files such as `_windows.odin` and `_linux.odin`. Keep those imports in their platform files so `odin check -vet` does not flag imports needed only by another target. Cover `src/dirlist`, `src/importers/eagle_import.odin`, and `src/thumbnail/generate_missing_thumbnails.odin`, and audit for other occurrences.
 
@@ -234,6 +235,7 @@ toast:
   - The format string is parsed at runtime on every call.
   - User formatters are global (`set_user_formatters` can only be called once).
   - Compare against the current `strings.Builder` and `escape_*` approach in the fixture tests.
+- [ ] Consider deduplicating the `<img>` branches in `write_card_media` (`src/template/card_media_render.odin`), `render_inspector` and `write_duplicate_group`: the image, `.max` and unsupported cases differ only in `src`, so pick `src` in the content-type switch and emit the tag once (fixtures should not change).
 
 atproto integration ? ~/Public/booru-atproto.md
 

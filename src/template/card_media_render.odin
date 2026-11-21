@@ -29,10 +29,11 @@ write_card_media :: proc(
 		wr(b, "<img")
 		attrf(b, "src", "/image/%s", image.oid)
 		wr(b, " loading=\"lazy\" decoding=\"async\"")
-		wr(
-			b,
-			render_order >= 0 && render_order < 6 ? " fetchpriority=\"high\"" : " fetchpriority=\"low\"",
-		)
+		if render_order >= 0 && render_order < 6 {
+			wr(b, " fetchpriority=\"high\"")
+		} else {
+			wr(b, " fetchpriority=\"low\"")
+		}
 		if image.width > 0 && image.height > 0 {
 			ia(b, "width", image.width)
 			ia(b, "height", image.height)
@@ -43,10 +44,11 @@ write_card_media :: proc(
 		wr(b, "<img")
 		attrf(b, "src", "/thumbnails/max/%s.webp", image.oid)
 		wr(b, " loading=\"lazy\" decoding=\"async\"")
-		wr(
-			b,
-			render_order >= 0 && render_order < 6 ? " fetchpriority=\"high\"" : " fetchpriority=\"low\"",
-		)
+		if render_order >= 0 && render_order < 6 {
+			wr(b, " fetchpriority=\"high\"")
+		} else {
+			wr(b, " fetchpriority=\"low\"")
+		}
 		if image.width > 0 && image.height > 0 {
 			ia(b, "width", image.width)
 			ia(b, "height", image.height)
@@ -57,10 +59,11 @@ write_card_media :: proc(
 		wr(b, "<img")
 		attr(b, "src", "/static/unsupported_filetype_128.webp")
 		wr(b, " loading=\"lazy\" decoding=\"async\"")
-		wr(
-			b,
-			render_order >= 0 && render_order < 6 ? " fetchpriority=\"high\"" : " fetchpriority=\"low\"",
-		)
+		if render_order >= 0 && render_order < 6 {
+			wr(b, " fetchpriority=\"high\"")
+		} else {
+			wr(b, " fetchpriority=\"low\"")
+		}
 		if image.width > 0 && image.height > 0 {
 			ia(b, "width", image.width)
 			ia(b, "height", image.height)

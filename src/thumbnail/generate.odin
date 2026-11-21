@@ -13,8 +13,10 @@ import libwebp "../vendor/libwebp"
 MAX_THUMBNAIL_SOURCE_PIXELS :: 8192 * 8192
 
 encode_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded_ARGB) -> bool {
-	dir :=
-		fmt.tprintf("%s/thumbnails/max", root) if edge == 0 else fmt.tprintf("%s/thumbnails/%d", root, edge)
+	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
+	if edge == 0 {
+		dir = fmt.tprintf("%s/thumbnails/max", root)
+	}
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
 		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
 		return false
@@ -45,8 +47,10 @@ encode_thumbnail_argb :: proc(root, oid: string, edge: c.int, img: media.Decoded
 }
 
 encode_thumbnail_rgb24 :: proc(root, oid: string, edge: c.int, img: media.Decoded_RGB24) -> bool {
-	dir :=
-		fmt.tprintf("%s/thumbnails/max", root) if edge == 0 else fmt.tprintf("%s/thumbnails/%d", root, edge)
+	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
+	if edge == 0 {
+		dir = fmt.tprintf("%s/thumbnails/max", root)
+	}
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
 		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
 		return false
@@ -86,8 +90,10 @@ encode_thumbnail_yuv :: proc(
 		fmt.eprintfln("thumbnail: alpha dimensions do not match: %s", oid)
 		return false
 	}
-	dir :=
-		fmt.tprintf("%s/thumbnails/max", root) if edge == 0 else fmt.tprintf("%s/thumbnails/%d", root, edge)
+	dir := fmt.tprintf("%s/thumbnails/%d", root, edge)
+	if edge == 0 {
+		dir = fmt.tprintf("%s/thumbnails/max", root)
+	}
 	if err := os.mkdir_all(dir, os.Permissions_Default_Directory); err != nil && err != .Exist {
 		fmt.eprintfln("thumbnail: mkdir %s: %v", dir, err)
 		return false
