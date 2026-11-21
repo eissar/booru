@@ -141,6 +141,7 @@ write_duplicate_group :: proc(b: ^strings.Builder, g: Duplicate_Group_View) {
 		case strings.has_prefix(item.content_type, "video/"):
 			wr(b, "<video class=\"dup-preview\"")
 			attrf(b, "src", "/image/%s", item.oid)
+			attrf(b, "poster", "/thumbnails/max/%s.webp", item.oid)
 			wr(b, " controls preload=\"none\"></video>")
 		case strings.has_prefix(item.content_type, "image/"):
 			wr(b, "<img class=\"dup-preview\"")

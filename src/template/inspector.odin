@@ -37,6 +37,7 @@ render_inspector :: proc(
 	case strings.has_prefix(image.content_type, "video/"):
 		wr(&b, "/><video")
 		attrf(&b, "src", "/image/%s", image.oid)
+		attrf(&b, "poster", "/thumbnails/max/%s.webp", image.oid)
 		wr(
 			&b,
 			" controls preload=\"none\" class=\"aspect-square w-full rounded-lg object-cover\"></video>",

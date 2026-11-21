@@ -119,7 +119,7 @@ name_for_r := #partial [LOD_RESOLUTION]string {
 }
 
 expected_resolutions :: proc(content_type: string) -> bit_set[LOD_RESOLUTION] {
-	if content_type == "application/pdf" {
+	if content_type == "application/pdf" || strings.has_prefix(content_type, "video/") {
 		return {.x64, .x128, .max}
 	}
 	return {.x64, .x128}

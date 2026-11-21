@@ -28,7 +28,7 @@ video_first_frame_thumbnail_fixture :: proc(t: ^testing.T) {
 	testing.expect(t, os.write_entire_file(fmt.tprintf("%s/images/2.mp4", root), source) == nil)
 
 	oid := "video-oid"
-	images := [?]library.Image{{id = 2, oid = oid, ext = "mp4"}}
+	images := [?]library.Image{{id = 2, oid = oid, ext = "mp4", content_type = "video/mp4"}}
 	state := library.State {
 		library_path = root,
 	}
@@ -46,9 +46,9 @@ video_first_frame_thumbnail_fixture :: proc(t: ^testing.T) {
 		sqlite.OK,
 	)
 
-	// Startup scan generates both resolutions from the video's first frame.
+	// Startup scan generates all expected resolutions (64, 128, max) from the video's first frame.
 	n, failed := generate_missing_thumbnails(state, all = true)
-	testing.expect(t, n == 2 && failed == 0, "generate both resolutions for video")
+	testing.expect(t, n == 3 && failed == 0, "generate all resolutions for video")
 
 	edges := [?]int{64, 128}
 	for edge in edges {
@@ -77,10 +77,19 @@ video_first_frame_thumbnail_fixture :: proc(t: ^testing.T) {
 		)
 		if y != nil {libwebp.WebPFree(y)}
 	}
+	testing.expect(
+		t,
+		os.exists(fmt.tprintf("%s/thumbnails/max/%s.webp", root, oid)),
+		"max poster webp exists",
+	)
 
 	// Regeneration replaces the existing thumbnails.
-	n, failed = force_generate_image_thumbnails(state, images[0], {.x64, .x128})
-	testing.expect(t, n == 2 && failed == 0, "regenerate both resolutions for video")
+	n, failed = force_generate_image_thumbnails(
+		state,
+		images[0],
+		expected_resolutions(images[0].content_type),
+	)
+	testing.expect(t, n == 3 && failed == 0, "regenerate all resolutions for video")
 }
 
 @(test)
