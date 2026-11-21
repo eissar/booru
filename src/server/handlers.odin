@@ -677,7 +677,7 @@ handle_regen_thumbnail :: proc(s: ^library.State, res: ^http.Response, req: http
 		return
 	}
 
-	set := bit_set[thumbnail.LOD_RESOLUTION]{.x128, .x64}
+	set := thumbnail.expected_resolutions(item.content_type)
 	_, failed := thumbnail.force_generate_image_thumbnails(s^, item, set)
 	if failed > 0 {
 		res.headers["HX-Reswap"] = "beforeend"

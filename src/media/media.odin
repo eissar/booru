@@ -1,11 +1,12 @@
 // Package media handles format detection, dimension probing, and decoding
-// supported media formats (raster images, AVIF, and video first frames) into a
-// format-agnostic decoded frame or pixel representation, with any pixel-count
-// limit supplied by callers rather than hardcoded.
+// supported media formats (raster images, AVIF, JXL, PDFs, and video first frames)
+// into a format-agnostic decoded frame or pixel representation, with any
+// pixel-count limit supplied by callers rather than hardcoded.
 package media
 import dav1d "../vendor/dav1d"
 import ffmpeg "../vendor/ffmpeg"
 import libwebp "../vendor/libwebp"
+import mupdf "../vendor/mupdf"
 import "core:c"
 import "core:c/libc"
 import "core:fmt"
@@ -132,8 +133,8 @@ decode_yuv_dav1d :: proc(
 }
 
 
-// probe_dimensions reads image or video stream dimensions from headers without decoding pixels.
-// Video formats require a non-empty `path`. Returns ok = false for unsupported formats or malformed headers.
+// probe_dimensions reads image, video, or PDF page dimensions without decoding pixels.
+// Video and PDF formats require a non-empty `path`. Returns ok = false for unsupported formats or malformed headers.
 probe_dimensions :: proc(
 	data: []u8,
 	format: Format,
@@ -146,6 +147,9 @@ probe_dimensions :: proc(
 	case .MP4, .MOV, .M4V, .ThreeGP, .WebM, .MKV, .AVI, .OGV, .MPG, .MPV, .WMV, .FLV:
 		if path == "" {return 0, 0, false}
 		return ffmpeg.probe_dimensions(path)
+	case .PDF:
+		if path == "" {return 0, 0, false}
+		return mupdf.probe_dimensions(path)
 	}
 	if len(data) == 0 || len(data) > int(max(c.int)) {return 0, 0, false}
 	p, n := raw_data(data), len(data)
@@ -172,8 +176,6 @@ probe_dimensions :: proc(
 		}
 		width, height, ok = jxl_codestream_dimension(cs)
 		if !ok {return 0, 0, false}
-	case .PDF:
-		return 0, 0, false
 	case:
 		when ODIN_TEST {
 			log.debugf("media: probe_dimensions called on unsupported format: %v", format)
@@ -307,7 +309,7 @@ free_decoded :: proc {
 	free_decoded_frame,
 }
 
-// Decodes a still image or first video frame from `path`.
+// Decodes a still image, first video frame, or first PDF page from `path`.
 // Returns .Unsupported for formats that cannot be decoded, .Too_Large when
 // dimensions exceed max_pixels (if > 0), and .Failed on I/O or decode errors.
 decode_frame :: proc(
@@ -347,8 +349,22 @@ decode_frame :: proc(
 				backing = ff,
 			},
 			.None
+	case .PDF:
+		pixels, w, h, ok := mupdf.render_first_page_rgba(path, 512)
+		if !ok {return nil, .Failed}
+		if max_pixels > 0 && i64(w) * i64(h) > max_pixels {
+			mupdf.mupdf_free_pixels(pixels)
+			return nil, .Too_Large
+		}
+		return Decoded_ARGB {
+				pixels = pixels,
+				width = w,
+				height = h,
+				free_pixels = mupdf.mupdf_free_pixels,
+			},
+			.None
 	case .AVIF, .PNG, .JPEG, .GIF, .WebP:
-	case .Unknown, .PDF:
+	case .Unknown:
 		return nil, .Unsupported
 	}
 

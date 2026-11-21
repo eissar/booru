@@ -77,6 +77,8 @@ probe_dimensions_by_format :: proc(t: ^testing.T) {
 			ok = gen_ffmpeg_video(src_path, {"-f", "webm", "-c:v", "libvpx"})
 		case .MKV:
 			ok = gen_ffmpeg_video(src_path, {"-f", "matroska", "-c:v", "mpeg4"})
+		case .PDF:
+			ok = gen_minimal_pdf(src_path)
 		}
 
 		if !testing.expect(
@@ -192,6 +194,26 @@ probe_dimensions_by_format :: proc(t: ^testing.T) {
 			r.bytes_per_sec,
 		)
 	}
+}
+
+@(private = "file")
+gen_minimal_pdf :: proc(dst: string) -> bool {
+	pdf :: `%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 256 256] >> endobj
+xref
+0 4
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+trailer << /Size 4 /Root 1 0 R >>
+startxref
+186
+%%EOF
+`
+	return os.write_entire_file(dst, transmute([]u8)string(pdf)) == nil
 }
 
 @(private = "file")

@@ -31,7 +31,7 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 
 - [ ] Test: `mtime` and `added_at` never decrease: a lower or zero value in a `patch` is ignored, `overwrite` carrying either is rejected, and the writer omits them when not greater than current.
 - [ ] Test: patches clearing `name`, `comment` and tags replay to empty values, in both full and incremental replay.
-- [ ] Fix the listener double close in `test/library_lifecycle.odin` and `test/mipmap.odin`: the shutdown `defer` closes `sock` and sets `sock = {}`, then the earlier `defer net.close(sock)` runs `close(0)`, which can close another parallel test's file descriptor (seen as flaky `import_browse_delete_merge_replay` event-log reads and jxl/video thumbnail writes). Guard it: `defer if sock != 0 {net.close(sock)}`.
+- [x] Fix the listener double close in `test/library_lifecycle.odin` and `test/mipmap.odin`: the shutdown `defer` closes `sock` and sets `sock = {}`, then the earlier `defer net.close(sock)` runs `close(0)`, which can close another parallel test's file descriptor (seen as flaky `import_browse_delete_merge_replay` event-log reads and jxl/video thumbnail writes). Guarded with `defer if sock != {} {net.close(sock)}` (e4b76f1).
 
 # Store Write Path TODO
 
