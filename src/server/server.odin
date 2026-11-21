@@ -22,6 +22,15 @@ RECV_POLL_INTERVAL :: time.Second
 IDLE_TIMEOUT :: 10 * time.Second
 REQUEST_TIMEOUT :: 30 * time.Second
 
+Conn_Slot :: struct {
+	backing: []u8,
+	arena:   mem.Arena,
+	raw:     [16 * 1024]byte,
+	conn:    net.TCP_Socket,
+	req:     http.Req,
+	res:     http.Response,
+}
+
 Accept_Proc :: #type proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool)
 
 accept_tcp :: proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool) {
@@ -32,14 +41,15 @@ accept_tcp :: proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool) {
 // Serve handles requests on an already-listening socket until accept fails.
 // The caller owns the socket.
 Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = accept_tcp) {
-	backing, err := make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
+	slot: Conn_Slot
+	err: mem.Allocator_Error
+	slot.backing, err = make([]u8, REQUEST_ARENA_BACKING_SIZE, context.allocator)
 	assert(err == nil)
-	defer delete(backing, context.allocator)
+	defer delete(slot.backing, context.allocator)
 
-	arena: mem.Arena
 	// request scoped arena, we free_all explicitly before each conn
-	mem.arena_init(&arena, backing)
-	alloc := mem.arena_allocator(&arena)
+	mem.arena_init(&slot.arena, slot.backing)
+	alloc := mem.arena_allocator(&slot.arena)
 	if accept == accept_tcp {
 		if ep, endpoint_err := net.bound_endpoint(sock); endpoint_err == nil {
 			when ODIN_TEST {
@@ -52,15 +62,14 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 
 	// loop new client conns
 	for conn, accepted := accept(sock); accepted; conn, accepted = accept(sock) {
+		slot.conn = conn
 
 		free_all(alloc)
 		free_all(context.temp_allocator) // TODO: fix
 
-		// just read into a 16 kb slice
-		raw: [16 * 1024]byte
-
 		rec_time := time.now()
-		if opt_err := net.set_option(conn, .Receive_Timeout, RECV_POLL_INTERVAL); opt_err != nil {
+		if opt_err := net.set_option(slot.conn, .Receive_Timeout, RECV_POLL_INTERVAL);
+		   opt_err != nil {
 			fmt.eprintfln("set_option Receive_Timeout: %v", opt_err)
 		}
 
@@ -68,8 +77,8 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		header_end_idx := -1
 		header_complete: bool
 		recv_failed: bool
-		for total_read < len(raw) {
-			n, recv_err := net.recv_tcp(conn, raw[total_read:])
+		for total_read < len(slot.raw) {
+			n, recv_err := net.recv_tcp(slot.conn, slot.raw[total_read:])
 			if recv_err == .Timeout || recv_err == .Would_Block {
 				elapsed := time.since(rec_time)
 				limit := total_read == 0 ? IDLE_TIMEOUT : REQUEST_TIMEOUT
@@ -87,7 +96,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			if n == 0 {break}
 			total_read += n
 
-			if idx_found := bytes.index(raw[:total_read], []u8{'\r', '\n', '\r', '\n'});
+			if idx_found := bytes.index(slot.raw[:total_read], []u8{'\r', '\n', '\r', '\n'});
 			   idx_found >= 0 {
 				header_end_idx = idx_found
 				header_complete = true
@@ -96,71 +105,72 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		}
 
 		if recv_failed || total_read == 0 {
-			net.close(conn)
+			net.close(slot.conn)
 			continue
 		}
 
-		res := http.Response {
+		slot.res = http.Response {
 			headers = make(map[string]string, alloc),
 		}
 		// set this for all requests until we implement
 		// keep alive support
-		res.headers["Connection"] = "close"
+		slot.res.headers["Connection"] = "close"
 
-		// todo rename
-		req_header: http.Header
-		req_header.headers = make(map[string]string, alloc)
+		slot.req = http.Req {
+			alloc    = alloc,
+			rec_time = rec_time,
+		}
+		slot.req.header.headers = make(map[string]string, alloc)
 		header_ok :=
-			header_complete && http.read_header(conn, &req_header, raw[:header_end_idx + 4], alloc)
+			header_complete &&
+			http.read_header(slot.conn, &slot.req.header, slot.raw[:header_end_idx + 4], alloc)
 
 		has_transfer_encoding := false
-		for name in req_header.headers {
+		for name in slot.req.header.headers {
 			if strings.equal_fold(name, "Transfer-Encoding") {
 				has_transfer_encoding = true
 				break
 			}
 		}
 
-		length := req_header.known_headers.content_length
+		length := slot.req.header.known_headers.content_length
 		body_too_large := header_ok && length > http.MAX_BODY_SIZE
 
 		switch {
-		case !header_complete && total_read >= len(raw):
-			http.res_error("request too large.", &res, .RequestHeaderFieldsTooLarge)
-			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+		case !header_complete && total_read >= len(slot.raw):
+			http.res_error("request too large.", &slot.res, .RequestHeaderFieldsTooLarge)
+			if send_err := http.marshal_and_send(slot.conn, slot.res, alloc); send_err != nil {
 				fmt.eprintln("send response:", send_err)
 			}
-			net.close(conn)
+			net.close(slot.conn)
 			continue
 		case !header_ok || length < 0:
-			http.res_error("", &res, .BadRequest)
-			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+			http.res_error("", &slot.res, .BadRequest)
+			if send_err := http.marshal_and_send(slot.conn, slot.res, alloc); send_err != nil {
 				fmt.eprintln("send response:", send_err)
 			}
-			net.close(conn)
+			net.close(slot.conn)
 			continue
 		case has_transfer_encoding:
-			http.res_error("Transfer-Encoding not supported.", &res, .NotImplemented)
-			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+			http.res_error("Transfer-Encoding not supported.", &slot.res, .NotImplemented)
+			if send_err := http.marshal_and_send(slot.conn, slot.res, alloc); send_err != nil {
 				fmt.eprintln("send response:", send_err)
 			}
-			net.close(conn)
+			net.close(slot.conn)
 			continue
 		case body_too_large:
-			http.res_error("request body too large.", &res, .ContentTooLarge)
-			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+			http.res_error("request body too large.", &slot.res, .ContentTooLarge)
+			if send_err := http.marshal_and_send(slot.conn, slot.res, alloc); send_err != nil {
 				fmt.eprintln("send response:", send_err)
 			}
-			net.close(conn)
+			net.close(slot.conn)
 			continue
 		}
 
-		req: http.Req = {req_header, alloc, rec_time}
-
 		body := make([]u8, length, alloc)
-		body_read := copy(body, raw[header_end_idx + 4:total_read])
+		body_read := copy(body, slot.raw[header_end_idx + 4:total_read])
 		for body_read < length {
-			n, recv_err := net.recv_tcp(conn, body[body_read:])
+			n, recv_err := net.recv_tcp(slot.conn, body[body_read:])
 			if recv_err == .Timeout || recv_err == .Would_Block {
 				if time.since(rec_time) > REQUEST_TIMEOUT {
 					recv_failed = true
@@ -177,22 +187,26 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			body_read += n
 		}
 		if recv_failed || body_read < length {
-			http.res_error("incomplete request body.", &res, .BadRequest)
-			if send_err := http.marshal_and_send(conn, res, alloc); send_err != nil {
+			http.res_error("incomplete request body.", &slot.res, .BadRequest)
+			if send_err := http.marshal_and_send(slot.conn, slot.res, alloc); send_err != nil {
 				fmt.eprintln("send response:", send_err)
 			}
-			net.close(conn)
+			net.close(slot.conn)
 			continue
 		}
+
+		res := &slot.res
+		req := slot.req
+		req_header := req.header
 
 		// TODO: put behind a flag or a runtime global that switches on dynamic
 		// Lua loading; enabled unconditionally while prototyping.
 		when true {
-			if lua_handle(&res, req, body) {
-				if err := http.marshal_and_send(conn, res, alloc); err != nil {
+			if lua_handle(res, req, body) {
+				if err := http.marshal_and_send(slot.conn, res^, alloc); err != nil {
 					fmt.eprintln("send response:", err)
 				}
-				net.close(conn)
+				net.close(slot.conn)
 				continue
 			}
 		}
@@ -209,61 +223,61 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 						.Error,
 						req.alloc,
 					),
-					&res,
+					res,
 					.ServiceUnavailable,
 				)
 			} else {
-				http.res_text("Service Unavailable", &res, .ServiceUnavailable)
+				http.res_text("Service Unavailable", res, .ServiceUnavailable)
 			}
 		case req_header.path == "/" || req_header.path == "/gallery":
-			handle_gallery(s^, &res, req)
+			handle_gallery(s^, res, req)
 		case req_header.path == "/fragment/gallery-content":
-			handle_fragment_gallery_content(s^, &res, req)
+			handle_fragment_gallery_content(s^, res, req)
 		case req_header.path == "/fragment/items":
-			handle_fragment_items(s^, &res, req)
+			handle_fragment_items(s^, res, req)
 		case req_header.path == "/api/events":
-			handle_events(s^, &res, req)
+			handle_events(s^, res, req)
 		case req_header.path == "/events/progress":
-			handle_sse_progress(&res)
+			handle_sse_progress(res)
 		case req_header.path == "/duplicates":
-			handle_duplicates(s^, &res, req)
+			handle_duplicates(s^, res, req)
 		case req_header.path == "/merge":
-			handle_merge(s, &res, req, body)
+			handle_merge(s, res, req, body)
 		case req_header.path == "/regen-thumbnail":
-			handle_regen_thumbnail(s, &res, req)
+			handle_regen_thumbnail(s, res, req)
 		case req_header.path == "/ingest":
-			handle_ingest(s, &res, {req_header, alloc, rec_time}, body)
+			handle_ingest(s, res, req, body)
 		case req_header.path == "/delete":
-			handle_delete(s, &res, {req_header, alloc, rec_time}, body)
+			handle_delete(s, res, req, body)
 		case req_header.path == "/update-metadata":
-			handle_update_metadata(s, &res, {req_header, alloc, rec_time}, body)
+			handle_update_metadata(s, res, req, body)
 		case DEV_ROUTES && req_header.path == "/dev/preview":
-			handle_dev_preview(s^, &res, req)
+			handle_dev_preview(s^, res, req)
 		case DEV_ROUTES && req_header.path == "/dev/preview/mtime":
-			handle_dev_preview_mtime(&res, req)
+			handle_dev_preview_mtime(res, req)
 		case strings.starts_with(req_header.path, "/fragment/inspect/"):
-			handle_fragment_inspect(s^, &res, req)
+			handle_fragment_inspect(s^, res, req)
 		case strings.starts_with(req_header.path, "/mipmap/"):
-			handle_mipmap(s^, &res, {req_header, alloc, rec_time}, body)
+			handle_mipmap(s^, res, req, body)
 		case strings.starts_with(req_header.path, "/image/"):
-			handle_image(s^, &res, req)
+			handle_image(s^, res, req)
 		case strings.starts_with(req_header.path, "/static/"):
-			handle_static(&res, req)
+			handle_static(res, req)
 		// 404 cases
 		case req_header.known_headers.hx_request:
 			res.headers["Vary"] = "Hx-Request"
 			res.headers["HX-Reswap"] = "beforeend"
-			http.res_html(template.render_toast("Not Found", .Error, req.alloc), &res, .NotFound)
+			http.res_html(template.render_toast("Not Found", .Error, req.alloc), res, .NotFound)
 		case:
 			res.headers["Vary"] = "Hx-Request"
-			http.res_text("Not Found", &res, .NotFound)
+			http.res_text("Not Found", res, .NotFound)
 		}
 
 
-		if err := http.marshal_and_send(conn, res, alloc); err != nil {
+		if err := http.marshal_and_send(slot.conn, res^, alloc); err != nil {
 			fmt.eprintln("send response:", err)
 		}
 
-		net.close(conn)
+		net.close(slot.conn)
 	}
 }
