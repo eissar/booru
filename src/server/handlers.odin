@@ -280,51 +280,26 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 	} else {
 		dir = fmt.aprintf("%s/images", s.library_path, allocator = req.alloc)
 	}
-	path_buf: [4096]u8
-	data: []u8
-	err: os.Error
-	if img.ext != "" {
-		fp: string
-		if len(dir) + len(img.ext) + 22 <= len(path_buf) {
-			fp = fmt.bprintf(path_buf[:], "%s/%d.%s", dir, img.id, img.ext)
-		} else {
-			fp = fmt.aprintf("%s/%d.%s", dir, img.id, img.ext, allocator = req.alloc)
-		}
-		data, err = os.read_entire_file(fp, req.alloc)
-		if err == nil {
-			http.res_blob(data, res)
-			if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
-			res.headers["X-Content-Type-Options"] = "nosniff"
-			res.headers["Content-Security-Policy"] = IMAGE_CSP
-			return
-		}
-	}
-	entries, dir_err := os.read_directory_by_path(dir, -1, req.alloc)
-	if dir_err != nil {
+	if img.ext == "" {
 		http.res_error("", res, .NotFound)
 		return
 	}
-	defer os.file_info_slice_delete(entries, req.alloc)
-	// A signed 64-bit integer needs at most 20 bytes, plus the dot.
-	prefix_buf: [21]u8
-	prefix := fmt.bprintf(prefix_buf[:], "%d.", img.id)
-	for entry in entries {
-		if entry.type != .Regular || !strings.has_prefix(entry.name, prefix) {continue}
-		fp: string
-		if len(dir) + len(entry.name) + 1 <= len(path_buf) {
-			fp = fmt.bprintf(path_buf[:], "%s/%s", dir, entry.name)
-		} else {
-			fp = fmt.aprintf("%s/%s", dir, entry.name, allocator = req.alloc)
-		}
-		data, err = os.read_entire_file(fp, req.alloc)
-		if err != nil {continue}
-		http.res_blob(data, res)
-		if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
-		res.headers["X-Content-Type-Options"] = "nosniff"
-		res.headers["Content-Security-Policy"] = IMAGE_CSP
+	path_buf: [4096]u8
+	fp: string
+	if len(dir) + len(img.ext) + 22 <= len(path_buf) {
+		fp = fmt.bprintf(path_buf[:], "%s/%d.%s", dir, img.id, img.ext)
+	} else {
+		fp = fmt.aprintf("%s/%d.%s", dir, img.id, img.ext, allocator = req.alloc)
+	}
+	data, err := os.read_entire_file(fp, req.alloc)
+	if err != nil {
+		http.res_error("", res, .NotFound)
 		return
 	}
-	http.res_error("", res, .NotFound)
+	http.res_blob(data, res)
+	if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
+	res.headers["X-Content-Type-Options"] = "nosniff"
+	res.headers["Content-Security-Policy"] = IMAGE_CSP
 }
 
 // handle_thumbnail serves /thumbnails/:res/:oid.webp from disk.

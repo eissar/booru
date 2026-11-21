@@ -37,66 +37,6 @@ materialize_mipmap_for_test :: proc(t: ^testing.T, res: ^http.Response) {
 }
 
 @(test)
-image_falls_back_to_id_named_original :: proc(t: ^testing.T) {
-	alloc := context.temp_allocator
-	defer {
-		err := free_all(context.temp_allocator)
-		assert(err == nil)
-	}
-
-	root, err := os.make_directory_temp("", "booru-image-*", alloc)
-	if !testing.expect(t, err == nil) {return}
-	defer os.remove_all(root)
-
-	source, read_err := os.read_entire_file("test/fixture/library/images/1.png", alloc)
-	if !testing.expect(t, read_err == nil) {return}
-	if !testing.expect(
-		t,
-		os.mkdir_all(fmt.tprintf("%s/images", root), os.Permissions_Default_Directory) == nil,
-	) {return}
-	if !testing.expect(
-		t,
-		os.write_entire_file(fmt.tprintf("%s/images/1.png", root), source) == nil,
-	) {return}
-	oid :: "4ef24abe584d4358473279073cc0a35150802774bb97f5fea35e24d661668ce6"
-	images := [?]library.Image{{id = 1, oid = oid, content_type = "image/png"}}
-	state := library.State {
-		library_path = root,
-	}
-	if !testing.expect(t, store.Init(&state, ":memory:") == sqlite.OK) {return}
-	defer store.Close(&state)
-	for img in images {
-		if !testing.expect(
-			t,
-			sqlite.with_transaction(
-				state.data_store,
-				img,
-				proc(tx: ^sqlite.Tx, item: library.Image) -> c.int {
-					return c.int(store.insert_item(tx, item))
-				},
-			) ==
-			sqlite.OK,
-		) {return}
-	}
-	res := http.Response {
-		headers = make(map[string]string),
-	}
-	defer delete(res.headers)
-
-	handle_image(state, &res, {{path = "/image/" + oid}, alloc, time.Time{}})
-	testing.expect(t, res.status == .OK)
-	testing.expect(t, res.headers["Content-Type"] == "image/png")
-	testing.expect(t, res.headers["X-Content-Type-Options"] == "nosniff")
-	testing.expect(t, res.headers["Content-Security-Policy"] == IMAGE_CSP)
-	testing.expect(t, bytes.equal(res.body, source), "serve ID-named original")
-	for path in ([]string{"/image/deadbeef", "/image/../1.png"}) {
-		handle_image(state, &res, {{path = path}, alloc, time.Time{}})
-		testing.expect(t, res.status == .NotFound)
-	}
-
-}
-
-@(test)
 mipmap_returns_contiguous_webp :: proc(t: ^testing.T) {
 	oid :: "4ef24abe584d4358473279073cc0a35150802774bb97f5fea35e24d661668ce6"
 	oid5 :: "9c2efc8f0c7cde25eb24ee5a589b919731e6a125793c05de070910d6ac2a5f8c"
