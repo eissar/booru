@@ -60,7 +60,8 @@ create_tables :: proc(db: ^sqlite.DB) -> c.int {
 			height INTEGER NOT NULL,
 			mtime INTEGER NOT NULL,
 			added_at INTEGER NOT NULL,
-			deleted INTEGER NOT NULL DEFAULT 0
+			deleted INTEGER NOT NULL DEFAULT 0,
+			url TEXT NOT NULL DEFAULT ''
 		);
 		CREATE TABLE IF NOT EXISTS item_tags (
 			item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,

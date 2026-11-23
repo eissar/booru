@@ -16,6 +16,7 @@ TABLE_ITEMS_COLUMNS :: []string {
 	"mtime",
 	"added_at",
 	"deleted",
+	"url",
 }
 
 TABLE_ITEM_TAGS_COLUMNS :: []string{"item_id", "tag"}
@@ -29,7 +30,10 @@ verify_table_columns :: proc(
 	required_columns: []string,
 ) -> bool {
 	query := strings.clone_to_cstring(
-		strings.concatenate({"SELECT name FROM pragma_table_info('", table_name, "')"}),
+		strings.concatenate(
+			{"SELECT name FROM pragma_table_info('", table_name, "')"},
+			context.temp_allocator,
+		),
 		context.temp_allocator,
 	)
 	stmt: ^sqlite.Stmt

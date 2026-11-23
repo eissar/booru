@@ -87,18 +87,17 @@ replay :: proc(
 	// Statements for event stream reduction
 	item_patch: ^sqlite.Stmt
 	if !full_replay {
-		patch_rc: i32
-		item_patch, patch_rc = store.prepare_item_patch(db)
-		if patch_rc == sqlite.ERROR &&
-		   !(store.verify_table_columns(db, "items", store.TABLE_ITEMS_COLUMNS) &&
-				   store.verify_table_columns(db, "item_tags", store.TABLE_ITEM_TAGS_COLUMNS) &&
-				   store.verify_table_columns(
-					   db,
-					   "replay_cursors",
-					   store.TABLE_REPLAY_CURSORS_COLUMNS,
-				   )) {
+		if !(store.verify_table_columns(db, "items", store.TABLE_ITEMS_COLUMNS) &&
+			   store.verify_table_columns(db, "item_tags", store.TABLE_ITEM_TAGS_COLUMNS) &&
+			   store.verify_table_columns(
+				   db,
+				   "replay_cursors",
+				   store.TABLE_REPLAY_CURSORS_COLUMNS,
+			   )) {
 			return .SCHEMA_MISMATCH
 		}
+		patch_rc: i32
+		item_patch, patch_rc = store.prepare_item_patch(db)
 		if patch_rc != sqlite.OK {return .DATABASE_ERR}
 	}
 	defer {if item_patch != nil {sqlite.finalize(item_patch)}}

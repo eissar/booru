@@ -174,7 +174,13 @@ vtab_insert_items :: proc(
 	rc := sqlite.create_module(db, "vtab_items", &module, &tab)
 	if rc != sqlite.OK {return rc}
 
-	stmt, ok := sqlite.prepare(db, "INSERT INTO items SELECT * FROM vtab_items")
+	stmt, ok := sqlite.prepare(
+		db,
+		`INSERT INTO items (
+			id, oid, path, ext, name, comment,
+			content_type, width, height, mtime, added_at, deleted
+		) SELECT * FROM vtab_items`,
+	)
 	if !ok {return 1}
 	defer sqlite.finalize(stmt)
 
