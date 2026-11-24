@@ -11,6 +11,7 @@ import "core:time"
 import "../http"
 import "../library"
 import "../progress"
+import "../store"
 import "../template"
 
 // TODO: put /dev/* behind a flag or a runtime global; enabled unconditionally
@@ -42,6 +43,10 @@ accept_tcp :: proc(sock: net.TCP_Socket) -> (net.TCP_Socket, bool) {
 // Serve handles requests on an already-listening socket until accept fails.
 // The caller owns the socket.
 Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = accept_tcp) {
+	ro_pool: store.ReadOnly_Pool
+	store.ro_pool_init(&ro_pool, s.library_path)
+	defer store.ro_pool_destroy(&ro_pool)
+
 	bitlist := ~Bitlist{}
 	slots := make([]Conn_Slot, 64, context.allocator)
 	defer {
@@ -244,6 +249,8 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			}
 		}
 
+		ro_db, ro_idx := store.ro_pool_acquire(&ro_pool)
+		ros := library.State{s.library_path, ro_db, s.event_log}
 		switch {
 		case req_header.method == "POST" && progress.is_active("startup"):
 			res.headers["Retry-After"] = "5"
@@ -263,21 +270,21 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 				http.res_text("Service Unavailable", res, .ServiceUnavailable)
 			}
 		case req_header.path == "/" || req_header.path == "/gallery":
-			handle_gallery(s^, res, req)
+			handle_gallery(ros, res, req)
 		case req_header.path == "/fragment/gallery-content":
-			handle_fragment_gallery_content(s^, res, req)
+			handle_fragment_gallery_content(ros, res, req)
 		case req_header.path == "/fragment/items":
-			handle_fragment_items(s^, res, req)
+			handle_fragment_items(ros, res, req)
 		case req_header.path == "/api/events":
-			handle_events(s^, res, req)
+			handle_events(ros, res, req)
 		case req_header.path == "/events/progress":
 			handle_sse_progress(res)
 		case req_header.path == "/duplicates":
-			handle_duplicates(s^, res, req)
+			handle_duplicates(ros, res, req)
 		case req_header.path == "/merge":
 			handle_merge(s, res, req, body)
 		case req_header.path == "/regen-thumbnail":
-			handle_regen_thumbnail(s, res, req)
+			handle_regen_thumbnail(&ros, res, req)
 		case req_header.path == "/ingest":
 			handle_ingest(s, res, req, body)
 		case req_header.path == "/delete":
@@ -285,17 +292,17 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 		case req_header.path == "/update-metadata":
 			handle_update_metadata(s, res, req, body)
 		case DEV_ROUTES && req_header.path == "/dev/preview":
-			handle_dev_preview(s^, res, req)
+			handle_dev_preview(ros, res, req)
 		case DEV_ROUTES && req_header.path == "/dev/preview/mtime":
 			handle_dev_preview_mtime(res, req)
 		case strings.starts_with(req_header.path, "/fragment/inspect/"):
-			handle_fragment_inspect(s^, res, req)
+			handle_fragment_inspect(ros, res, req)
 		case strings.starts_with(req_header.path, "/mipmap/"):
-			handle_mipmap(s^, res, req, body)
+			handle_mipmap(ros, res, req, body)
 		case strings.starts_with(req_header.path, "/thumbnails/"):
-			handle_thumbnail(s^, res, req)
+			handle_thumbnail(ros, res, req)
 		case strings.starts_with(req_header.path, "/image/"):
-			handle_image(s^, res, req)
+			handle_image(ros, res, req)
 		case strings.starts_with(req_header.path, "/static/"):
 			handle_static(res, req)
 		// 404 cases
@@ -307,6 +314,7 @@ Serve :: proc(s: ^library.State, sock: net.TCP_Socket, accept: Accept_Proc = acc
 			res.headers["Vary"] = "Hx-Request"
 			http.res_text("Not Found", res, .NotFound)
 		}
+		store.ro_pool_release(&ro_pool, ro_idx)
 
 
 		if err := http.marshal_and_send(slot.conn, res^, alloc); err != nil {

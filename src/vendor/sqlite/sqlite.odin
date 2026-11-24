@@ -133,11 +133,15 @@ foreign sqlite {
 	changes64 :: proc(db: ^DB) -> i64 ---
 }
 
-// open opens (creating if needed) a database for read/write.
+// open opens a database (creating if needed when readonly is false).
 // rc is the SQLite result code: 0 (OK) on success; otherwise db is nil and
 // errstr(rc) describes the failure.
-open :: proc(path: cstring) -> (db: ^DB, rc: c.int) {
-	rc = open_v2(path, &db, OPEN_READWRITE | OPEN_CREATE | OPEN_FULLMUTEX, nil)
+open :: proc(path: cstring, readonly := false) -> (db: ^DB, rc: c.int) {
+	flags := c.int(OPEN_READONLY | OPEN_FULLMUTEX)
+	if !readonly {
+		flags = OPEN_READWRITE | OPEN_CREATE | OPEN_FULLMUTEX
+	}
+	rc = open_v2(path, &db, flags, nil)
 	if rc != OK {
 		if db != nil {close(db)}
 		return nil, rc
