@@ -36,7 +36,10 @@ probe_and_render_minimal_pdf :: proc(t: ^testing.T) {
 	testing.expect_value(t, pw, 200)
 	testing.expect_value(t, ph, 400)
 
-	pixels, rw, rh, render_ok := render_first_page_rgba(pdf_path, 512)
+	pdf_file, open_err := os.open(pdf_path, {.Read})
+	testing.expect_value(t, open_err, nil)
+	defer if pdf_file != nil {os.close(pdf_file)}
+	pixels, rw, rh, render_ok := render_first_page_rgba(os.to_stream(pdf_file), 512)
 	testing.expect(t, render_ok, "render_first_page_rgba succeeds")
 	defer if pixels != nil {mupdf_free_pixels(pixels)}
 

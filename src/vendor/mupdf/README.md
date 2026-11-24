@@ -16,3 +16,9 @@ make -j$(nproc) libs \
 ```
 
 `shim.c` is compiled into `libmupdf-shim.a` and linked before `libmupdf.a` so `fz_load_jpx` / `fz_load_jpx_info` override `load-jpx.o` with a visible 64×64 placeholder instead of aborting the page.
+
+Rebuild the shim with GCC 14 against MuPDF 1.29.0 headers (`include/`); the previous shim recompiled this way is instruction-identical to the vendored one:
+
+```sh
+cc -O2 -c shim.c -I <mupdf>/include -o shim.o && ar rcs linux-amd64/libmupdf-shim.a shim.o
+```

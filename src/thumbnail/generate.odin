@@ -168,11 +168,7 @@ generate_image_thumbnails :: proc(
 	// A failed open yields a nil stream, which decode_frame reports as .Failed.
 	file, _ := os.open(img_path, {.Read})
 	defer if file != nil {os.close(file)}
-	frame, decode_err := media.decode_frame(
-		os.to_stream(file),
-		MAX_THUMBNAIL_SOURCE_PIXELS,
-		img_path,
-	)
+	frame, decode_err := media.decode_frame(os.to_stream(file), MAX_THUMBNAIL_SOURCE_PIXELS)
 	defer media.free_decoded(&frame)
 	if decode_err == .Unsupported {return 0, 0}
 	if decode_err != .None {
@@ -217,11 +213,7 @@ force_generate_image_thumbnails :: proc(
 	// A failed open yields a nil stream, which decode_frame reports as .Failed.
 	file, _ := os.open(img_path, {.Read})
 	defer if file != nil {os.close(file)}
-	frame, decode_err := media.decode_frame(
-		os.to_stream(file),
-		MAX_THUMBNAIL_SOURCE_PIXELS,
-		img_path,
-	)
+	frame, decode_err := media.decode_frame(os.to_stream(file), MAX_THUMBNAIL_SOURCE_PIXELS)
 	defer media.free_decoded(&frame)
 	if decode_err == .Unsupported {return 0, 0}
 	if decode_err != .None {

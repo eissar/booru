@@ -315,12 +315,9 @@ free_decoded :: proc {
 // read on demand. Returns .Unsupported for formats that cannot be decoded,
 // .Too_Large when dimensions exceed max_pixels (if > 0), and .Failed on I/O or
 // decode errors.
-// TODO: PDFs still open `pdf_path` (mupdf takes a path); read `stream` via a
-// custom fz_stream in the mupdf shim instead, then drop `pdf_path`.
 decode_frame :: proc(
 	stream: io.Stream,
 	max_pixels: i64 = 0,
-	pdf_path := "",
 ) -> (
 	frame: Decoded_Frame,
 	err: Decode_Error,
@@ -356,8 +353,7 @@ decode_frame :: proc(
 			},
 			.None
 	case .PDF:
-		if pdf_path == "" {return nil, .Unsupported}
-		pixels, w, h, ok := mupdf.render_first_page_rgba(pdf_path, 512)
+		pixels, w, h, ok := mupdf.render_first_page_rgba(stream, 512)
 		if !ok {return nil, .Failed}
 		if max_pixels > 0 && i64(w) * i64(h) > max_pixels {
 			mupdf.mupdf_free_pixels(pixels)

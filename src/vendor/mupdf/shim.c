@@ -102,15 +102,69 @@ mupdf_probe_dimensions(const char *path, int *out_w, int *out_h)
 	return ok;
 }
 
+/* Caller-supplied positional reader: fills up to n bytes at offset and returns
+ * the byte count (0 at end of input) or -1 on error. */
+typedef int64_t(mupdf_read_at_fn)(void *opaque, unsigned char *buf, size_t n, int64_t offset);
+
+typedef struct {
+	void *opaque;
+	mupdf_read_at_fn *read_at;
+	int64_t size;
+	unsigned char buf[64 * 1024];
+} read_at_state;
+
+static int
+next_read_at(fz_context *ctx, fz_stream *stm, size_t max)
+{
+	/* Like fz_open_file, fill the whole buffer regardless of max: mupdf passes
+	 * max = 1 from fz_read_byte, and honouring it costs one read per byte. */
+	(void)max;
+	read_at_state *st = stm->state;
+	int64_t got = st->read_at(st->opaque, st->buf, sizeof st->buf, stm->pos);
+	if (got < 0) fz_throw(ctx, FZ_ERROR_SYSTEM, "read_at failed");
+	stm->rp = st->buf;
+	stm->wp = st->buf + got;
+	stm->pos += got;
+	if (got == 0) return EOF;
+	return *stm->rp++;
+}
+
+static void
+seek_read_at(fz_context *ctx, fz_stream *stm, int64_t offset, int whence)
+{
+	read_at_state *st = stm->state;
+	int64_t pos = offset;
+	if (whence == SEEK_END) pos = st->size + offset;
+	if (whence == SEEK_CUR) pos = stm->pos + offset;
+	if (pos < 0 || pos > st->size) fz_throw(ctx, FZ_ERROR_ARGUMENT, "seek out of range");
+	/* stm->pos is the offset of wp; reuse the buffer when pos is already in it. */
+	int64_t start = stm->pos - (stm->wp - st->buf);
+	if (stm->wp > st->buf && pos >= start && pos <= stm->pos) {
+		stm->rp = st->buf + (pos - start);
+		return;
+	}
+	stm->pos = pos;
+	stm->rp = stm->wp = st->buf;
+}
+
+static void
+drop_read_at(fz_context *ctx, void *state)
+{
+	fz_free(ctx, state);
+}
+
+/* Renders the first page of a document read through read_at (size bytes long). */
 int
 mupdf_render_first_page_rgba(
-	const char *path,
+	void *opaque,
+	mupdf_read_at_fn *read_at,
+	int64_t size,
 	int max_edge,
 	int *out_w,
 	int *out_h,
 	unsigned char **out_pixels)
 {
-	if (!path || max_edge <= 0 || !out_w || !out_h || !out_pixels) return 0;
+	if (!read_at || size < 0 || max_edge <= 0 || !out_w || !out_h || !out_pixels) return 0;
 
 	fz_context *ctx = fz_new_context(NULL, NULL, FZ_STORE_DEFAULT);
 	if (!ctx) return 0;
@@ -120,6 +174,7 @@ mupdf_render_first_page_rgba(
 	fz_pixmap *pix = NULL;
 	fz_device *dev = NULL;
 	unsigned char *buf = NULL;
+	fz_stream *stm = NULL;
 	int ok = 0;
 
 	fz_var(doc);
@@ -127,10 +182,17 @@ mupdf_render_first_page_rgba(
 	fz_var(pix);
 	fz_var(dev);
 	fz_var(buf);
+	fz_var(stm);
 
 	fz_try(ctx) {
 		fz_register_document_handlers(ctx);
-		doc = fz_open_document(ctx, path);
+		read_at_state *st = fz_malloc_struct(ctx, read_at_state);
+		st->opaque = opaque;
+		st->read_at = read_at;
+		st->size = size;
+		stm = fz_new_stream(ctx, st, next_read_at, drop_read_at);
+		stm->seek = seek_read_at;
+		doc = fz_open_document_with_stream(ctx, "application/pdf", stm);
 		if (fz_count_pages(ctx, doc) <= 0) {
 			fz_throw(ctx, FZ_ERROR_GENERIC, "document has no pages");
 		}
@@ -183,6 +245,7 @@ mupdf_render_first_page_rgba(
 		fz_drop_pixmap(ctx, pix);
 		fz_drop_page(ctx, page);
 		fz_drop_document(ctx, doc);
+		fz_drop_stream(ctx, stm);
 	}
 	fz_catch(ctx) {
 		ok = 0;
