@@ -48,7 +48,7 @@ full_replay_initializes_append_cursor :: proc(t: ^testing.T) {
 	initiate_replay(&s)
 	testing.expect(t, string(cursor.shard[:]) == "2026-02.ndjson")
 	testing.expect_value(t, cursor.offset, i64(len(last)))
-	saved, rc := elog.load_cursor(&log, "2026-02.ndjson")
+	saved, rc := elog.load_cursor(s.data_store, "2026-02.ndjson")
 	testing.expect(t, rc == sqlite.OK && saved == cursor)
 }
 

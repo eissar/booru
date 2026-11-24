@@ -50,13 +50,10 @@ ordered_shards_survivors_and_live_agreement :: proc(t: ^testing.T) {
 	if !testing.expect(t, store.Init(&rebuilt, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&rebuilt)
 	initiate_replay(&rebuilt)
-	log := elog.EventLog {
-		db = rebuilt.data_store,
-	}
 	lengths := [3]int{len(first), len(middle), len(last)}
 	shards := [3]string{"2026-01.ndjson", "2026-02.ndjson", "2026-03.ndjson"}
 	for shard, i in shards {
-		cursor, rc := elog.load_cursor(&log, shard)
+		cursor, rc := elog.load_cursor(rebuilt.data_store, shard)
 		testing.expect(t, rc == sqlite.OK)
 		testing.expect_value(t, cursor.offset, i64(lengths[i]))
 	}

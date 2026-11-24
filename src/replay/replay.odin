@@ -582,7 +582,7 @@ initiate_replay :: proc(s: ^library.State, full_replay := true) -> Error {
 			continue // Full replay reads the entire shard.
 		}
 
-		cursor, rc := elog.load_cursor(s.event_log, string(upper.shard[:]))
+		cursor, rc := elog.load_cursor(s.data_store, string(upper.shard[:]))
 		if rc != sqlite.OK {fmt.panicf("replay: load cursor: %d", rc)}
 		if cursor.offset < 0 || cursor.offset > upper.offset {
 			fmt.panicf("replay: cursor outside append boundary")

@@ -32,7 +32,6 @@ Cursor :: struct {
 // One writer owns the filesystem log. SQLite owns derived replay progress.
 EventLog :: struct {
 	root:   string,
-	db:     ^sqlite.DB,
 	cursor: ^Cursor,
 }
 
@@ -84,11 +83,11 @@ encode_ascii_json :: proc(data: []u8, out: ^strings.Builder) -> string {
 }
 
 // Missing shards start at offset zero.
-load_cursor :: proc(log: ^EventLog, shard: string) -> (cursor: Cursor, rc: c.int) {
+load_cursor :: proc(db: ^sqlite.DB, shard: string) -> (cursor: Cursor, rc: c.int) {
 	copy(cursor.shard[:], shard)
 	stmt: ^sqlite.Stmt
 	rc = sqlite.prepare_v2(
-		log.db,
+		db,
 		"SELECT byte_offset FROM replay_cursors WHERE shard = ?",
 		-1,
 		&stmt,

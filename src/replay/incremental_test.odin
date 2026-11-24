@@ -38,7 +38,7 @@ full_then_incremental_replay_persists_progress :: proc(t: ^testing.T) {
 		"",
 	) {return}
 	initiate_replay(&s)
-	saved, rc := elog.load_cursor(&log, string(cursor.shard[:]))
+	saved, rc := elog.load_cursor(s.data_store, string(cursor.shard[:]))
 	testing.expect(t, rc == sqlite.OK && saved == cursor)
 
 	if !testing.expect(
@@ -55,7 +55,7 @@ full_then_incremental_replay_persists_progress :: proc(t: ^testing.T) {
 		if !testing.expect(t, read_rc == sqlite.OK && found) {return}
 		testing.expect_value(t, image.name, "after")
 		testing.expect(t, slice.equal(image.tags, []string{"dog"}))
-		saved, rc = elog.load_cursor(&log, string(cursor.shard[:]))
+		saved, rc = elog.load_cursor(s.data_store, string(cursor.shard[:]))
 		testing.expect(t, rc == sqlite.OK && saved == cursor)
 	}
 }
@@ -72,9 +72,6 @@ incremental_application_and_cursor_roll_back_together :: proc(t: ^testing.T) {
 	}
 	if !testing.expect(t, store.Init(&s, ":memory:") == sqlite.OK) {return}
 	defer store.Close(&s)
-	log := elog.EventLog {
-		db = s.data_store,
-	}
 	cursor: elog.Cursor
 	copy(cursor.shard[:], "2026-01.ndjson")
 	first := "{\"op\":\"add\",\"id\":1,\"name\":\"before\",\"tags\":[\"cat\"]}\n"
@@ -108,7 +105,7 @@ incremental_application_and_cursor_roll_back_together :: proc(t: ^testing.T) {
 	if !testing.expect(t, rc == sqlite.OK && found) {return}
 	testing.expect_value(t, image.name, "before")
 	testing.expect(t, slice.equal(image.tags, []string{"cat"}))
-	saved, cursor_rc := elog.load_cursor(&log, string(cursor.shard[:]))
+	saved, cursor_rc := elog.load_cursor(s.data_store, string(cursor.shard[:]))
 	testing.expect(t, cursor_rc == sqlite.OK && saved == cursor)
 }
 

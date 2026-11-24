@@ -70,7 +70,7 @@ persistent_restart_catchup :: proc(t: ^testing.T) {
 			testing.expect(t, image.tags[0] == ("cat" if restart == 0 else "dog"))
 		}
 		testing.expect(t, image.name == ("before" if restart == 0 else "after"))
-		saved, cursor_rc := elog.load_cursor(&log, shard)
+		saved, cursor_rc := elog.load_cursor(s.data_store, shard)
 		testing.expect(t, cursor_rc == sqlite.OK && saved == cursor)
 		testing.expect(t, library.requestNewId() > high)
 		store.Close(&s)

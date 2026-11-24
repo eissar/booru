@@ -44,7 +44,6 @@ Init :: proc(state: ^library.State, path: cstring, foreign_keys := true) -> (rc:
 	}
 
 	state.data_store = db
-	if state.event_log != nil {state.event_log.db = db}
 	success = true
 	return sqlite.OK
 }
@@ -104,9 +103,6 @@ create_indexes :: proc(db: ^sqlite.DB) -> c.int {
 Close :: proc(state: ^library.State) {
 	if state.data_store != nil {
 		if sqlite.close(state.data_store) == sqlite.OK {
-			if state.event_log != nil && state.event_log.db == state.data_store {
-				state.event_log.db = nil
-			}
 			state.data_store = nil
 		}
 	}

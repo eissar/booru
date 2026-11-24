@@ -38,6 +38,7 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 Writes are log-first: handlers and Eagle import append events, then run incremental replay (`replay.initiate_replay(s, full_replay = false)`), which is the only caller of the store write procs and saves shard cursors in the same tx. No `store.apply` wrapper is planned.
 
 - [ ] Serialize appends, replay and `add` id allocation if handlers ever run concurrently; today `Serve` is synchronous.
+- [ ] Enable SQLite WAL mode (`PRAGMA journal_mode = WAL`) and `PRAGMA busy_timeout` in `store.Init` (`src/store/store.odin`) so background threads and future concurrent handlers don't block readers or immediately fail with `SQLITE_BUSY`.
 // Rebuild path defers indexes and runs with foreign_keys = OFF because we trust event log writes.
 // Consider running `PRAGMA foreign_key_check` after bulk insert if we ever stop trusting the event log.
 - [ ] Optional: CI/pre-commit check that nothing outside `replay` calls the store write procs or writes to the DB directly.

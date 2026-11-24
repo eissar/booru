@@ -43,7 +43,7 @@ fmt_timestamp :: proc(elapsed: time.Duration) -> string {
 }
 
 startup_verify_older_shards_applied :: proc(
-	log: ^elog.EventLog,
+	db: ^sqlite.DB,
 	events_dir: string,
 	current_shard: string,
 ) -> bool {
@@ -59,7 +59,7 @@ startup_verify_older_shards_applied :: proc(
 		}
 		if entry.name == current_shard {continue}
 
-		cursor, load_rc := elog.load_cursor(log, entry.name)
+		cursor, load_rc := elog.load_cursor(db, entry.name)
 		if load_rc != sqlite.OK {
 			fmt.eprintfln(
 				"startup verify older shards: load cursor for %s failed with sqlite error %d",
@@ -218,7 +218,6 @@ main :: proc() {
 				os.exit(1)
 			}
 			state.data_store = db
-			if state.event_log != nil {state.event_log.db = db}
 
 			replay.initiate_replay(&state, full_replay = true)
 			store.Close(&state)
@@ -256,7 +255,7 @@ main :: proc() {
 				fmt.panicf("stat event shard: %v", err)
 			}
 			if err == nil {cursor.offset = info.size}
-			if !startup_verify_older_shards_applied(state.event_log, events_dir, shard) {
+			if !startup_verify_older_shards_applied(state.data_store, events_dir, shard) {
 				if STORE_DISCARDED_FOR_SCHEMA {
 					fmt.eprintln(
 						"datastore type=sqlite: older shard mismatch persists after rebuild",
