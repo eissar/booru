@@ -1,6 +1,6 @@
-package bench
+package gallery
 
-import cdp "../test/cdp"
+import cdp "../../test/cdp"
 import "core:fmt"
 import "core:os"
 

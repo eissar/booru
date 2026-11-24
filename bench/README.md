@@ -11,6 +11,8 @@ benchmarks don't compete for CPU:
 
 - `bench/` (package `bench`): thumbnail and HTML escape benchmarks. Its `main`
   in `bench.odin` is a memory probe that the test runner does not execute.
+- `bench/gallery`: standalone CDP Lua runner, not a test package
+  (`odin run bench/gallery -- bench/micro/<name>.lua`; needs chromium).
 - `bench/handlers`: in-process handler throughput, no sockets.
 - `bench/probe`: `media.probe_dimensions` throughput across all supported formats.
 - `bench/replay`: replay of a generated 100k-event log (`.test-data/`).

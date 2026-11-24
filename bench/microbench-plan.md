@@ -23,7 +23,7 @@
 
 ## Microbenchmark Suite (1–3s Each)
 
-Run each via `odin run bench/gallery_bench.odin -file -- bench/micro/<name>.lua` using `bench/fixtures/noisy.webp` and `bench/fixtures/noisy.jpg`.
+Run each via `odin run bench/gallery -- bench/micro/<name>.lua` using `bench/fixtures/noisy.webp` and `bench/fixtures/noisy.jpg`.
 
 ### 1. `bench/micro/startup_masonry.lua` (~1.5s)
 * **Isolates:** `DOMContentLoaded`, initial forced layout, and first `syncMasonry()` rAF.
