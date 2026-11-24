@@ -16,7 +16,10 @@ when ODIN_OS == .Windows {
 AVClass :: struct {}
 AVInputFormat :: struct {}
 AVOutputFormat :: struct {}
-AVIOContext :: struct {}
+AVIOContext :: struct {
+	av_class: ^AVClass,
+	buffer:   [^]u8,
+}
 AVBufferRef :: struct {}
 
 // Public struct prefixes, in header order. FFmpeg owns allocation and lifetime.
@@ -85,9 +88,14 @@ AVERROR_EOF :: -541478725 // FFERRTAG('E','O','F',' ')
 AVERROR_EAGAIN :: -11 // AVERROR(EAGAIN) on Linux
 AVDISCARD_NONKEY :: 32
 AV_LOG_QUIET :: -8
+AVSEEK_SIZE :: 0x10000
+AVSEEK_FORCE :: 0x20000
 
 @(default_calling_convention = "c")
 foreign avformat {
+	avformat_alloc_context :: proc() -> ^AVFormatContext ---
+	avio_alloc_context :: proc(buffer: [^]u8, buffer_size: c.int, write_flag: c.int, opaque: rawptr, read_packet: proc "c" (opaque: rawptr, buf: [^]u8, buf_size: c.int) -> c.int, write_packet: rawptr, seek: proc "c" (opaque: rawptr, offset: i64, whence: c.int) -> i64) -> ^AVIOContext ---
+	avio_context_free :: proc(s: ^^AVIOContext) ---
 	avformat_open_input :: proc(ps: ^^AVFormatContext, url: cstring, fmt: ^AVInputFormat, options: ^^AVDictionary) -> c.int ---
 	avformat_find_stream_info :: proc(ic: ^AVFormatContext, options: ^^AVDictionary) -> c.int ---
 	avformat_close_input :: proc(s: ^^AVFormatContext) ---
@@ -114,4 +122,6 @@ foreign avutil {
 	av_frame_alloc :: proc() -> ^AVFrame ---
 	av_frame_free :: proc(frame: ^^AVFrame) ---
 	av_log_set_level :: proc(level: c.int) ---
+	av_malloc :: proc(size: c.size_t) -> rawptr ---
+	av_freep :: proc(ptr: rawptr) ---
 }

@@ -1,6 +1,8 @@
 package ffmpeg
 
+import "base:runtime"
 import "core:c"
+import "core:io"
 import "core:strings"
 
 // Decoded video frame. Planes point into `frame`; valid until free_decoded_frame.
@@ -36,13 +38,74 @@ probe_dimensions :: proc(path: string) -> (width, height: c.int, ok: bool) {
 	return par.width, par.height, true
 }
 
-// Decodes the first video frame of `path` without seeking.
-first_frame :: proc(path: string) -> (ff: Decoded_Frame, ok: bool) {
-	when ODIN_TEST {av_log_set_level(AV_LOG_QUIET)}
-	cpath := strings.clone_to_cstring(path, context.temp_allocator)
+// Read position over an io.Stream for ffmpeg's custom AVIOContext callbacks.
+@(private)
+Avio_Source :: struct {
+	stream: io.Stream,
+	pos:    i64,
+}
 
-	fmt_ctx: ^AVFormatContext
-	if avformat_open_input(&fmt_ctx, cpath, nil, nil) < 0 {return}
+@(private)
+avio_read_at :: proc "c" (opaque: rawptr, buf: [^]u8, buf_size: c.int) -> c.int {
+	context = runtime.default_context()
+	src := (^Avio_Source)(opaque)
+	n, err := io.read_at(src.stream, buf[:buf_size], src.pos)
+	src.pos += i64(n)
+	if n > 0 {return c.int(n)}
+	if err == nil || err == .EOF {return AVERROR_EOF}
+	return -5 // AVERROR(EIO)
+}
+
+@(private)
+avio_seek :: proc "c" (opaque: rawptr, offset: i64, whence: c.int) -> i64 {
+	context = runtime.default_context()
+	src := (^Avio_Source)(opaque)
+	if whence & AVSEEK_SIZE != 0 {
+		size, err := io.size(src.stream)
+		return err == nil ? size : -1
+	}
+	switch whence & ~c.int(AVSEEK_FORCE) {
+	case 0:
+		src.pos = offset
+	case 1:
+		src.pos += offset
+	case 2:
+		size, err := io.size(src.stream)
+		if err != nil {return -1}
+		src.pos = size + offset
+	case:
+		return -1
+	}
+	return src.pos
+}
+
+// Decodes the first video frame read from `stream` without seeking to later frames.
+// `stream` must support Read_At and Size; ffmpeg reads it through a 64 KiB buffer.
+first_frame :: proc(stream: io.Stream) -> (ff: Decoded_Frame, ok: bool) {
+	when ODIN_TEST {av_log_set_level(AV_LOG_QUIET)}
+
+	AVIO_BUFFER_SIZE :: 64 * 1024
+	src := Avio_Source {
+		stream = stream,
+	}
+	buf := ([^]u8)(av_malloc(AVIO_BUFFER_SIZE))
+	if buf == nil {return}
+	avio := avio_alloc_context(buf, AVIO_BUFFER_SIZE, 0, &src, avio_read_at, nil, avio_seek)
+	if avio == nil {
+		av_freep(&buf)
+		return
+	}
+	// ffmpeg may replace the buffer, so free whatever avio holds after closing input.
+	defer {
+		av_freep(&avio.buffer)
+		avio_context_free(&avio)
+	}
+
+	fmt_ctx := avformat_alloc_context()
+	if fmt_ctx == nil {return}
+	fmt_ctx.pb = avio
+	// On failure avformat_open_input frees fmt_ctx (but not the custom avio).
+	if avformat_open_input(&fmt_ctx, nil, nil, nil) < 0 {return}
 	defer avformat_close_input(&fmt_ctx)
 	if avformat_find_stream_info(fmt_ctx, nil) < 0 {return}
 

@@ -118,7 +118,13 @@ thumbnail_throughput_by_format :: proc(t: ^testing.T) {
 			continue
 		}
 
-		detected, sniff_err := media.hack_sniff_first_32_bytes(src_path)
+		src_file, open_err := os.open(src_path, {.Read})
+		if !testing.expect(t, open_err == nil, fmt.tprintf("open %s", src_path)) {
+			item_id += 1
+			continue
+		}
+		defer os.close(src_file)
+		detected, sniff_err := media.hack_sniff_first_32_bytes(os.to_stream(src_file))
 		if !testing.expect(
 			t,
 			sniff_err == nil && detected == format,
@@ -136,7 +142,7 @@ thumbnail_throughput_by_format :: proc(t: ^testing.T) {
 		}
 
 		sample_frame, decode_err := media.decode_frame(
-			src_path,
+			os.to_stream(src_file),
 			thumbnail.MAX_THUMBNAIL_SOURCE_PIXELS,
 		)
 		pixels := frame_pixels(sample_frame)

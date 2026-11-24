@@ -59,7 +59,13 @@ pdf_probe_decode_and_thumbnail :: proc(t: ^testing.T) {
 	_, _, no_path_ok := media.probe_dimensions(nil, .PDF)
 	testing.expect(t, !no_path_ok, "probe_dimensions without path fails for pdf")
 
-	frame, decode_err := media.decode_frame(pdf_path, MAX_THUMBNAIL_SOURCE_PIXELS)
+	pdf_file, _ := os.open(pdf_path, {.Read})
+	defer if pdf_file != nil {os.close(pdf_file)}
+	frame, decode_err := media.decode_frame(
+		os.to_stream(pdf_file),
+		MAX_THUMBNAIL_SOURCE_PIXELS,
+		pdf_path,
+	)
 	testing.expect_value(t, decode_err, media.Decode_Error.None)
 	if argb, ok := frame.(media.Decoded_ARGB); testing.expect(t, ok, "decoded frame is ARGB") {
 		testing.expect_value(t, argb.width, 256)

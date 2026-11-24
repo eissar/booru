@@ -10,6 +10,7 @@ import mupdf "../vendor/mupdf"
 import "core:c"
 import "core:c/libc"
 import "core:fmt"
+import "core:io"
 import "core:log"
 import "core:os"
 import stbi "vendor:stb/image"
@@ -273,13 +274,13 @@ free_decoded_frame :: proc(frame: ^Decoded_Frame) {
 }
 
 decode_video_first_frame :: proc(
-	path: string,
+	stream: io.Stream,
 	max_pixels: i64 = 0,
 ) -> (
 	img: Decoded_YUV,
 	err: Decode_Error,
 ) {
-	ff, ok := ffmpeg.first_frame(path)
+	ff, ok := ffmpeg.first_frame(stream)
 	if !ok {return {}, .Failed}
 	if ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUV420P && ff.pix_fmt != ffmpeg.AV_PIX_FMT_YUVJ420P {
 		ffmpeg.free_decoded_frame(&ff)
@@ -309,25 +310,30 @@ free_decoded :: proc {
 	free_decoded_frame,
 }
 
-// Decodes a still image, first video frame, or first PDF page from `path`.
-// Returns .Unsupported for formats that cannot be decoded, .Too_Large when
-// dimensions exceed max_pixels (if > 0), and .Failed on I/O or decode errors.
+// Decodes a still image, first video frame, or first PDF page from `stream`,
+// which must support Read_At and Size. Still images are read whole; video is
+// read on demand. Returns .Unsupported for formats that cannot be decoded,
+// .Too_Large when dimensions exceed max_pixels (if > 0), and .Failed on I/O or
+// decode errors.
+// TODO: PDFs still open `pdf_path` (mupdf takes a path); read `stream` via a
+// custom fz_stream in the mupdf shim instead, then drop `pdf_path`.
 decode_frame :: proc(
-	path: string,
+	stream: io.Stream,
 	max_pixels: i64 = 0,
+	pdf_path := "",
 ) -> (
 	frame: Decoded_Frame,
 	err: Decode_Error,
 ) {
-	format, sniff_err := hack_sniff_first_32_bytes(path)
+	format, sniff_err := hack_sniff_first_32_bytes(stream)
 	if sniff_err != nil {return nil, .Failed}
 	switch format {
 	case .MP4, .MOV, .M4V, .ThreeGP, .WebM, .MKV, .AVI, .OGV, .MPG, .MPV, .WMV, .FLV:
 		// Video formats decode only the first frame, never reading the whole file.
-		return decode_video_first_frame(path, max_pixels)
+		return decode_video_first_frame(stream, max_pixels)
 	case .JXL:
 		// Scope: JXL decode currently targets 8-bit opaque RGB24 only.
-		ff, ok := ffmpeg.first_frame(path)
+		ff, ok := ffmpeg.first_frame(stream)
 		if !ok {return nil, .Failed}
 		if ff.pix_fmt != ffmpeg.AV_PIX_FMT_RGB24 {
 			ffmpeg.free_decoded_frame(&ff)
@@ -350,7 +356,8 @@ decode_frame :: proc(
 			},
 			.None
 	case .PDF:
-		pixels, w, h, ok := mupdf.render_first_page_rgba(path, 512)
+		if pdf_path == "" {return nil, .Unsupported}
+		pixels, w, h, ok := mupdf.render_first_page_rgba(pdf_path, 512)
 		if !ok {return nil, .Failed}
 		if max_pixels > 0 && i64(w) * i64(h) > max_pixels {
 			mupdf.mupdf_free_pixels(pixels)
@@ -368,9 +375,16 @@ decode_frame :: proc(
 		return nil, .Unsupported
 	}
 
-	data, read_err := os.read_entire_file(path, context.allocator)
-	if read_err != nil {return nil, .Failed}
+	size, size_err := io.size(stream)
+	if size_err != nil || size <= 0 || size > i64(max(c.int)) {return nil, .Failed}
+	data := make([]u8, int(size))
 	defer delete(data)
+	for used := 0; used < len(data); {
+		n, read_err := io.read_at(stream, data[used:], i64(used))
+		used += n
+		if read_err != nil && read_err != .EOF {return nil, .Failed}
+		if n == 0 {return nil, .Failed}
+	}
 
 	#partial switch format {
 	case .AVIF:

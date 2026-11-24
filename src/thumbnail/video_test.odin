@@ -98,7 +98,9 @@ video_probe_dimensions_fixture :: proc(t: ^testing.T) {
 	w, h, ok := media.probe_dimensions(nil, .MP4, path)
 	testing.expect(t, ok, "probe_dimensions succeeds for mp4")
 
-	frame, err := media.decode_frame(path)
+	file, _ := os.open(path, {.Read})
+	defer if file != nil {os.close(file)}
+	frame, err := media.decode_frame(os.to_stream(file))
 	testing.expect(t, err == .None, "decode_frame succeeds for mp4")
 	defer media.free_decoded(&frame)
 
