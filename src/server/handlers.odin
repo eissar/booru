@@ -833,18 +833,15 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	}
 	comment := form_string(params, "comment", &ok)
 	_, comment_present := params["comment"]
-	oid := form_string(params, "oid", &ok)
 	path := form_string(params, "path", &ok)
-	for key in ([]string{"oid", "path"}) {
-		if value, present := params[key]; present && strings.trim_space(value) == "" {
-			res.headers["HX-Reswap"] = "beforeend"
-			http.res_html(
-				template.render_toast("oid and path must not be empty", .Error, req.alloc),
-				res,
-				.BadRequest,
-			)
-			return
-		}
+	if value, present := params["path"]; present && strings.trim_space(value) == "" {
+		res.headers["HX-Reswap"] = "beforeend"
+		http.res_html(
+			template.render_toast("path must not be empty", .Error, req.alloc),
+			res,
+			.BadRequest,
+		)
+		return
 	}
 	ext := form_string(params, "ext", &ok)
 	content_type := form_string(params, "content_type", &ok)
@@ -905,7 +902,6 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 		id = id,
 		op = "overwrite",
 	}
-	if oid != "" && oid != current.oid {overwrite_ev.oid = oid}
 	if path != "" && path != current.path {overwrite_ev.path = path}
 	if ext != "" && ext != current.ext {overwrite_ev.ext = ext}
 	if content_type != "" &&
@@ -914,7 +910,6 @@ handle_update_metadata :: proc(s: ^library.State, res: ^http.Response, req: http
 	if height != 0 && height != current.height {overwrite_ev.height = height}
 
 	overwrite_changed :=
-		overwrite_ev.oid != "" ||
 		overwrite_ev.path != "" ||
 		overwrite_ev.ext != "" ||
 		overwrite_ev.content_type != "" ||

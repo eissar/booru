@@ -28,7 +28,7 @@ Harden event semantics: required fields, patch/clear rules, ordering, replay pro
 - [ ] Benchmark comment patches against direct XOR (high-water memory, shifted-suffix cost).
 - [ ] Define behavior when a mixed patch+overwrite batch fails partway through `ev_append` (`src/server/handlers.odin`).
 
-- [ ] Test: `handle_update_metadata` rejects a present-but-empty `oid` or `path` with 400 and appends nothing; JSON `null` on any field is a `BadEvent`.
+- [ ] Test: `handle_update_metadata` rejects a present-but-empty `path` with 400 and appends nothing; JSON `null` on any field is a `BadEvent`.
 
 - [ ] Test: `mtime` and `added_at` never decrease: a lower or zero value in a `patch` is ignored, `overwrite` carrying either is rejected, and the writer omits them when not greater than current.
 - [ ] Test: patches clearing `name`, `comment` and tags replay to empty values, in both full and incremental replay.

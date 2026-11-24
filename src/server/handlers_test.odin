@@ -323,7 +323,7 @@ write_handlers_reject_non_post :: proc(t: ^testing.T) {
 }
 
 @(test)
-update_metadata_rejects_empty_oid_or_path_and_appends_nothing :: proc(t: ^testing.T) {
+update_metadata_rejects_empty_path_and_appends_nothing :: proc(t: ^testing.T) {
 	alloc := context.temp_allocator
 	defer free_all(alloc)
 	root, err := os.make_directory_temp("", "booru-update-*", alloc)
@@ -347,7 +347,7 @@ update_metadata_rejects_empty_oid_or_path_and_appends_nothing :: proc(t: ^testin
 	) {return}
 	replay.initiate_replay(&s)
 	before := cursor
-	for body in ([]string{"id=1&oid=", "id=1&oid=%20", "id=1&path=", "id=1&name=x&path=%09"}) {
+	for body in ([]string{"id=1&path=", "id=1&name=x&path=%09"}) {
 		res := http.Response {
 			headers = make(map[string]string, alloc),
 		}
