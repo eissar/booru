@@ -273,22 +273,25 @@ handle_image :: proc(s: library.State, res: ^http.Response, req: http.Req) {
 		return
 	}
 
-	fp := fmt.aprintf("%s/images/%d.%s", s.library_path, img.id, img.ext, allocator = req.alloc)
-	file, open_err := os.open(fp, {.Read})
-	if open_err != nil {
+	stream, status := library.cascade_resolve(s, img, req.alloc)
+	switch status {
+	case .Ok:
+	case .Error:
+		http.res_error("", res, .InternalServerError)
+		return
+	case .Not_Found:
 		http.res_error("", res, .NotFound)
 		return
 	}
-	defer if file != nil {os.close(file)}
 
-	size, size_err := os.file_size(file)
+	size, size_err := io.size(stream)
 	if size_err != nil {
+		io.close(stream)
 		http.res_error("", res, .InternalServerError)
 		return
 	}
 
-	http.res_file(file, int(size), res)
-	file = nil
+	http.res_file(stream, int(size), res)
 	if img.content_type != "" {res.headers["Content-Type"] = img.content_type}
 	res.headers["X-Content-Type-Options"] = "nosniff"
 	res.headers["Content-Security-Policy"] = IMAGE_CSP

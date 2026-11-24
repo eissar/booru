@@ -159,7 +159,6 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	// Fail before replay rather than sharing the library with a live server.
 	if cfg.socket != "" && server.unix_socket_in_use(cfg.socket) {
 		fmt.eprintfln("listen on unix socket %s: already in use by a running server", cfg.socket)
 		os.exit(1)

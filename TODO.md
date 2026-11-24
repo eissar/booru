@@ -64,6 +64,7 @@ sccache - Mozilla's compiler cache - compiler artifacts can live in different re
   - Track `high_id = max(high_id, item.id)` in `replay` / `Swap_Store` and bound those three loops to `high_id` instead of `swap.max_id`.
   - For sparse or small `!full_replay` runs, iterate `seen_ids` / dirty IDs (or `patch_states.entries` directly when nothing evicted to swap) instead of scanning `1..=high_id`.
   - Defer `init_swap` (swap tmpfile create / 64 MiB `truncate` / `mmap`) until the first LRU eviction so small replays don't allocate/unlink a swap file at all.
+- [ ] `library.Image.tags`: `[]string` -> `[]u32` (tag IDs) once roaring bitmap tag index lands.
 - [ ] Verify `search_images` query plans use index order for all four sorts (unfiltered and tag-filtered) and benchmark them.
 
 - [ ] Compare item and tag snapshots across the pre- and post-prepared-insert replay revisions using the same 100,000-event fixture; the benchmark currently checks repeatability within each run, not equality between revisions.
@@ -225,3 +226,5 @@ Amdahl's Law (the serial fraction dominates): If even 15% of total time is seria
 
 - [ ] **Multi-source `/merge` untested.** The lifecycle e2e test merges a single source, because only 2 items remain after its delete. Nothing covers `from=a,b` folding in order, skipping a source comment the target already contains, or the `DEV_ROUTES` `sample=1` shortcut (the unit test that covered these was removed when the test moved to e2e).
 - [ ] **`/duplicates` untested.** It has no handler test and no HTML fixture, so the page's switch to `POST /merge` is not covered.
+
+local behavioral telemetry -> ranking heuristic e.g lru/frecency

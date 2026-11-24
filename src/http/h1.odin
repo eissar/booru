@@ -4,7 +4,6 @@ import "base:runtime"
 import "core:fmt"
 import "core:io"
 import "core:net"
-import "core:os"
 import "core:strings"
 import "core:testing"
 
@@ -16,6 +15,8 @@ Response :: struct {
 	// Optional streaming body; body remains empty when this is set.
 	body_stream:        proc(conn: ^net.TCP_Socket, data: rawptr) -> io.Error,
 	body_stream_data:   rawptr,
+	// Optional reader body, sent after the headers and then closed (see res_file).
+	body_reader:        io.Stream,
 	// Negative means unknown length: no Content-Length is sent.
 	body_stream_length: int,
 }
@@ -39,12 +40,13 @@ marshal :: proc(res: Response, alloc: runtime.Allocator) -> string {
 		assert(len(res.body) == 0)
 		strings.write_string(&builder, "\r\n")
 	} else {
-		if res.body_stream != nil && res.body_stream_length < 0 {
+		streamed := res.body_stream != nil || res.body_reader.procedure != nil
+		if streamed && res.body_stream_length < 0 {
 			strings.write_string(&builder, "\r\n")
 		} else {
-			length := res.body_stream != nil ? res.body_stream_length : len(res.body)
+			length := streamed ? res.body_stream_length : len(res.body)
 			fmt.sbprintf(&builder, "Content-Length: %d\r\n\r\n", length)
-			if res.body_stream == nil {
+			if !streamed {
 				strings.write_bytes(&builder, res.body)
 			}
 		}
@@ -57,9 +59,7 @@ marshal_and_send :: proc(
 	res: Response,
 	alloc: runtime.Allocator,
 ) -> net.TCP_Send_Error {
-	defer if res.body_stream == send_file_stream && res.body_stream_data != nil {
-		os.close((^os.File)(res.body_stream_data))
-	}
+	defer if res.body_reader.procedure != nil {io.close(res.body_reader)}
 	wire := marshal(res, alloc)
 	defer delete(wire, alloc)
 
@@ -75,6 +75,9 @@ marshal_and_send :: proc(
 		if err := res.body_stream(&conn, res.body_stream_data); err != nil {
 			return .Connection_Closed
 		}
+	}
+	if res.body_reader.procedure != nil {
+		if err := send_reader(sock, res.body_reader); err != nil {return .Connection_Closed}
 	}
 	return nil
 }
@@ -102,6 +105,75 @@ unit_marshal :: proc(t: ^testing.T) {
 	empty := marshal(Response{status = .NoContent}, context.temp_allocator)
 	defer delete(empty, context.temp_allocator)
 	testing.expect(t, empty == "HTTP/1.1 204 \r\n\r\n", "serializes a bodyless response")
+}
+
+@(test)
+unit_res_file_streams_and_closes_reader :: proc(t: ^testing.T) {
+	Source :: struct {
+		data:   string,
+		pos:    int,
+		closed: bool,
+	}
+	source_proc :: proc(
+		data: rawptr,
+		mode: io.Stream_Mode,
+		p: []byte,
+		offset: i64,
+		whence: io.Seek_From,
+	) -> (
+		n: i64,
+		err: io.Error,
+	) {
+		src := (^Source)(data)
+		#partial switch mode {
+		case .Read:
+			if src.pos == len(src.data) {return 0, .EOF}
+			n = i64(copy(p, src.data[src.pos:]))
+			src.pos += int(n)
+			return n, nil
+		case .Close:
+			src.closed = true
+			return 0, nil
+		}
+		return 0, .Unsupported
+	}
+	src := Source {
+		data = "streamed body",
+	}
+	reader := io.Stream {
+		procedure = source_proc,
+		data      = &src,
+	}
+
+	listener, listen_err := net.listen_tcp(net.Endpoint{address = net.IP4_Loopback, port = 0})
+	if !testing.expect(t, listen_err == nil, "listen") {return}
+	defer net.close(listener)
+	endpoint, _ := net.bound_endpoint(listener)
+	client, dial_err := net.dial_tcp(endpoint)
+	if !testing.expect(t, dial_err == nil, "dial") {return}
+	defer net.close(client)
+	server, _, accept_err := net.accept_tcp(listener)
+	if !testing.expect(t, accept_err == nil, "accept") {return}
+	defer net.close(server)
+
+	res := Response {
+		headers = make(map[string]string, context.temp_allocator),
+	}
+	res_file(reader, len(src.data), &res)
+	testing.expect(t, marshal_and_send(server, res, context.temp_allocator) == nil, "send")
+	testing.expect(t, src.closed, "closes the reader after sending")
+
+	expected :=
+		"HTTP/1.1 200 \r\nContent-Type: application/octet-stream\r\nContent-Length: 13\r\n\r\n" +
+		"streamed body"
+	buf: [256]u8
+	got := 0
+	for got < len(expected) {
+		n, recv_err := net.recv_tcp(client, buf[got:])
+		if recv_err != nil || n == 0 {break}
+		got += n
+	}
+	testing.expect_value(t, string(buf[:got]), expected)
 }
 
 // REGION: asserts
@@ -197,13 +269,12 @@ res_blob :: proc(b: []u8, res: ^Response, type := Content_Type.Octet_Stream, sta
 }
 
 @(private = "file")
-send_file_stream :: proc(conn: ^net.TCP_Socket, raw: rawptr) -> io.Error {
-	file := (^os.File)(raw)
+send_reader :: proc(conn: net.TCP_Socket, reader: io.Stream) -> io.Error {
 	buf: [64 * 1024]u8 = ---
 	for {
-		n, read_err := os.read(file, buf[:])
+		n, read_err := io.read(reader, buf[:])
 		for off := 0; off < n; {
-			sent, send_err := net.send_tcp(conn^, buf[off:n])
+			sent, send_err := net.send_tcp(conn, buf[off:n])
 			if send_err != nil || sent <= 0 {return .Unknown}
 			off += sent
 		}
@@ -213,9 +284,10 @@ send_file_stream :: proc(conn: ^net.TCP_Socket, raw: rawptr) -> io.Error {
 	return nil
 }
 
-// res_file streams an open file handle as the response body and closes it when done.
+// res_file streams `reader` (e.g. os.to_stream(file)) as the response body and closes it
+// when done.
 res_file :: proc(
-	file: ^os.File,
+	reader: io.Stream,
 	length: int,
 	res: ^Response,
 	type := Content_Type.Octet_Stream,
@@ -225,8 +297,7 @@ res_file :: proc(
 
 	res.headers["Content-Type"] = CONTENT_TYPE_MIME[type]
 	res.body = nil
-	res.body_stream = send_file_stream
-	res.body_stream_data = file
+	res.body_reader = reader
 	res.body_stream_length = length
 	res.status = status
 }

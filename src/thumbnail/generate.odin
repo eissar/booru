@@ -2,6 +2,7 @@ package thumbnail
 
 import "core:c"
 import "core:fmt"
+import "core:io"
 import "core:log"
 import "core:os"
 
@@ -164,11 +165,10 @@ generate_image_thumbnails :: proc(
 	generated, failed: int,
 ) {
 	oid := img.oid
-	img_path := fmt.tprintf("%s/images/%d.%s", s.library_path, img.id, img.ext)
-	// A failed open yields a nil stream, which decode_frame reports as .Failed.
-	file, _ := os.open(img_path, {.Read})
-	defer if file != nil {os.close(file)}
-	frame, decode_err := media.decode_frame(os.to_stream(file), MAX_THUMBNAIL_SOURCE_PIXELS)
+	// An unresolved original yields an empty stream, which decode_frame reports as .Failed.
+	stream, status := library.cascade_resolve(s, img, context.temp_allocator)
+	defer if status == .Ok {io.close(stream)}
+	frame, decode_err := media.decode_frame(stream, MAX_THUMBNAIL_SOURCE_PIXELS)
 	defer media.free_decoded(&frame)
 	if decode_err == .Unsupported {return 0, 0}
 	if decode_err != .None {
@@ -209,11 +209,10 @@ force_generate_image_thumbnails :: proc(
 	generated, failed: int,
 ) {
 	oid := img.oid
-	img_path := fmt.tprintf("%s/images/%d.%s", s.library_path, img.id, img.ext)
-	// A failed open yields a nil stream, which decode_frame reports as .Failed.
-	file, _ := os.open(img_path, {.Read})
-	defer if file != nil {os.close(file)}
-	frame, decode_err := media.decode_frame(os.to_stream(file), MAX_THUMBNAIL_SOURCE_PIXELS)
+	// An unresolved original yields an empty stream, which decode_frame reports as .Failed.
+	stream, status := library.cascade_resolve(s, img, context.temp_allocator)
+	defer if status == .Ok {io.close(stream)}
+	frame, decode_err := media.decode_frame(stream, MAX_THUMBNAIL_SOURCE_PIXELS)
 	defer media.free_decoded(&frame)
 	if decode_err == .Unsupported {return 0, 0}
 	if decode_err != .None {
