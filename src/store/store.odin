@@ -34,6 +34,9 @@ Init :: proc(state: ^library.State, path: cstring, foreign_keys := true) -> (rc:
 	)
 	if rc != sqlite.OK {return rc}
 
+	rc = sqlite.exec(db, "PRAGMA busy_timeout = 5000", nil, nil, nil)
+	if rc != sqlite.OK {return rc}
+
 	rc = create_tables(db)
 	if rc != sqlite.OK {return rc}
 	// CREATE TABLE IF NOT EXISTS leaves older tables as they are, so check their columns.

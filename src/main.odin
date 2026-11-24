@@ -392,6 +392,11 @@ startup_job_generate_thumbnails_and_run_plugins :: proc(data: struct {
 	}
 	defer sqlite.close(db)
 
+	if rc = sqlite.exec(db, "PRAGMA busy_timeout = 5000", nil, nil, nil); rc != sqlite.OK {
+		fmt.eprintfln("startup job: set busy_timeout failed: rc=%d", rc)
+		return
+	}
+
 	s := library.State {
 		library_path = data.library_path,
 		data_store   = db,
