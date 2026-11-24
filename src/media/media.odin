@@ -6,7 +6,6 @@ package media
 import dav1d "../vendor/dav1d"
 import ffmpeg "../vendor/ffmpeg"
 import libwebp "../vendor/libwebp"
-import mupdf "../vendor/mupdf"
 import "core:c"
 import "core:c/libc"
 import "core:fmt"
@@ -150,7 +149,7 @@ probe_dimensions :: proc(
 		return ffmpeg.probe_dimensions(path)
 	case .PDF:
 		if path == "" {return 0, 0, false}
-		return mupdf.probe_dimensions(path)
+		return probe_pdf_dimensions(path)
 	}
 	if len(data) == 0 || len(data) > int(max(c.int)) {return 0, 0, false}
 	p, n := raw_data(data), len(data)
@@ -353,19 +352,7 @@ decode_frame :: proc(
 			},
 			.None
 	case .PDF:
-		pixels, w, h, ok := mupdf.render_first_page_rgba(stream, 512)
-		if !ok {return nil, .Failed}
-		if max_pixels > 0 && i64(w) * i64(h) > max_pixels {
-			mupdf.mupdf_free_pixels(pixels)
-			return nil, .Too_Large
-		}
-		return Decoded_ARGB {
-				pixels = pixels,
-				width = w,
-				height = h,
-				free_pixels = mupdf.mupdf_free_pixels,
-			},
-			.None
+		return decode_pdf_first_page(stream, max_pixels)
 	case .AVIF, .PNG, .JPEG, .GIF, .WebP:
 	case .Unknown, .WINURL:
 		return nil, .Unsupported
