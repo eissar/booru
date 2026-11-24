@@ -36,6 +36,12 @@ Init :: proc(state: ^library.State, path: cstring, foreign_keys := true) -> (rc:
 
 	rc = create_tables(db)
 	if rc != sqlite.OK {return rc}
+	// CREATE TABLE IF NOT EXISTS leaves older tables as they are, so check their columns.
+	if !(verify_table_columns(db, "items", TABLE_ITEMS_COLUMNS) &&
+		   verify_table_columns(db, "item_tags", TABLE_ITEM_TAGS_COLUMNS) &&
+		   verify_table_columns(db, "replay_cursors", TABLE_REPLAY_CURSORS_COLUMNS)) {
+		return c.int(Error.SchemaMismatch)
+	}
 
 	state.data_store = db
 	if state.event_log != nil {state.event_log.db = db}
@@ -108,10 +114,11 @@ Close :: proc(state: ^library.State) {
 
 // Error is c.int-backed so None == sqlite.OK and transaction bodies can cast it.
 Error :: enum c.int {
-	None        = 0,
-	Database    = 1, // any other sqlite failure
-	NotFound    = 100, // no live row with this id (missing or soft-deleted)
-	DuplicateID = 101, // insert reused an existing id (deleted or not)
+	None           = 0,
+	Database       = 1, // any other sqlite failure
+	NotFound       = 100, // no live row with this id (missing or soft-deleted)
+	DuplicateID    = 101, // insert reused an existing id (deleted or not)
+	SchemaMismatch = 102, // the on-disk store predates the current schema; discard and rebuild
 }
 
 // Uses the caller's transaction. Soft delete: the row stays so IDs are never reused.

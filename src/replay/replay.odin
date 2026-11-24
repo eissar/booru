@@ -26,8 +26,6 @@ Error :: enum {
 	// Writers omit empty strings; explicit string clears are not implemented yet.
 	NotImplemented,
 	DATABASE_ERR,
-	// The on-disk store predates the current schema; discard it and rebuild.
-	SCHEMA_MISMATCH,
 }
 
 Patch_State :: struct {
@@ -87,15 +85,6 @@ replay :: proc(
 	// Statements for event stream reduction
 	item_patch: ^sqlite.Stmt
 	if !full_replay {
-		if !(store.verify_table_columns(db, "items", store.TABLE_ITEMS_COLUMNS) &&
-			   store.verify_table_columns(db, "item_tags", store.TABLE_ITEM_TAGS_COLUMNS) &&
-			   store.verify_table_columns(
-				   db,
-				   "replay_cursors",
-				   store.TABLE_REPLAY_CURSORS_COLUMNS,
-			   )) {
-			return .SCHEMA_MISMATCH
-		}
 		patch_rc: i32
 		item_patch, patch_rc = store.prepare_item_patch(db)
 		if patch_rc != sqlite.OK {return .DATABASE_ERR}
@@ -620,7 +609,6 @@ initiate_replay :: proc(s: ^library.State, full_replay := true) -> Error {
 		db = db,
 	}
 	if err := replay(s, streams, alloc, full_replay); err != nil {
-		if err == .SCHEMA_MISMATCH {return err}
 		fmt.panicf("replay: %v", err)
 	}
 	for path, i in paths {

@@ -226,6 +226,20 @@ main :: proc() {
 		}
 
 		rc := store.Init(&state, db_c_str)
+		if store.Error(rc) == .SchemaMismatch {
+			if STORE_DISCARDED_FOR_SCHEMA {
+				fmt.eprintln("datastore type=sqlite: schema mismatch persists after rebuild")
+				os.exit(1)
+			}
+			STORE_DISCARDED_FOR_SCHEMA = true
+			fmt.eprintln("datastore type=sqlite: schema mismatch; discarding store and rebuilding")
+			// Init closed the store on failure.
+			if err := os.remove(db_c); err != nil {
+				fmt.eprintln("datastore type=sqlite: discard outdated store:", err)
+				os.exit(1)
+			}
+			continue
+		}
 		if rc != 0 {
 			fmt.eprintln("datastore type=sqlite open: failed w/ error code:", rc)
 			os.exit(1)
@@ -261,22 +275,7 @@ main :: proc() {
 				}
 				continue
 			}
-			if replay.initiate_replay(&state, full_replay = false) == .SCHEMA_MISMATCH {
-				if STORE_DISCARDED_FOR_SCHEMA {
-					fmt.eprintln("datastore type=sqlite: schema mismatch persists after rebuild")
-					os.exit(1)
-				}
-				STORE_DISCARDED_FOR_SCHEMA = true
-				fmt.eprintln(
-					"datastore type=sqlite: schema mismatch; discarding store and rebuilding",
-				)
-				store.Close(&state)
-				if err := os.remove(db_c); err != nil {
-					fmt.eprintln("datastore type=sqlite: discard outdated store:", err)
-					os.exit(1)
-				}
-				continue
-			}
+			replay.initiate_replay(&state, full_replay = false)
 		}
 		break
 	}
